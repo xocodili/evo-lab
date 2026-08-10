@@ -492,6 +492,57 @@ void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity
   }
 }
 
+void tickActuatorOrganism(Organism& organism, SkeletonNode& root, const BarrenWorld& world,
+                          float cellSize, float halfExtent) {
+  const float startX = root.worldX;
+  const float startZ = root.worldZ;
+
+  organism.lastStrokePaid = false;
+  organism.lastTumbled = false;
+  organism.lastIntendedThrust = 0.0f;
+  organism.lastMechanicalThrust = 0.0f;
+  organism.lastTranslationEntropyLoss = 0.0f;
+  organism.lastStrokeBytesPaid = 0;
+  organism.lastInWater = world.isWetWorld(root.worldX, root.worldZ, cellSize);
+  organism.lastTideDelta = world.waterLevelDelta();
+
+  std::mt19937 rng = chaosSpawnRng(world.tickCount(), static_cast<std::uint64_t>(organism.id) ^
+                                                         kChaosSaltActuator);
+
+  if (chaosBernoulli(kActuatorTumbleRate, rng)) {
+    const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
+    organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
+    organism.lastTumbled = true;
+  }
+
+  if (organism.lastInWater && organism.bodyStorage.size() >= kActuatorStrokeCostPerTick) {
+    const float strokeBytes = static_cast<float>(kActuatorStrokeCostPerTick);
+    consumeBytes(organism.bodyStorage, kActuatorStrokeCostPerTick);
+    organism.lastStrokePaid = true;
+    organism.lastStrokeBytesPaid = kActuatorStrokeCostPerTick;
+
+    const float grossThrust = strokeBytes * kActuatorThrustPerStrokeByte;
+    const float mechanicalThrust = grossThrust * kActuatorTranslationEta;
+    organism.lastIntendedThrust = grossThrust;
+    organism.lastMechanicalThrust = mechanicalThrust;
+    organism.lastTranslationEntropyLoss = strokeBytes * (1.0f - kActuatorTranslationEta);
+
+    root.worldX += std::sin(organism.heading) * mechanicalThrust;
+    root.worldZ += std::cos(organism.heading) * mechanicalThrust;
+  }
+
+  const AdvectionVelocity velocity =
+      shoreAdvection(world, root.worldX, root.worldZ, cellSize, halfExtent);
+  if (organism.lastInWater) {
+    applyShoreAdvection(root.worldX, root.worldZ, velocity, halfExtent, cellSize * 0.25f);
+  }
+  clampWorldPosition(root.worldX, root.worldZ, halfExtent, cellSize * 0.25f);
+
+  const float dx = root.worldX - startX;
+  const float dz = root.worldZ - startZ;
+  organism.lastDisplacement = std::sqrt(dx * dx + dz * dz);
+}
+
 }  // namespace
 
 SkeletonNode* Organism::findNode(std::uint32_t nodeId) {
@@ -612,9 +663,14 @@ void Organism::advectRoot(const BarrenWorld& world, const EnergonField& energon,
 
   const AdvectionVelocity velocity =
       shoreAdvection(world, root->worldX, root->worldZ, cellSize, halfExtent);
-  updateOrganismHeading(*this, velocity, energon, cellSize);
-  applyShoreAdvection(root->worldX, root->worldZ, velocity, halfExtent, cellSize * 0.25f);
+  if (hasActuatorNeurons() && !hasMouthNeurons()) {
+    tickActuatorOrganism(*this, *root, world, cellSize, halfExtent);
+  } else {
+    updateOrganismHeading(*this, velocity, energon, cellSize);
+    applyShoreAdvection(root->worldX, root->worldZ, velocity, halfExtent, cellSize * 0.25f);
+  }
   updateKinematics(world, cellSize, heightScale);
+  clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
   landAdjacent = organismLandAdjacent(world, root->worldX, root->worldZ, cellSize);
 }
 
@@ -733,6 +789,20 @@ bool Organism::hasMouthNeurons() const {
   return mouthCount() > 0;
 }
 
+int Organism::actuatorCount() const {
+  int count = 0;
+  for (const SkeletonNode& node : nodes) {
+    if (node.neuron == NeuronType::Actuator) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+bool Organism::hasActuatorNeurons() const {
+  return actuatorCount() > 0;
+}
+
 bool Organism::hasNeuralAxons() const {
   return !neuralAxons.empty();
 }
@@ -776,6 +846,24 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
   SkeletonNode root;
   root.id = 1;
   root.neuron = NeuronType::None;
+  root.worldX = wx;
+  root.worldZ = wz;
+  root.worldY = wy;
+  organism.nodes.push_back(root);
+  return organism;
+}
+
+Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
+                              std::size_t storageBytes, std::uint64_t createdAtTick) {
+  Organism organism;
+  organism.id = id;
+  organism.createdAtTick = createdAtTick;
+  organism.rootNodeId = 1;
+  organism.bodyStorage.resize(storageBytes);
+
+  SkeletonNode root;
+  root.id = 1;
+  root.neuron = NeuronType::Actuator;
   root.worldX = wx;
   root.worldZ = wz;
   root.worldY = wy;
@@ -898,7 +986,7 @@ std::string Organism::architectureLabel() const {
   const float daysRemaining =
       static_cast<float>(bodyStorage.size()) / static_cast<float>(kTicksPerStemCellDay);
 
-  if (!hasMouthNeurons()) {
+  if (!hasMouthNeurons() && !hasActuatorNeurons()) {
     std::snprintf(buffer, sizeof(buffer),
                   "StemCell #%u\n"
                   "Type: undifferentiated\n"
@@ -909,6 +997,43 @@ std::string Organism::architectureLabel() const {
                   "Status: %s",
                   id, bodyStorage.size(), daysRemaining, landAdjacent ? "yes" : "no",
                   static_cast<unsigned long long>(createdAtTick), alive ? "alive" : "dead");
+    return buffer;
+  }
+
+  if (hasActuatorNeurons() && !hasMouthNeurons()) {
+    const float strokeEfficiency =
+        lastIntendedThrust > 0.0f ? lastMechanicalThrust / lastIntendedThrust : 0.0f;
+    const float displacementEfficiency =
+        lastIntendedThrust > 0.0f ? lastDisplacement / lastIntendedThrust : 0.0f;
+    std::snprintf(buffer, sizeof(buffer),
+                  "Nom #%u\n"
+                  "Type: actuator (1 A, no mouth)\n"
+                  "Storage: %zu bytes (%.2f d)\n"
+                  "Heading: %.0f deg\n"
+                  "Proprioception (last tick):\n"
+                  "  displacement: %.4f\n"
+                  "  gross thrust intent: %.4f\n"
+                  "  mechanical thrust: %.4f (eta %.0f%%)\n"
+                  "  stroke paid: %u B (%s)\n"
+                  "  of stroke → heat: %.2f B (not extra charge)\n"
+                  "  stroke efficiency: %.2f  path/tide: %.2f\n"
+                  "  tide delta: %+.5f\n"
+                  "  crawl burn/tick: %u B (basal %u + stroke %u)\n"
+                  "  in water: %s\n"
+                  "  tumbled: %s\n"
+                  "Land-adjacent: %s\n"
+                  "Created: tick %llu\n"
+                  "Status: %s",
+                  id, bodyStorage.size(), daysRemaining, heading * 180.0f / 3.14159265f,
+                  lastDisplacement, lastIntendedThrust, lastMechanicalThrust,
+                  kActuatorTranslationEta * 100.0f, lastStrokeBytesPaid,
+                  lastStrokePaid ? "this tick" : "skipped", lastTranslationEntropyLoss,
+                  strokeEfficiency, displacementEfficiency, lastTideDelta,
+                  kActuatorCrawlCostPerTick, kStemCellBasalCostPerTick,
+                  kActuatorStrokeCostPerTick, lastInWater ? "yes" : "no — stranded",
+                  lastTumbled ? "yes" : "no",
+                  landAdjacent ? "yes" : "no", static_cast<unsigned long long>(createdAtTick),
+                  alive ? "alive" : "dead");
     return buffer;
   }
 
@@ -971,7 +1096,11 @@ std::string Organism::architectureLabel() const {
 
 std::string Organism::hoverSummary() const {
   char buffer[160];
-  if (!hasMouthNeurons()) {
+  if (hasActuatorNeurons() && !hasMouthNeurons()) {
+    std::snprintf(buffer, sizeof(buffer),
+                  "Hover: Nom #%u actuator (Δ%.3f, stroke %s)", id, lastDisplacement,
+                  lastStrokePaid ? "paid" : "skipped");
+  } else if (!hasMouthNeurons()) {
     std::snprintf(buffer, sizeof(buffer), "Hover: StemCell #%u (undifferentiated)", id);
   } else if (hasNeuralAxons() && mouthCount() == 2) {
     std::snprintf(buffer, sizeof(buffer), "Hover: Organism #%u twin mouth (2 axons)", id);

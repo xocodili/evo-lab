@@ -111,6 +111,17 @@ public:
 
   float heading = 0.0f;
 
+  // Proprioception (A neuron / pre-P): did the last stroke move us?
+  float lastDisplacement = 0.0f;
+  float lastIntendedThrust = 0.0f;
+  float lastMechanicalThrust = 0.0f;
+  float lastTranslationEntropyLoss = 0.0f;
+  std::uint32_t lastStrokeBytesPaid = 0;
+  bool lastInWater = false;
+  float lastTideDelta = 0.0f;
+  bool lastStrokePaid = false;
+  bool lastTumbled = false;
+
 
 
   SkeletonNode* findNode(std::uint32_t nodeId);
@@ -150,8 +161,10 @@ public:
 
 
   int mouthCount() const;
+  int actuatorCount() const;
 
   bool hasMouthNeurons() const;
+  bool hasActuatorNeurons() const;
 
   bool hasNeuralAxons() const;
 
@@ -177,7 +190,8 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
 
                                       std::size_t storageBytes, std::uint64_t createdAtTick);
 
-
+Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
+                              std::size_t storageBytes, std::uint64_t createdAtTick);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
 

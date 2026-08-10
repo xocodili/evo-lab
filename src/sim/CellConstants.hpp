@@ -32,6 +32,20 @@ inline constexpr float kOrganismFoodSenseRadiusFactor = 3.5f;
 // Blend toward food bearing when sensed but not yet in bite range.
 inline constexpr float kOrganismFoodHeadingWeight = 0.7f;
 
+// Actuator (flagellar) stroke — active IMF work on top of basal (1 B/tick).
+// One stroke batch costs kActuatorStrokeCostPerTick body bytes, aligned with
+// kEnergonUnitsPerByte gross yield from food (2 B before mastication tax).
+// Only kActuatorTranslationEta becomes directed motion; the rest is translation
+// entropy (viscous/thermal loss in low-Re flow).
+inline constexpr std::uint32_t kActuatorStrokeCostPerTick = 2u;
+inline constexpr float kActuatorThrustPerStrokeByte = 0.022f;
+inline constexpr float kActuatorTranslationEta = 0.12f;
+inline constexpr float kActuatorTumbleRate = 0.07f;
+inline constexpr float kActuatorTumbleTurn = 0.85f;
+// Horror crawl: basal + one stroke when fuel allows (stroke gate is >= stroke cost only).
+inline constexpr std::uint32_t kActuatorCrawlCostPerTick =
+    kStemCellBasalCostPerTick + kActuatorStrokeCostPerTick;
+
 // Neural axon trust fixed-point: 256 = 100% developmental baseline; 33%–166% modifiable range.
 inline constexpr std::uint16_t kTrustBaseline = 256;
 inline constexpr std::uint16_t kTrustMin = 85;

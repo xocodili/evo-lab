@@ -28,13 +28,13 @@ namespace evolab {
 
 namespace {
 
-constexpr int kInitialTwinMouthOrganismCount = 60;
+constexpr int kInitialActuatorNomCount = 60;
 
 }  // namespace
 
 int runVisualApp(const CliArgs& args) {
   platform::SdlPlatform platform;
-  if (!platform.init(1280, 720, "evo-lab — Phase 2.x Twin Mouth")) {
+  if (!platform.init(1280, 720, "evo-lab — Phase 2.x Actuator Nom")) {
     return 1;
   }
   if (!engine::gl::loadGlContext()) {
@@ -82,8 +82,8 @@ int runVisualApp(const CliArgs& args) {
   camera.pitch = 0.55f;
   camera.distance = 140.0f;
 
-  cells.seedTwoMouthOrganisms(world, kWorldCellSize, kTerrainHeightScale,
-                              kInitialTwinMouthOrganismCount, args.seed);
+  cells.seedActuatorOrganisms(world, kWorldCellSize, kTerrainHeightScale, kInitialActuatorNomCount,
+                              args.seed);
 
   bool pauseSim = false;
   bool mouseDown = false;
@@ -93,7 +93,7 @@ int runVisualApp(const CliArgs& args) {
   auto lastTime = std::chrono::steady_clock::now();
   constexpr int kMaxSimStepsPerFrame = 5;
 
-  std::cout << "Phase 2.x — Twin mouth organisms (2 M, 2 axons)\n";
+  std::cout << "Phase 2.x — Actuator Noms (1 A, no mouth — crawl until starved)\n";
   std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, Esc=quit\n";
   std::cout << "Hover a cell orb to inspect its genome.\n";
 
@@ -110,8 +110,8 @@ int runVisualApp(const CliArgs& args) {
       mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
       renderer.uploadTerrainGeometry(mesh);
       cells.clear();
-      cells.seedTwoMouthOrganisms(world, kWorldCellSize, kTerrainHeightScale,
-                                  kInitialTwinMouthOrganismCount, visualSeed);
+      cells.seedActuatorOrganisms(world, kWorldCellSize, kTerrainHeightScale,
+                                  kInitialActuatorNomCount, visualSeed);
       std::cout << "Regenerated world seed=" << visualSeed << '\n';
     }
 

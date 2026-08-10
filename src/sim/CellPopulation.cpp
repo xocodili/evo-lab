@@ -219,6 +219,25 @@ void CellPopulation::seedTwoMouthOrganisms(const BarrenWorld& world, float cellS
       });
 }
 
+void CellPopulation::seedActuatorOrganisms(const BarrenWorld& world, float cellSize,
+                                           float heightScale, int count, std::uint64_t seed) {
+  (void)seed;
+  seedOnWetTerrain(
+      world, cellSize, heightScale, count, kChaosSaltActuator, true, 100,
+      [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
+        Organism organism =
+            makeActuatorOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount());
+        organism.heading = chaosSpawnHeading(rng);
+        return organism;
+      },
+      [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
+        (void)rng;
+        organism.updateKinematics(world, cellSize, heightScale);
+        organism.landAdjacent =
+            organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
+      });
+}
+
 void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float cellSize,
                           float heightScale) {
   const float halfExtent = worldHalfExtent(world, cellSize);
@@ -255,7 +274,9 @@ CellPopulationStats CellPopulation::stats() const {
   out.liveCells = static_cast<int>(organisms_.size());
   out.organisms = countOrganisms(organisms_);
   for (const Organism& organism : organisms_) {
-    if (!organism.hasMouthNeurons()) {
+    if (organism.hasActuatorNeurons()) {
+      ++out.actuatorOrganisms;
+    } else if (!organism.hasMouthNeurons()) {
       ++out.stemCells;
     } else {
       ++out.mouthOrganisms;

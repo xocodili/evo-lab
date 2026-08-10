@@ -2,8 +2,8 @@
 
 Consolidated review of architecture, simulation, evolution, engine, and quantum-integration discussions.
 
-**Status:** Phase 2.x Twin Mouth + water-column bands — public WIP  
-**Last updated:** 2026-08-10 (Noms naming, `WaterColumn`, shallow-water placement)
+**Status:** Phase 2.x Actuator Nom + water-column bands — public WIP  
+**Last updated:** 2026-08-10 (single `[A]` nom, proprioception delta, mouths shelved in visual app)
 
 **Delivery:** Native C++ binary (SDL desktop). Web viewer deferred.
 
@@ -128,6 +128,58 @@ Inspired by exuberant early connectivity + activity-dependent refinement (see pe
 #### Spawn chaos on axons
 
 At spawn, each axon gets developmental baseline **100% ± 3% jitter** on `trustBelieve`, `trustFeed`, `η_signal`, and `η_energy`. Emit decisions remain on the Mouth neuron.
+
+### 2.6 Actuator Nom (Phase 2.x — shipped; mouths shelved in visual app)
+
+**Design intent:** One `[A]` neuron, **no mouth** — a Nom that **crawls until it starves**. Movement alone is not success; the organism must eventually **know whether its stroke worked**. Before a full **P** neuron exists, we expose **proprioceptive delta fields** on `Organism`:
+
+| Field | Meaning |
+|-------|---------|
+| `lastDisplacement` | Actual XZ travel this tick (includes tide advection) |
+| `lastIntendedThrust` | Gross thrust at η=1 (0 if stroke skipped) |
+| `lastMechanicalThrust` | Directed motion after translation η |
+| `lastTranslationEntropyLoss` | Body bytes dissipated as heat this tick |
+| `lastTideDelta` | `BarrenWorld::waterLevelDelta()` — pre-P tide sense |
+| `lastStrokePaid` | Did the flagellar stroke consume fuel? |
+| `lastTumbled` | Run/tumble lite: random reorientation this tick |
+
+**Stroke efficiency (inspector):** `lastMechanicalThrust / lastIntendedThrust` = η_translation; `lastDisplacement / lastIntendedThrust` includes tide/passive drift.
+
+**Energy ledger (aligned with mouth/axon economics):**
+
+| Cost | Bytes/tick | Notes |
+|------|------------|-------|
+| Basal | 1 | Maintenance (`kStemCellBasalCostPerTick`) |
+| Stroke | 2 | Active IMF batch (`kActuatorStrokeCostPerTick`) — same order as food **gross** yield (`kEnergonUnitsPerByte`) |
+| Crawl total | 3 | Basal + stroke when moving every tick |
+
+| Channel | η | Loss |
+|---------|---|------|
+| Mastication (bite) | 0.50 net/gross | 1 B tax on 2 B gross |
+| Neural axon feed | ~0.88 | ~12% per hop |
+| **Translation (stroke)** | **0.12** | **~88% dissipates as viscous heat** (`kActuatorTranslationEta`) |
+
+Mechanical displacement per stroke: `kActuatorStrokeCostPerTick × kActuatorThrustPerStrokeByte × kActuatorTranslationEta` (~0.0053 world units/tick). One fuel-day of continuous crawl ≈ **~150 world units** (~125 cell lengths) — costly vs idle drift, cheap enough to see motion.
+
+**Factory:** `makeActuatorOrganism()` — single root node `NeuronType::Actuator`, body storage only.
+
+**Tick (advect):** Pay `kActuatorStrokeCostPerTick` from body → gross thrust intent → apply η_translation → record `lastTranslationEntropyLoss`; optional **tumble**; passive **shore advection**; record deltas. **No food-heading cheat** (mouth-only path).
+
+**Constants:** `kActuatorStrokeCostPerTick`, `kActuatorThrustPerStrokeByte`, `kActuatorTranslationEta`, `kActuatorTumbleRate`, `kActuatorTumbleTurn`.
+
+**Visual:** `seedActuatorOrganisms()` (~60 Noms); pale violet orb + heading arrow.
+
+#### Biological model — flagellar motor & run/tumble (literature)
+
+We treat the actuator stroke as a **minimal IMF/PMF analog**, not ATP hydrolysis at the filament:
+
+- **Energy source:** The bacterial flagellar motor is driven by the **ion motive force (IMF)** — proton (PMF) or sodium (SMF) gradient across the inner membrane — not by direct ATP at the rotor ([Frontiers review](https://www.frontiersin.org/journals/microbiology/articles/10.3389/fmicb.2021.659464/full); Mitchell chemiosmotic hypothesis).
+- **Cost scales with rotation rate:** Proton flux through stator units sets torque and **rotation frequency**; higher rate ⇒ higher energetic cost ([eLife 77266](https://elifesciences.org/articles/77266) — ~1100–1240 H⁺ per revolution; ~150–380 Hz max in *E. coli*).
+- **Sim mapping:** `kActuatorStrokeCostPerTick` = discrete proton batch per stroke (2 B, aligned with food gross yield); `kActuatorThrustPerStrokeByte` = ideal displacement per byte at η=1; **`kActuatorTranslationEta`** = fraction becoming motion (~12% — remainder is translation entropy / heat).
+- **Run vs tumble:** CCW bundle rotation → **run**; CW → **tumble** reorientation. Chemotaxis adjusts **CheY-P** (response regulator phosphorylation) to bias motor switching — not a separate “steering muscle” ([Berg, *Random Walks in Biology*](https://book.bionumbers.org/what-is-the-frequency-of-rotary-molecular-motors/)).
+- **Sim mapping:** `kActuatorTumbleRate` / `kActuatorTumbleTurn` = stochastic tumble without CheY biochemistry yet; future **P** reads `lastTideDelta` and food cues to modulate tumble bias (chemotaxis-shaped, not hard-wired to nearest blob).
+
+**Success criterion (design-centric):** A stroke is “successful” when `lastDisplacement` reflects paid thrust against tide/passive drift — inspectable now; learnable later when **P→A** closes the loop.
 
 ## 3. World & Simulation Loop
 

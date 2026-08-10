@@ -29,4 +29,7 @@ AdvectionVelocity shoreAdvection(const BarrenWorld& world, float worldX, float w
 void applyShoreAdvection(float& worldX, float& worldZ, const AdvectionVelocity& velocity,
                          float worldHalfExtent, float boundaryMargin = 0.0f);
 
+void clampWorldPosition(float& worldX, float& worldZ, float worldHalfExtent,
+                        float boundaryMargin = 0.0f);
+
 }  // namespace evolab

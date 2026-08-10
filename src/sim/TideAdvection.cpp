@@ -380,6 +380,19 @@ AdvectionVelocity shoreAdvection(const BarrenWorld& world, float worldX, float w
 
 
 
+void clampWorldPosition(float& worldX, float& worldZ, float worldHalfExtent, float boundaryMargin) {
+  const float limit = worldHalfExtent - std::max(boundaryMargin, 0.0f);
+  if (limit > 0.0f) {
+    worldX = std::clamp(worldX, -limit, limit);
+    worldZ = std::clamp(worldZ, -limit, limit);
+  } else if (worldHalfExtent > 0.0f) {
+    worldX = std::clamp(worldX, -worldHalfExtent, worldHalfExtent);
+    worldZ = std::clamp(worldZ, -worldHalfExtent, worldHalfExtent);
+  }
+}
+
+
+
 void applyShoreAdvection(float& worldX, float& worldZ, const AdvectionVelocity& velocity,
 
                          float worldHalfExtent, float boundaryMargin) {
@@ -434,21 +447,7 @@ void applyShoreAdvection(float& worldX, float& worldZ, const AdvectionVelocity& 
 
   worldZ += vz;
 
-
-
-  if (limit > 0.0f) {
-
-    worldX = std::clamp(worldX, -limit, limit);
-
-    worldZ = std::clamp(worldZ, -limit, limit);
-
-  } else if (worldHalfExtent > 0.0f) {
-
-    worldX = std::clamp(worldX, -worldHalfExtent, worldHalfExtent);
-
-    worldZ = std::clamp(worldZ, -worldHalfExtent, worldHalfExtent);
-
-  }
+  clampWorldPosition(worldX, worldZ, worldHalfExtent, boundaryMargin);
 
 }
 

@@ -221,28 +221,31 @@ void appendGroundBoneStrip(std::vector<CellVertex>& verts, const SkeletonNode& p
   }
 }
 
-void appendHeadingArrow(std::vector<EnergonVertex>& verts, float wx, float wy, float wz, float heading,
-                        float length) {
-  const float y = wy + 0.35f;
+void appendHeadingChevron(std::vector<CellVertex>& verts, float wx, float wy, float wz, float heading,
+                          float length, float r, float g, float b, float a) {
+  const float y = wy + 0.14f;
   const float fx = std::sin(heading);
   const float fz = std::cos(heading);
-  const float hub = length * 0.15f;
-  const float tip = length * 1.05f;
-  const float wing = length * 0.22f;
-  const float px0 = wx + fx * hub;
-  const float pz0 = wz + fz * hub;
-  const float px1 = wx + fx * tip;
-  const float pz1 = wz + fz * tip;
-  const float lx = wx + fx * (tip - wing) - fz * wing * 0.45f;
-  const float lz = wz + fz * (tip - wing) + fx * wing * 0.45f;
-  const float rx = wx + fx * (tip - wing) + fz * wing * 0.45f;
-  const float rz = wz + fz * (tip - wing) - fx * wing * 0.45f;
+  const float px = -fz;
+  const float pz = fx;
+  const float back = length * 0.42f;
+  const float wing = length * 0.58f;
 
-  pushEnergonVertex(verts, px0, y, pz0, 0.2f, 1.0f, 1.0f, 1.0f);
-  pushEnergonVertex(verts, px1, y, pz1, 0.2f, 1.0f, 1.0f, 1.0f);
-  pushEnergonVertex(verts, lx, y, lz, 0.2f, 1.0f, 1.0f, 0.85f);
-  pushEnergonVertex(verts, px1, y, pz1, 0.2f, 1.0f, 1.0f, 1.0f);
-  pushEnergonVertex(verts, rx, y, rz, 0.2f, 1.0f, 1.0f, 0.85f);
+  const float tipX = wx + fx * length;
+  const float tipZ = wz + fz * length;
+  const float leftX = wx - fx * back + px * wing;
+  const float leftZ = wz - fz * back + pz * wing;
+  const float rightX = wx - fx * back - px * wing;
+  const float rightZ = wz - fz * back - pz * wing;
+
+  const CellVertex tri[] = {
+      {tipX, y, tipZ, r, g, b, a, 0.5f, 1.0f},
+      {leftX, y, leftZ, r * 0.92f, g * 0.92f, b * 0.92f, a * 0.88f, 0.0f, 0.0f},
+      {rightX, y, rightZ, r * 0.92f, g * 0.92f, b * 0.92f, a * 0.88f, 1.0f, 0.0f},
+  };
+  for (const CellVertex& vertex : tri) {
+    verts.push_back(vertex);
+  }
 }
 
 void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob) {
@@ -545,11 +548,7 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   std::vector<CellVertex> nodeVerts;
   std::vector<EnergonVertex> boneLineVerts;
   std::vector<EnergonVertex> neuralLineVerts;
-  std::vector<EnergonVertex> headingVerts;
-  nodeVerts.reserve(organisms.size() * 24);
-  boneLineVerts.reserve(organisms.size() * 16);
-  neuralLineVerts.reserve(organisms.size() * 8);
-  headingVerts.reserve(organisms.size() * 8);
+  nodeVerts.reserve(organisms.size() * 30);
 
   for (const Organism& organism : organisms) {
     if (!organism.alive) {
@@ -586,10 +585,13 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     }
 
     if (const SkeletonNode* root = organism.findNode(organism.rootNodeId)) {
-      if (root->neuron == NeuronType::Computer && organism.mouthCount() > 0) {
-        const float arrowLen = maxBoneLen > 0.0f ? maxBoneLen : 0.9f;
-        appendHeadingArrow(headingVerts, root->worldX, root->worldY, root->worldZ, organism.heading,
-                           arrowLen);
+      const bool showHeading =
+          (root->neuron == NeuronType::Computer && organism.mouthCount() > 0) ||
+          (root->neuron == NeuronType::Actuator && organism.hasActuatorNeurons());
+      if (showHeading) {
+        const float chevronLen = maxBoneLen > 0.0f ? maxBoneLen * 0.55f : 0.42f;
+        appendHeadingChevron(nodeVerts, root->worldX, root->worldY, root->worldZ, organism.heading,
+                             chevronLen, 0.28f, 0.98f, 1.0f, alpha * 0.92f);
       }
     }
 
@@ -603,6 +605,11 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
         g = 0.62f;
         b = 0.28f;
         halfSize = 0.13f;
+      } else if (node.neuron == NeuronType::Actuator) {
+        r = 0.78f;
+        g = 0.62f;
+        b = 0.88f;
+        halfSize = 0.15f;
       } else if (node.neuron == NeuronType::Computer) {
         r = 0.98f;
         g = 0.92f;
@@ -667,8 +674,6 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     cellProgram_.setMat4("uMvp", mvp);
     g.drawArrays(engine::gl::GlEnum::kTriangles, 0, cellVertexCount_);
   }
-
-  drawEnergonVerts(headingVerts);
 
   g.enable(engine::gl::GlEnum::kDepthTest);
   g.bindVertexArray(0);

@@ -18,6 +18,7 @@ struct CellPopulationStats {
   int stemCells = 0;
   int mouthOrganisms = 0;
   int mouthNeurons = 0;
+  int actuatorOrganisms = 0;
   int skeletonLinks = 0;
   int neuralAxons = 0;
 };
@@ -30,6 +31,8 @@ public:
   void seedMouthOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                           std::uint64_t seed, int mouthsPerOrganism = 1);
   void seedTwoMouthOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
+                             std::uint64_t seed);
+  void seedActuatorOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                              std::uint64_t seed);
 
   void tick(const BarrenWorld& world, EnergonField& energon, float cellSize, float heightScale);
