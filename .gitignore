@@ -1,0 +1,7 @@
+# evo-lab
+
+build/
+out/
+.vs/
+.vscode/
+compile_commands.json

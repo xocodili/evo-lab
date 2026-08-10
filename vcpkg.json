@@ -1,0 +1,8 @@
+{
+  "name": "evo-lab",
+  "version-string": "0.1.0",
+  "description": "Tidal evolutionary laboratory — Phase 0 barren world",
+  "dependencies": [
+    "catch2"
+  ]
+}
