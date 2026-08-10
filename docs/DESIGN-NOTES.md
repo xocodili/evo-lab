@@ -2,10 +2,12 @@
 
 Consolidated review of architecture, simulation, evolution, engine, and quantum-integration discussions.
 
-**Status:** Phase 2.x Twin Mouth (2 M, 2 axons) — developmental trust + chaos module shipped  
-**Last updated:** 2026-08-10 (chaos refactor, neural axon trust, spawn `finalizeSpawn`)
+**Status:** Phase 2.x Twin Mouth + water-column bands — public WIP  
+**Last updated:** 2026-08-10 (Noms naming, `WaterColumn`, shallow-water placement)
 
 **Delivery:** Native C++ binary (SDL desktop). Web viewer deferred.
+
+**Audience:** This document and the repo are **public**. Prefer stable terminology in docs; mark experimental APIs and behaviour explicitly.
 
 **Research posture:** The project author is **always open to interesting applications of quantum techniques** where the encoding is honest and the classical tank remains the arbiter of long-horizon survival. Propose new integration points freely; document oracle + register design before implementation.
 
@@ -103,9 +105,10 @@ Simplest “complex” organism for axon/trust experiments:
 ```
 
 - **Factory:** `makeTwoMouthOrganism()` — dumbbell topology; body storage on organism; per-mouth local `store`.
-- **Tick order (organism):** advect root → metabolise → feed (each M) → neural energy transfer → signal → **prune axons at 0% trust** → colony transfer.
-- **Signal:** Mouth emits bitten byte on outbound axons; otherwise heartbeat every 30 ticks from local store.
-- **Energy:** `trustFeed` gates sharing from source mouth store; scaled as `trustFeed / 256 × η_energy`.
+- **Tick order (organism):** advect root → metabolise → feed (each M) → **mouth signal fire** → prune axons at 0% trust → colony transfer.
+- **Bite:** Personal ingest only — byte + `kBiteCost` tax into mouth store (or **M-cloaca** spit if store full). **No axon fire on bite.**
+- **Mouth signal fire (`Organism::signal`):** receive → forward → spit. Under store pressure (≥24 B), heartbeat (every 30 ticks), or hard full: emit **signal tag** (`0xF0`, believe channel) then **feed burst** (`floor(64 × trustFeed/256 × η_energy)` bytes). Received overflow at dst → **M-cloaca**.
+- **Energy (legacy skeleton):** star-mouth rim→hub via bone `energyEta`. Neural feed uses signal-fire burst, not separate drip.
 
 #### Neural axon trust (developmental model)
 
@@ -150,15 +153,39 @@ At spawn, each axon gets developmental baseline **100% ± 3% jitter** on `trustB
 
 **Tides:** Global `water_level(t)` (sine or stepped cycle). A surface point is **wet** iff submerged: `h(x,z) < water_level(t)` (lake enclosure rules refined when organisms arrive).
 
+#### Water-column bands (shipped 2026-08)
+
+Noms do **not** use a deforming water mesh. Placement is a cheap **category model** over depth — one sample per entity per tick, no extra grids.
+
+| Band | Depth (sim units) | Meaning |
+|------|-------------------|---------|
+| **Dry** | 0 | Land / exposed shelf |
+| **Benthic** | ≤ 2 | Bed-dominated shallow wet |
+| **Shallow** | ≤ 6 | Under-surface shelf |
+| **Pelagic** | ≤ 18 | Mid column |
+| **OpenDeep** | > 18 | Deep open water (free surface still at top) |
+
+**Module:** `src/sim/WaterColumn.hpp` — `sampleWaterColumn`, `classifyWaterBand`, `placementY(column, NomHabitat)`.
+
+| `NomHabitat` | Placement when wet |
+|--------------|-------------------|
+| **Surface** (default swimmers, wet energon) | Free surface + clearance — **rides the tide** |
+| **Benthic** | Seabed + clearance |
+| **Shallow** / **Pelagic** | Lerp between bed and surface (for future morphologies) |
+
+Constants: `kWaterBandBenthicMaxDepth`, `kWaterBandShallowMaxDepth`, `kWaterBandPelagicMaxDepth` in `WaterColumn.hpp`.
+
+**Why categories:** Correct enough for a tidal evo lab, discrete enough for future **P** senses (“which band am I in?”), cheap enough to run forever. Terrain wetness is still **vertex colour** on fixed geometry; Noms use the band model for vertical truth.
+
 | Tide state | Effect |
 |------------|--------|
 | **High** | Seas connect; low islands shrink; lake shores expand |
 | **Low** | Land bridges, exposed shelves; refugia in pools and lakes |
 | **Transition** | Emergent isolation / migration corridors |
 
-**Organisms (post–Phase 0):** Aquatic—swim where wet. Stranded on land when exposed: stress/dormancy/death (tune). Box2D on XZ plane with height sampling. **No land survival** until transitional morphologies are designed.
+**Organisms (post–Phase 0):** Aquatic **Noms** — swim where wet. Stranded on land when exposed: stress/dormancy/death (tune). Kinematic FK on XZ with **water-column placement** for Y. **No land survival** until transitional morphologies are designed.
 
-**Energon (post–Phase 0):** The unified **information–energy** substrate of the world (named after Transformers’ energon—food as bytes). See §3.5.
+**Energon (post–Phase 0):** The unified **information–energy** substrate (technical name). Sunfall strings and fragments are **Noms** too — they nom nothing, but they get nommed. See §3.5.
 
 **Defer:** multi-basin independent water levels; Navier–Stokes; arbitrary file drops.
 
@@ -554,6 +581,7 @@ Target **Windows, macOS, Linux** via SDL platform backend. PS5 = future `platfor
 
 | File | Role |
 |------|------|
+| `src/sim/WaterColumn.hpp`, `.cpp` | Depth bands, Nom habitat placement, tide-riding Y |
 | `src/sim/Chaos.hpp`, `Chaos.cpp` | ε rates, ±3% jitter, spawn RNG, `chaosInitialStorage` |
 | `src/sim/NeuralAxon.hpp`, `.cpp` | Axon struct, developmental trust init, pruning predicate |
 | `src/sim/Organism.hpp`, `.cpp` | Skeleton + neural graphs, `finalizeSpawn`, tick methods |
@@ -586,7 +614,9 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 
 **2.2 Kinematic mouth organisms ✓:** Star-mouth (Computer hub + rim Mouths); organism yaw; food/tide heading; skeleton FK.
 
-**2.x Twin Mouth ✓ (current visual default):** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust. Visual app seeds ~60 twin-mouth organisms.
+**2.x Twin Mouth ✓ (current visual default):** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust. Visual app seeds ~60 twin-mouth Noms.
+
+**2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
 
 **P neuron (planned):** Perceptor should register **tidal delta** (`waterLevelDelta`, local flow) as a paid sensory input — rate-of-change perception, not static wet/dry alone.
 
@@ -664,6 +694,7 @@ Grover at seed/mating boundaries, QAGA mutation, QPU via simulators first. Only 
 
 | Term | Meaning |
 |------|---------|
+| **Nom** | Collective name for things in the wet layer that exist to **nom** (organisms + energon food) |
 | **StemCell** | Undifferentiated life unit (Phase 2.0); base for future P/M/C/A differentiation |
 | **Twin-string** | `(G_seq , G_axon)` genotype encoding—neuron chain + outbound axon targets |
 | **Operational floor** | Static viability predicate (`valid(G)`) before spawn or after mating collapse |
@@ -687,5 +718,7 @@ Grover at seed/mating boundaries, QAGA mutation, QPU via simulators first. Only 
 | **Skeleton link** | Kinematic bone between skeleton nodes; optional legacy energy η (0 for twin-mouth) |
 | **finalizeSpawn** | Single organism hook: developmental axon trust + ±3% jitter on skeleton/heading |
 | **Chaos module** | `Chaos.hpp` — all ε rates, jitter helpers, spawn RNG salts |
+| **Water column** | Depth band + habitat placement at a world XZ sample (`WaterColumn.hpp`) |
+| **NomHabitat** | Preferred vertical zone: Surface, Benthic, Shallow, Pelagic |
 | **Axon pruning** | Structural removal when both trust channels hit 0 (not inhibition) |
 | **Focus** | Perceptor scan region (direction + width) |

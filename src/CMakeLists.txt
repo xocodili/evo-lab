@@ -25,6 +25,7 @@ add_library(evolab_sim STATIC
   sim/CellPopulation.cpp
   sim/TideAdvection.cpp
   sim/Hydrology.cpp
+  sim/WaterColumn.cpp
 )
 
 target_include_directories(evolab_sim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

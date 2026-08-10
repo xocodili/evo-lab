@@ -5,6 +5,7 @@
 #include "sim/Chaos.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
+#include "sim/WaterColumn.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
@@ -52,19 +53,6 @@ private:
   std::vector<int> rank_;
 };
 
-float surfaceY(const BarrenWorld& world, float wx, float wz, float cellSize, float heightScale,
-               bool& wet) {
-  const float terrainHeight = world.heightAtWorld(wx, wz, cellSize);
-  const float terrainY = terrainHeight * heightScale;
-  const float localWaterLevel = world.effectiveWaterLevelAt(wx, wz, cellSize);
-  const float waterY = localWaterLevel * heightScale;
-  wet = terrainHeight < localWaterLevel;
-  if (wet) {
-    return std::max(terrainY, waterY);
-  }
-  return terrainY;
-}
-
 float worldHalfExtent(const BarrenWorld& world, float cellSize) {
   const int res = world.heightmap().resolution;
   if (res <= 1 || cellSize <= 0.0f) {
@@ -82,9 +70,8 @@ bool trySampleWetSpawnSite(const BarrenWorld& world, float cellSize, float heigh
     return false;
   }
 
-  bool wet = false;
-  const float surface = surfaceY(world, wx, wz, cellSize, heightScale, wet);
-  wy = surface + chaosJitterFloat(kSpawnSurfaceYOffset, rng);
+  const WaterColumn column = sampleWaterColumn(world, wx, wz, cellSize, heightScale);
+  wy = column.surfaceY + chaosJitterFloat(kSpawnSurfaceYOffset, rng);
   return true;
 }
 
@@ -249,7 +236,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
     organism.transferEnergy(energon, cellSize);
   }
   for (Organism& organism : organisms_) {
-    organism.signal(world.tickCount());
+    organism.signal(energon, world.tickCount());
   }
   for (Organism& organism : organisms_) {
     organism.pruneNeuralAxons();

@@ -143,7 +143,7 @@ public:
 
   void transferEnergy(EnergonField& field, float cellSize);
 
-  void signal(std::uint64_t simTick);
+  void signal(EnergonField& field, std::uint64_t simTick);
 
   void transferColony();
 

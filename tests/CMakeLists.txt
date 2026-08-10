@@ -22,6 +22,7 @@ add_executable(evo-lab-tests
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp
   unit/test_hydrology.cpp
+  unit/test_water_column.cpp
 )
 
 target_link_libraries(evo-lab-tests PRIVATE evolab_sim evolab_engine Catch2::Catch2WithMain)

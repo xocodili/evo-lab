@@ -15,6 +15,11 @@ inline constexpr std::uint32_t kEnergonUnitsPerByte = 2u;
 inline constexpr std::uint32_t kBiteCost = 1u;
 // Empty-string contact: same tax, paid from organism body storage.
 inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
+inline constexpr std::uint32_t kMouthStoreSoftPressureBytes = 8u;
+inline constexpr std::uint32_t kMouthSignalHeartbeatTicks = 30u;
+inline constexpr std::uint8_t kMouthSignalTagShipping = 0xF0u;
+inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
+inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.
 inline constexpr float kMouthContactRadiusFactor = 0.65f;
 

@@ -69,8 +69,6 @@ public:
 private:
   void spawnSunfall(const BarrenWorld& world, float sunIntensity, float cellSize);
   void updateBlob(EnergonBlob& blob, const BarrenWorld& world, float cellSize, float heightScale);
-  float surfaceY(const BarrenWorld& world, float wx, float wz, float cellSize, float heightScale,
-                   bool& wet) const;
 
   EnergonConfig config_;
   std::uint64_t seed_ = 0;

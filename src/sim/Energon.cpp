@@ -4,6 +4,7 @@
 #include "sim/Chaos.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/TideAdvection.hpp"
+#include "sim/WaterColumn.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -170,19 +171,6 @@ void EnergonField::purgeDepletedBlobs() {
                 blobs_.end());
 }
 
-float EnergonField::surfaceY(const BarrenWorld& world, float wx, float wz, float cellSize,
-                              float heightScale, bool& wet) const {
-  const float terrainHeight = world.heightAtWorld(wx, wz, cellSize);
-  const float terrainY = terrainHeight * heightScale;
-  const float localWaterLevel = world.effectiveWaterLevelAt(wx, wz, cellSize);
-  const float waterY = localWaterLevel * heightScale;
-  wet = terrainHeight < localWaterLevel;
-  if (wet) {
-    return std::max(terrainY, waterY);
-  }
-  return terrainY;
-}
-
 void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
                                  float cellSize) {
   if (sunIntensity <= 0.0f || static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
@@ -234,23 +222,26 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
   const float halfExtent =
       res > 1 ? static_cast<float>(res - 1) * cellSize * 0.5f : 0.0f;
 
-  bool wet = false;
-  const float surface = surfaceY(world, blob.x, blob.z, cellSize, heightScale, wet);
+  const WaterColumn column =
+      sampleWaterColumn(world, blob.x, blob.z, cellSize, heightScale);
+  const float landingY = column.wet ? column.surfaceY + kEnergonSurfaceClearance
+                                    : placementY(column, NomHabitat::Benthic);
 
   if (!blob.grounded) {
     blob.y += blob.vy * (1.0f / 60.0f);
-    if (blob.y <= surface) {
-      blob.y = surface + 0.05f;
+    if (blob.y <= landingY) {
+      blob.y = landingY;
       blob.vy = 0.0f;
       blob.grounded = true;
-      blob.onWet = wet;
-      blob.ttl = wet ? config_.ttlWetSeconds : config_.ttlDrySeconds;
+      blob.onWet = column.wet;
+      blob.ttl = column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds;
       std::mt19937_64 rng(mixSeed(seed_, blob.id * 2654435761ULL));
       std::uniform_real_distribution<float> headingDist(0.0f, kTwoPi);
       energonBlobLayoutSegment(blob, cellSize, chaosJitterHeading(headingDist(rng), rng));
     }
   } else {
-    blob.onWet = wet;
+    blob.onWet = column.wet;
+    blob.y = landingY;
     const float oldX = blob.x;
     const float oldZ = blob.z;
     const AdvectionVelocity velocity =
@@ -264,7 +255,7 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
     blob.tailZ += dz;
 
     const float decayPerTick =
-        (wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
+        (column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
     if (decayPerTick > 0.0f) {
       blob.ttl -= 1.0f / decayPerTick;
     }

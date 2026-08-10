@@ -2,6 +2,7 @@
 
 #include "engine/gl/GlContext.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 
 #include <algorithm>
@@ -257,13 +258,19 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
   float b = 0.20f + 0.35f * (static_cast<float>(bb) / 255.0f);
 
   float alpha = std::min(1.0f, std::max(0.08f, blob.ttl / 50.0f));
-  if (blob.grounded && !blob.onWet) {
+  if (blob.origin == evolab::EnergonOrigin::Fragment) {
+    // M-cloaca spit — siren red (rejected / overflow byte).
+    r = 1.0f;
+    g = 0.10f;
+    b = 0.06f;
+    alpha = std::min(1.0f, alpha + 0.35f);
+  } else if (blob.grounded && !blob.onWet) {
     const float grey = 0.35f + 0.15f * byteNorm;
     r = grey;
     g = grey * 0.95f;
     b = grey * 0.85f;
     alpha *= 0.65f;
-  } else if (blob.onWet) {
+  } else if (blob.onWet && blob.origin != evolab::EnergonOrigin::Fragment) {
     r += 0.12f * byteNorm;
     g += 0.10f * byteNorm;
     alpha = std::min(1.0f, alpha + 0.15f);

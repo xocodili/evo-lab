@@ -6,6 +6,7 @@
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/TideAdvection.hpp"
+#include "sim/WaterColumn.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
@@ -32,26 +33,160 @@ void consumeBytes(std::vector<std::uint8_t>& storage, std::uint32_t count) {
   storage.erase(storage.end() - static_cast<std::ptrdiff_t>(removeCount), storage.end());
 }
 
-void creditNodeStore(Organism& organism, SkeletonNode& node, EnergonField& field,
-                     std::uint32_t units) {
+void popFrontBytes(std::vector<std::uint8_t>& storage, std::size_t count) {
+  if (count == 0 || storage.empty()) {
+    return;
+  }
+  const std::size_t removeCount = std::min(storage.size(), count);
+  storage.erase(storage.begin(), storage.begin() + static_cast<std::ptrdiff_t>(removeCount));
+}
+
+void mouthSpitByte(const SkeletonNode& node, EnergonField& field, std::uint8_t byte) {
+  EnergonBlob fragment;
+  fragment.data = byte;
+  fragment.remaining = 1;
+  fragment.initialBytes = 1;
+  fragment.origin = EnergonOrigin::Fragment;
+  fragment.x = node.worldX;
+  fragment.z = node.worldZ + kWorldCellSize * kMouthContactRadiusFactor * 0.35f;
+  fragment.y = node.worldY;
+  fragment.grounded = true;
+  fragment.onWet = true;
+  fragment.ttl = field.config().ttlWetSeconds;
+  energonBlobInitPoint(fragment);
+  field.injectBlob(fragment);
+}
+
+void creditMouthStore(SkeletonNode& node, EnergonField& field, std::uint8_t byte,
+                      std::uint32_t units) {
   for (std::uint32_t i = 0; i < units; ++i) {
+    const std::uint8_t storedByte = (i == 0) ? byte : byte;
     if (node.store.size() < kMouthLocalStoreMaxBytes) {
-      node.store.push_back(1);
+      node.store.push_back(storedByte);
+      continue;
+    }
+    mouthSpitByte(node, field, storedByte);
+  }
+}
+
+bool mouthShouldForward(const SkeletonNode& node, std::uint64_t simTick) {
+  if (node.store.empty()) {
+    return false;
+  }
+  if (node.store.size() >= kMouthStoreSoftPressureBytes) {
+    return true;
+  }
+  if (node.store.size() >= kMouthLocalStoreMaxBytes) {
+    return true;
+  }
+  return kMouthSignalHeartbeatTicks > 0 && (simTick % kMouthSignalHeartbeatTicks) == 0;
+}
+
+struct AxonOutboundPlan {
+  std::uint32_t srcNodeId = 0;
+  std::uint32_t dstNodeId = 0;
+  bool signalValid = false;
+  std::uint8_t signalByte = 0;
+  std::vector<std::uint8_t> feedBytes;
+};
+
+void buildOutboundPlans(const Organism& organism, std::uint64_t simTick,
+                        std::vector<AxonOutboundPlan>& plans) {
+  plans.clear();
+  plans.reserve(organism.neuralAxons.size());
+
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.neuron != NeuronType::Mouth || !mouthShouldForward(node, simTick)) {
       continue;
     }
 
-    EnergonBlob fragment;
-    fragment.data = 1;
-    fragment.remaining = 1;
-    fragment.initialBytes = 1;
-    fragment.origin = EnergonOrigin::Fragment;
-    fragment.x = node.worldX;
-    fragment.z = node.worldZ + kWorldCellSize * kMouthContactRadiusFactor * 0.35f;
-    fragment.y = node.worldY;
-    fragment.grounded = true;
-    fragment.onWet = true;
-    fragment.ttl = field.config().ttlWetSeconds;
-    field.injectBlob(fragment);
+    for (const NeuralAxon& axon : organism.neuralAxons) {
+      if (axon.srcNodeId != node.id) {
+        continue;
+      }
+
+      AxonOutboundPlan plan;
+      plan.srcNodeId = node.id;
+      plan.dstNodeId = axon.dstNodeId;
+
+      if (axonSignalGateOpen(axon)) {
+        plan.signalValid = true;
+        plan.signalByte = kMouthSignalTagShipping;
+      }
+
+      const int bandwidth = axonFeedBandwidth(axon);
+      if (bandwidth > 0) {
+        const std::size_t take =
+            std::min(node.store.size(), static_cast<std::size_t>(bandwidth));
+        plan.feedBytes.assign(node.store.begin(),
+                              node.store.begin() + static_cast<std::ptrdiff_t>(take));
+      }
+
+      if (plan.signalValid || !plan.feedBytes.empty()) {
+        plans.push_back(std::move(plan));
+      }
+    }
+  }
+}
+
+void deliverOutboundPlans(Organism& organism, EnergonField& field, std::uint64_t simTick,
+                          const std::vector<AxonOutboundPlan>& plans) {
+  for (const AxonOutboundPlan& plan : plans) {
+    NeuralAxon* axon = organism.findNeuralAxon(plan.srcNodeId, plan.dstNodeId);
+    if (axon == nullptr) {
+      continue;
+    }
+
+    SkeletonNode* dst = organism.findNode(plan.dstNodeId);
+    if (dst == nullptr) {
+      continue;
+    }
+
+    if (plan.signalValid) {
+      axon->pendingSend.valid = true;
+      axon->pendingSend.byte = plan.signalByte;
+      axon->pendingSend.tick = simTick;
+      axon->lastSentByte = plan.signalByte;
+      axon->lastReceived.valid = true;
+      axon->lastReceived.byte = plan.signalByte;
+      axon->lastReceived.tick = simTick;
+    } else {
+      axon->pendingSend.valid = false;
+    }
+
+    for (std::uint8_t byte : plan.feedBytes) {
+      if (dst->store.size() < kMouthLocalStoreMaxBytes) {
+        dst->store.push_back(byte);
+      } else {
+        mouthSpitByte(*dst, field, byte);
+      }
+    }
+  }
+}
+
+void applyOutboundPlans(Organism& organism, const std::vector<AxonOutboundPlan>& plans) {
+  for (const AxonOutboundPlan& plan : plans) {
+    if (plan.feedBytes.empty()) {
+      continue;
+    }
+    SkeletonNode* src = organism.findNode(plan.srcNodeId);
+    if (src == nullptr) {
+      continue;
+    }
+    popFrontBytes(src->store, plan.feedBytes.size());
+  }
+}
+
+void spitMouthOverflow(Organism& organism, EnergonField& field) {
+  for (SkeletonNode& node : organism.nodes) {
+    if (node.neuron != NeuronType::Mouth) {
+      continue;
+    }
+    while (node.store.size() > kMouthLocalStoreMaxBytes) {
+      const std::uint8_t byte = node.store.front();
+      popFrontBytes(node.store, 1);
+      mouthSpitByte(node, field, byte);
+    }
   }
 }
 
@@ -141,26 +276,21 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
 
   const std::uint32_t gross = kEnergonUnitsPerByte;
   const std::uint32_t net = gross > kBiteCost ? gross - kBiteCost : 0u;
-  creditNodeStore(organism, node, field, net);
+  creditMouthStore(node, field, bite.byte, net);
   node.ateThisTick = true;
-  node.lastEmittedByte = bite.byte;
-}
-
-float surfaceY(const BarrenWorld& world, float wx, float wz, float cellSize, float heightScale,
-               bool& wet) {
-  const float terrainHeight = world.heightAtWorld(wx, wz, cellSize);
-  const float terrainY = terrainHeight * heightScale;
-  const float localWaterLevel = world.effectiveWaterLevelAt(wx, wz, cellSize);
-  const float waterY = localWaterLevel * heightScale;
-  wet = terrainHeight < localWaterLevel;
-  if (wet) {
-    return std::max(terrainY, waterY);
-  }
-  return terrainY;
 }
 
 void consumeBasalCost(Organism& organism) {
   std::uint32_t cost = kStemCellBasalCostPerTick;
+
+  // Mouth local stores are shipping buffers — basal burns body fuel first.
+  if (organism.hasMouthNeurons() && cost > 0 && !organism.bodyStorage.empty()) {
+    const std::uint32_t fromBody =
+        std::min(cost, static_cast<std::uint32_t>(organism.bodyStorage.size()));
+    consumeBytes(organism.bodyStorage, fromBody);
+    cost -= fromBody;
+  }
+
   for (SkeletonNode& node : organism.nodes) {
     while (cost > 0 && !node.store.empty()) {
       node.store.pop_back();
@@ -362,33 +492,6 @@ void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity
   }
 }
 
-void transferNeuralEnergy(Organism& organism) {
-  for (NeuralAxon& axon : organism.neuralAxons) {
-    if (axon.trustFeed < kNeuralAxonMinTrustFeed) {
-      continue;
-    }
-    SkeletonNode* src = organism.findNode(axon.srcNodeId);
-    SkeletonNode* dst = organism.findNode(axon.dstNodeId);
-    if (src == nullptr || dst == nullptr) {
-      continue;
-    }
-    if (src->store.size() < kNeuralAxonShareMinStoreBytes) {
-      continue;
-    }
-    if (dst->store.size() >= kMouthLocalStoreMaxBytes) {
-      continue;
-    }
-
-    const float feedScale = axonTrustScale(axon.trustFeed) * axon.etaEnergy;
-    if (feedScale < 0.05f) {
-      continue;
-    }
-
-    dst->store.push_back(src->store.back());
-    src->store.pop_back();
-  }
-}
-
 }  // namespace
 
 SkeletonNode* Organism::findNode(std::uint32_t nodeId) {
@@ -455,8 +558,9 @@ void Organism::updateKinematics(const BarrenWorld& world, float cellSize, float 
     return;
   }
 
-  bool wet = false;
-  root->worldY = surfaceY(world, root->worldX, root->worldZ, cellSize, heightScale, wet) + 0.12f;
+  const WaterColumn rootColumn =
+      sampleWaterColumn(world, root->worldX, root->worldZ, cellSize, heightScale);
+  root->worldY = placementY(rootColumn, NomHabitat::Surface);
 
   std::vector<bool> placed(nodes.size(), false);
   auto nodeIndex = [this](std::uint32_t id) -> std::size_t {
@@ -487,8 +591,9 @@ void Organism::updateKinematics(const BarrenWorld& world, float cellSize, float 
       const float angle = link.jointAngle + heading;
       child.worldX = parent.worldX + std::sin(angle) * link.restLength;
       child.worldZ = parent.worldZ + std::cos(angle) * link.restLength;
-      child.worldY =
-          surfaceY(world, child.worldX, child.worldZ, cellSize, heightScale, wet) + 0.12f;
+      const WaterColumn childColumn =
+          sampleWaterColumn(world, child.worldX, child.worldZ, cellSize, heightScale);
+      child.worldY = placementY(childColumn, NomHabitat::Surface);
       placed[childIdx] = true;
       progress = true;
     }
@@ -557,7 +662,6 @@ void Organism::transferEnergy(EnergonField& field, float cellSize) {
   }
 
   if (hasNeuralAxons()) {
-    transferNeuralEnergy(*this);
     return;
   }
 
@@ -601,44 +705,16 @@ void Organism::transferEnergy(EnergonField& field, float cellSize) {
   }
 }
 
-void Organism::signal(std::uint64_t simTick) {
+void Organism::signal(EnergonField& field, std::uint64_t simTick) {
   if (!alive || neuralAxons.empty()) {
     return;
   }
 
-  for (NeuralAxon& axon : neuralAxons) {
-    axon.pendingSend.valid = false;
-  }
-
-  for (SkeletonNode& node : nodes) {
-    if (node.neuron != NeuronType::Mouth) {
-      continue;
-    }
-
-    std::uint8_t byte = 0;
-    bool emit = false;
-    if (node.ateThisTick) {
-      byte = node.lastEmittedByte;
-      emit = true;
-    } else if (!node.store.empty()) {
-      byte = node.store.back();
-      emit = (simTick % 30 == 0);
-    }
-    if (!emit) {
-      continue;
-    }
-
-    for (NeuralAxon& axon : neuralAxons) {
-      if (axon.srcNodeId != node.id) {
-        continue;
-      }
-      axon.pendingSend.byte = byte;
-      axon.pendingSend.valid = true;
-      axon.pendingSend.tick = simTick;
-      axon.lastSentByte = byte;
-      axon.lastReceived = axon.pendingSend;
-    }
-  }
+  std::vector<AxonOutboundPlan> plans;
+  buildOutboundPlans(*this, simTick, plans);
+  deliverOutboundPlans(*this, field, simTick, plans);
+  applyOutboundPlans(*this, plans);
+  spitMouthOverflow(*this, field);
 }
 
 void Organism::transferColony() {}

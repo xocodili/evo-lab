@@ -27,6 +27,9 @@ struct NeuralAxon {
 
 float axonTrustScale(std::uint16_t trust);
 
+int axonFeedBandwidth(const NeuralAxon& axon);
+bool axonSignalGateOpen(const NeuralAxon& axon);
+
 bool axonMarkedForPruning(const NeuralAxon& axon);
 
 // Developmental baseline (100%) plus ±3% jitter on axon-side parameters only.
