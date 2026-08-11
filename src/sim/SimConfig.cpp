@@ -1,0 +1,65 @@
+#include "sim/SimConfig.hpp"
+
+#include "sim/Tide.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <string>
+
+namespace evolab {
+
+SeedArchetype parseSeedArchetype(const char* text) {
+  if (text == nullptr) {
+    return SeedArchetype::PerceptorMouthActuator;
+  }
+  std::string value(text);
+  for (char& ch : value) {
+    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  }
+  if (value == "stem" || value == "stemcell") {
+    return SeedArchetype::StemCell;
+  }
+  if (value == "twin" || value == "twomouth") {
+    return SeedArchetype::TwinMouth;
+  }
+  if (value == "actuator" || value == "a") {
+    return SeedArchetype::Actuator;
+  }
+  if (value == "ma" || value == "mouth-actuator" || value == "mouthactuator") {
+    return SeedArchetype::MouthActuator;
+  }
+  if (value == "pma" || value == "perceptor-ma" || value == "perceptormouthactuator") {
+    return SeedArchetype::PerceptorMouthActuator;
+  }
+  return SeedArchetype::PerceptorMouthActuator;
+}
+
+const char* seedArchetypeLabel(SeedArchetype archetype) {
+  switch (archetype) {
+    case SeedArchetype::StemCell:
+      return "StemCell";
+    case SeedArchetype::TwinMouth:
+      return "Twin Mouth";
+    case SeedArchetype::Actuator:
+      return "Actuator";
+    case SeedArchetype::MouthActuator:
+      return "Mouth->Actuator [MA]";
+    case SeedArchetype::PerceptorMouthActuator:
+      return "Perceptor->Mouth->Actuator [PMA]";
+  }
+  return "Unknown";
+}
+
+std::string windowTitleForConfig(const SimConfig& config) {
+  return std::string("evo-lab — Phase 2.x ") + seedArchetypeLabel(config.archetype);
+}
+
+Tide makeTideFromConfig(const SimConfig& config) {
+  TideConfig tideConfig;
+  if (config.tidePeriodTicks > 0.0f) {
+    tideConfig.periodTicks = config.tidePeriodTicks;
+  }
+  return Tide(tideConfig);
+}
+
+}  // namespace evolab

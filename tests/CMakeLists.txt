@@ -15,18 +15,21 @@ add_executable(evo-lab-tests
   unit/test_wetness.cpp
   unit/test_barren_world.cpp
   unit/test_camera.cpp
+  unit/test_engine_scaffold.cpp
   unit/test_energon.cpp
   unit/test_stem_cell.cpp
   unit/test_skeleton.cpp
   unit/test_two_mouth.cpp
   unit/test_actuator.cpp
+  unit/test_mouth_actuator.cpp
+  unit/test_pma.cpp
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp
   unit/test_hydrology.cpp
   unit/test_water_column.cpp
 )
 
-target_link_libraries(evo-lab-tests PRIVATE evolab_sim evolab_engine Catch2::Catch2WithMain)
+target_link_libraries(evo-lab-tests PRIVATE evolab_sim evolab_game evolab_engine Catch2::Catch2WithMain)
 
 if(WIN32)
   target_link_libraries(evo-lab-tests PRIVATE opengl32 imm32 version setupapi winmm)

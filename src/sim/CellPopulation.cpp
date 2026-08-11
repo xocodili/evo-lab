@@ -3,6 +3,7 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/NeuronTick.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WaterColumn.hpp"
@@ -238,9 +239,60 @@ void CellPopulation::seedActuatorOrganisms(const BarrenWorld& world, float cellS
       });
 }
 
+void CellPopulation::seedMouthActuatorOrganisms(const BarrenWorld& world, float cellSize,
+                                                float heightScale, int count, std::uint64_t seed) {
+  (void)seed;
+  seedOnWetTerrain(
+      world, cellSize, heightScale, count, kChaosSaltMouthActuator, true, 100,
+      [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
+        Organism organism = makeMouthActuatorOrganism(
+            nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount(),
+            nominalBoneLength(cellSize));
+        organism.heading = chaosSpawnHeading(rng);
+        return organism;
+      },
+      [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
+        (void)rng;
+        organism.updateKinematics(world, cellSize, heightScale);
+        organism.landAdjacent =
+            organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
+      });
+}
+
+void CellPopulation::seedPmaOrganisms(const BarrenWorld& world, float cellSize, float heightScale,
+                                      int count, std::uint64_t seed) {
+  (void)seed;
+  seedOnWetTerrain(
+      world, cellSize, heightScale, count, kChaosSaltPma, true, 100,
+      [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
+        Organism organism = makePerceptorMouthActuatorOrganism(
+            nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount(),
+            nominalBoneLength(cellSize));
+        organism.heading = chaosSpawnHeading(rng);
+        return organism;
+      },
+      [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
+        (void)rng;
+        organism.updateKinematics(world, cellSize, heightScale);
+        organism.landAdjacent =
+            organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
+      });
+}
+
 void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float cellSize,
                           float heightScale) {
   const float halfExtent = worldHalfExtent(world, cellSize);
+  for (Organism& organism : organisms_) {
+    organism.feed(energon, cellSize);
+  }
+  for (Organism& organism : organisms_) {
+    organism.perceive(world, energon, cellSize, halfExtent, organisms_, world.tickCount());
+  }
+  const OrganismTickContext tickCtx{world,     energon,     cellSize,
+                                    heightScale, halfExtent, world.tickCount()};
+  for (Organism& organism : organisms_) {
+    runOrganismPreAdvectHooks(organism, tickCtx);
+  }
   for (Organism& organism : organisms_) {
     organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
   }
@@ -248,7 +300,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
     organism.metabolise(world, cellSize, heightScale);
   }
   for (Organism& organism : organisms_) {
-    organism.feed(energon, cellSize);
+    organism.tickNeuronViability(energon);
   }
   energon.purgeDepletedBlobs();
   for (Organism& organism : organisms_) {

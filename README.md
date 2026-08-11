@@ -18,12 +18,13 @@ Energon is still the technical term for the food substrate; **Nom** is the frien
 ## Current snapshot (Phase 2.x)
 
 - Procedural heightmap terrain with **global tides** and hydraulic spill/lake rules
-- **Water-column bands** — dry / benthic / shallow / pelagic / open deep — so Noms sit on the seabed or ride the free surface instead of hovering over painted slopes
-- **Twin-mouth organisms** — two mouths, one bone, bidirectional neural axons, developmental trust, spawn chaos (±3%), axon pruning
-- Interactive **SDL + OpenGL** viewer (~60 twin-mouth Noms seeded on wet terrain)
+- **Water-column bands** — dry / benthic / shallow / pelagic / open deep
+- **Mouth→Actuator [MA]** chain — M→A `I_ATE` inhibits crawl; A→M `I_ACTUATE` / `I_HUNGER`; rigid skeleton propulsion
+- Also available via CLI: stem cells, twin-mouth, pure actuator archetypes
+- Interactive **SDL + OpenGL** viewer (default: ~60 `[MA]` Noms on wet terrain)
 - **Catch2** unit tests + headless smoke test
 
-**Not yet:** mating/genetics, full P/M/C/A chain, Hebbian trust updates, land survival.
+**Not yet:** mating/genetics, perceptors (P), full P/M/C/A chain, Hebbian trust updates.
 
 ## Design documentation
 
@@ -49,10 +50,12 @@ ctest --test-dir build --output-on-failure
 
 ```powershell
 .\build\src\evo-lab.exe
-# optional: --seed 42 --resolution 128
+# optional: --seed 42 --resolution 128 --archetype ma --nom-count 60
 ```
 
-Window title: **evo-lab — Phase 2.x Twin Mouth**. Hover an organism for architecture/trust readout.
+Window title reflects the selected archetype (default **Mouth→Actuator [MA]**). Hover a Nom for architecture readout.
+
+**Archetypes:** `stem`, `twomouth`, `actuator`, `ma`
 
 **Controls:** drag = orbit · scroll = zoom · **Space** = pause sim/tide · **R** = regenerate world
 

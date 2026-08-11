@@ -5,13 +5,21 @@ namespace evolab::game {
 namespace {
 
 const char* kInspectSizeTemplate =
-    "Organism #99999\n"
-    "Type: twin mouth (2 M, 2 axons)\n"
-    "Nodes: 99  Bone: 99  Heading: 999 deg\n"
-    "Body: 999999999 bytes (99.99 d)  Node stores: 999999999\n"
-    "Axon M1→M2 feed:999 believe:999 last:0xFF recv:yes\n"
-    "Axon M2→M1 feed:999 believe:999 last:0xFF recv:yes\n"
-    "Land-adjacent: yes  tick 9999999999  alive";
+    "Nom #99999\n"
+    "Type: perceptor->mouth->actuator [PMA]\n"
+    "Nodes: 3  Links: 2  Axons: 4\n"
+    "Heading: 999 deg\n"
+    "Energon (tick 9999999999):\n"
+    "  P [sense]:  999999 B  alive  scan: paid (99 B)\n"
+    "  M [mouth]:  999999 B  alive  ate: yes\n"
+    "  A [motor]:  999999 B  alive\n"
+    "Perception (last tick):\n"
+    "  tag: SENSE_ORGANISM (0xB2)  bearing: +999 deg  range: 999%\n"
+    "Signals (last tick):\n"
+    "  P->M: 0xB2 (SENSE_ORGANISM)  P->A: 0xB2 (SENSE_ORGANISM)\n"
+    "  M->A: active  A->M: active\n"
+    "  stroke: paid (99 B)  inhibit: yes (I_ATE)\n"
+    "Land-adjacent: yes  alive";
 
 }  // namespace
 

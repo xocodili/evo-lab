@@ -3,6 +3,7 @@
 #include "sim/CellPopulation.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
+#include "game/OrganismInspector.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WorldConstants.hpp"
@@ -184,7 +185,7 @@ TEST_CASE("middle bite snips one energon string into two fragments", "[mouth]") 
 TEST_CASE("architecture label describes kinetic skeleton", "[skeleton]") {
   evolab::Organism organism =
       evolab::makeStarMouthOrganism(2, 0.0f, 0.0f, 1.0f, 10, 0, 2, 1.0f);
-  const std::string label = organism.architectureLabel();
+  const std::string label = evolab::game::formatOrganismArchitectureLabel(organism);
   REQUIRE(label.find("kinetic mouth") != std::string::npos);
   REQUIRE(label.find("Links: 2") != std::string::npos);
 }

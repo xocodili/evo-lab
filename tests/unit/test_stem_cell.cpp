@@ -1,6 +1,8 @@
+#include "sim/Energon.hpp"
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/CellPopulation.hpp"
+#include "game/OrganismInspector.hpp"
 #include "sim/Organism.hpp"
 #include "sim/WorldConstants.hpp"
 
@@ -10,17 +12,23 @@
 
 TEST_CASE("undifferentiated organism basal metabolism consumes one byte per tick", "[stemcell]") {
   evolab::BarrenWorld world(42, 32);
+  evolab::EnergonField energon(1, {});
   evolab::Organism organism = evolab::makeUndifferentiatedOrganism(1, 0.0f, 0.0f, 1.0f, 10, 0);
   organism.alive = true;
 
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  organism.tickNeuronViability(energon);
   REQUIRE(organism.alive);
   REQUIRE(organism.bodyStorage.size() == 9);
 
   organism.bodyStorage.resize(1);
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  REQUIRE(!organism.alive);
+  organism.tickNeuronViability(energon);
+  REQUIRE(organism.alive);
   REQUIRE(organism.bodyStorage.empty());
+
+  organism.tickNeuronViability(energon);
+  REQUIRE(!organism.alive);
 }
 
 TEST_CASE("stem cell storage constants match sixty hertz day length", "[stemcell]") {
@@ -68,6 +76,8 @@ TEST_CASE("population tick removes dead organisms after metabolism", "[stemcell]
 
   world.tick();
   population.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  world.tick();
+  population.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   REQUIRE(population.organisms().empty());
 }
 
@@ -92,7 +102,7 @@ TEST_CASE("architecture label describes undifferentiated stem cell", "[stemcell]
       evolab::organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(),
                                    evolab::kWorldCellSize);
 
-  const std::string label = organism.architectureLabel();
+  const std::string label = evolab::game::formatOrganismArchitectureLabel(organism);
   REQUIRE(label.find("StemCell #7") != std::string::npos);
   REQUIRE(label.find("undifferentiated") != std::string::npos);
   REQUIRE(label.find("Links: 0") != std::string::npos);

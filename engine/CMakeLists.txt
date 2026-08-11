@@ -1,5 +1,7 @@
 add_library(evolab_engine STATIC
   src/Camera.cpp
+  src/Viewport.cpp
+  src/FixedTimestepClock.cpp
   src/gl/GlContext.cpp
   src/gfx/ShaderProgram.cpp
   src/gfx/UiAssets.cpp

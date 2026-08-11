@@ -1,6 +1,8 @@
 #include "app/VisualApp.hpp"
 
-#include "sim/SimDiagnostics.hpp"
+#include "app/CliArgs.hpp"
+#include "engine/FixedTimestepClock.hpp"
+#include "engine/Viewport.hpp"
 #include "engine/Camera.hpp"
 #include "engine/gl/GlContext.hpp"
 #include "engine/gfx/UiAssets.hpp"
@@ -9,6 +11,7 @@
 #include "game/GameHud.hpp"
 #include "game/GameInspector.hpp"
 #include "game/GameRenderer.hpp"
+#include "game/OrganismInspector.hpp"
 #include "game/TerrainMesh.hpp"
 #include "platform/InputFrame.hpp"
 #include "platform/SdlPlatform.hpp"
@@ -17,6 +20,8 @@
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonStats.hpp"
+#include "sim/SimConfig.hpp"
+#include "sim/SimDiagnostics.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
@@ -28,13 +33,39 @@ namespace evolab {
 
 namespace {
 
-constexpr int kInitialActuatorNomCount = 60;
+void seedPopulation(CellPopulation& cells, const SimConfig& config, const BarrenWorld& world,
+                    float cellSize, float heightScale) {
+  switch (config.archetype) {
+    case SeedArchetype::StemCell:
+      cells.seedStemCells(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+    case SeedArchetype::TwinMouth:
+      cells.seedTwoMouthOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+    case SeedArchetype::Actuator:
+      cells.seedActuatorOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+    case SeedArchetype::MouthActuator:
+      cells.seedMouthActuatorOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+    case SeedArchetype::PerceptorMouthActuator:
+      cells.seedPmaOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+    default:
+      std::cerr << "Unknown seed archetype; falling back to PMA.\n";
+      cells.seedPmaOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      break;
+  }
+}
 
 }  // namespace
 
 int runVisualApp(const CliArgs& args) {
+  const SimConfig config = simConfigFromCli(args);
+
+  const std::string windowTitle = windowTitleForConfig(config);
   platform::SdlPlatform platform;
-  if (!platform.init(1280, 720, "evo-lab — Phase 2.x Actuator Nom")) {
+  if (!platform.init(config.designWidth, config.designHeight, windowTitle.c_str())) {
     return 1;
   }
   if (!engine::gl::loadGlContext()) {
@@ -64,16 +95,26 @@ int runVisualApp(const CliArgs& args) {
     std::cerr << "Cell inspector disabled (font init failed).\n";
   }
 
-  std::cout << "Building terrain and hydrology (seed=" << args.seed
-            << ", resolution=" << args.resolution << ")...\n";
+  std::cout << "Building terrain and hydrology (seed=" << config.seed
+            << ", resolution=" << config.resolution << ", archetype="
+            << seedArchetypeLabel(config.archetype) << ")...\n";
+  std::cout << "  (resolution 128 can take 20-30s on first launch)\n";
   std::cout.flush();
 
-  BarrenWorld world(args.seed, args.resolution);
+  platform::InputFrame bootstrapInput;
+  bool bootstrapMouse = false;
+  platform.poll(bootstrapInput, bootstrapMouse);
+
+  BarrenWorld world(config.seed, config.resolution, makeTideFromConfig(config));
+  platform.poll(bootstrapInput, bootstrapMouse);
+
+  std::cout << "Terrain ready. Seeding " << config.nomCount << " noms...\n";
+  std::cout.flush();
   DayCycle dayCycle(1800.0f);
   EnergonConfig energonConfig;
   energonConfig.spawnRateMax = 14.0f;
   energonConfig.maxBlobs = 2200;
-  EnergonField energon(args.seed, energonConfig);
+  EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
 
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
@@ -82,20 +123,24 @@ int runVisualApp(const CliArgs& args) {
   camera.pitch = 0.55f;
   camera.distance = 140.0f;
 
-  cells.seedActuatorOrganisms(world, kWorldCellSize, kTerrainHeightScale, kInitialActuatorNomCount,
-                              args.seed);
+  seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
+  if (cells.organisms().empty()) {
+    std::cerr << "Failed to seed any organisms — check wet terrain / archetype wiring.\n";
+    return 1;
+  }
+  std::cout << "Seeded " << cells.organisms().size() << " organisms.\n";
 
   bool pauseSim = false;
   bool mouseDown = false;
-  std::uint64_t visualSeed = args.seed;
+  std::uint64_t visualSeed = config.seed;
   float fps = 0.0f;
 
+  engine::FixedTimestepClock simClock(config.fixedSimHz);
   auto lastTime = std::chrono::steady_clock::now();
-  constexpr int kMaxSimStepsPerFrame = 5;
 
-  std::cout << "Phase 2.x — Actuator Noms (1 A, no mouth — crawl until starved)\n";
+  std::cout << "Phase 2.x — " << seedArchetypeLabel(config.archetype) << " Noms\n";
   std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, Esc=quit\n";
-  std::cout << "Hover a cell orb to inspect its genome.\n";
+  std::cout << "Hover a Nom to inspect architecture.\n";
 
   while (!platform.shouldClose()) {
     platform::InputFrame input;
@@ -110,8 +155,9 @@ int runVisualApp(const CliArgs& args) {
       mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
       renderer.uploadTerrainGeometry(mesh);
       cells.clear();
-      cells.seedActuatorOrganisms(world, kWorldCellSize, kTerrainHeightScale,
-                                  kInitialActuatorNomCount, visualSeed);
+      SimConfig regenConfig = config;
+      regenConfig.seed = visualSeed;
+      seedPopulation(cells, regenConfig, world, kWorldCellSize, kTerrainHeightScale);
       std::cout << "Regenerated world seed=" << visualSeed << '\n';
     }
 
@@ -141,8 +187,7 @@ int runVisualApp(const CliArgs& args) {
     }
 
     if (!pauseSim && dt > 0.0f) {
-      const int steps =
-          std::min(kMaxSimStepsPerFrame, std::max(1, static_cast<int>(dt * 60.0f)));
+      const int steps = std::min(config.maxSimStepsPerFrame, simClock.advance(dt));
       for (int i = 0; i < steps; ++i) {
         world.tick();
         const float sun = dayCycle.sunIntensity(world.tickCount());
@@ -155,9 +200,15 @@ int runVisualApp(const CliArgs& args) {
     game::updateTerrainColors(mesh, world, kWorldCellSize);
     renderer.uploadTerrainColors(mesh);
 
-    int w = 0;
-    int h = 0;
-    platform.windowSize(w, h);
+    int drawableW = 0;
+    int drawableH = 0;
+    platform.windowSize(drawableW, drawableH);
+    const engine::ViewportLayout viewport =
+        engine::computeLetterbox(drawableW, drawableH, config.designWidth, config.designHeight);
+
+    int pickMouseX = input.mouseX;
+    int pickMouseY = input.mouseY;
+    engine::mapScreenToDesign(input.mouseX, input.mouseY, viewport, pickMouseX, pickMouseY);
 
     float skyR = 0.53f;
     float skyG = 0.75f;
@@ -189,25 +240,34 @@ int runVisualApp(const CliArgs& args) {
     diag.mouthNeurons = cellStats.mouthNeurons;
 
     renderer.beginFrame(skyR, skyG, skyB);
-    renderer.drawTerrain(camera, w, h);
+    renderer.drawTerrain(camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
+                         viewport.contentH > 0 ? viewport.contentH : drawableH);
     if (std::abs(world.waterLevelDelta()) <= 0.001f) {
-      renderer.drawWaterPlane(mesh, waterLevel * kTerrainHeightScale, camera, w, h);
+      renderer.drawWaterPlane(mesh, waterLevel * kTerrainHeightScale, camera,
+                              viewport.contentW > 0 ? viewport.contentW : drawableW,
+                              viewport.contentH > 0 ? viewport.contentH : drawableH);
     }
-    renderer.drawEnergon(energon.blobs(), camera, w, h);
-    renderer.drawOrganisms(cells.organisms(), camera, w, h);
+    renderer.drawEnergon(energon.blobs(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
+                         viewport.contentH > 0 ? viewport.contentH : drawableH);
+    renderer.drawOrganisms(cells.organisms(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
+                           viewport.contentH > 0 ? viewport.contentH : drawableH);
 
-    const std::uint32_t hoveredId =
-        game::pickOrganismAtScreen(cells.organisms(), camera, w, h, input.mouseX, input.mouseY);
+    const std::uint32_t hoveredId = game::pickOrganismAtScreen(
+        cells.organisms(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
+        viewport.contentH > 0 ? viewport.contentH : drawableH, pickMouseX, pickMouseY);
     if (hoveredId != 0) {
       if (const Organism* hovered = cells.findById(hoveredId)) {
-        diag.hoveredCellSummary = hovered->hoverSummary();
-        inspector.draw(hovered->architectureLabel(), w, h);
+        diag.hoveredCellSummary = game::formatOrganismHoverSummary(*hovered);
+        inspector.draw(game::formatOrganismArchitectureLabel(*hovered, world.tickCount()),
+                       viewport.contentW > 0 ? viewport.contentW : drawableW,
+                       viewport.contentH > 0 ? viewport.contentH : drawableH);
       }
     } else {
       diag.hoveredCellSummary.clear();
     }
 
-    hud.draw(diag, w, h);
+    hud.draw(diag, viewport.contentW > 0 ? viewport.contentW : drawableW,
+             viewport.contentH > 0 ? viewport.contentH : drawableH);
 
     platform.swap();
   }

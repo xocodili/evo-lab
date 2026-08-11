@@ -139,6 +139,7 @@ TEST_CASE("actuator full tick crawl debits stroke plus basal", "[actuator]") {
 
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 32.0f);
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  organism.tickNeuronViability(energon);
 
   REQUIRE(organism.bodyStorage.size() == 10u - evolab::kActuatorCrawlCostPerTick);
   REQUIRE(organism.alive);
@@ -169,6 +170,7 @@ TEST_CASE("actuator final two bytes wag then basal death on same tick", "[actuat
 
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 32.0f);
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  organism.tickNeuronViability(energon);
 
   REQUIRE(organism.lastStrokePaid);
   REQUIRE(organism.lastStrokeBytesPaid == evolab::kActuatorStrokeCostPerTick);

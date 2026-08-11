@@ -1,5 +1,8 @@
 add_library(evolab_game STATIC
   game/TerrainMesh.cpp
+  game/GameShaders.cpp
+  game/OrganismDrawer.cpp
+  game/OrganismInspector.cpp
   game/GameRenderer.cpp
   game/GameHud.cpp
   game/CellPicker.cpp
@@ -19,7 +22,13 @@ add_library(evolab_sim STATIC
   sim/EnergonString.cpp
   sim/EnergonStats.cpp
   sim/SimDiagnostics.cpp
+  sim/SimConfig.cpp
   sim/Organism.cpp
+  sim/OrganismDetail.cpp
+  sim/OrganismPerceptor.cpp
+  sim/OrganismKinematics.cpp
+  sim/OrganismFactories.cpp
+  sim/NeuronTick.cpp
   sim/NeuralAxon.cpp
   sim/Chaos.cpp
   sim/CellPopulation.cpp

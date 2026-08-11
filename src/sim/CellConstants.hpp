@@ -18,6 +18,20 @@ inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
 inline constexpr std::uint32_t kMouthStoreSoftPressureBytes = 8u;
 inline constexpr std::uint32_t kMouthSignalHeartbeatTicks = 30u;
 inline constexpr std::uint8_t kMouthSignalTagShipping = 0xF0u;
+// Axonal vocabulary (local tags — Phase 2.x MA chain).
+inline constexpr std::uint8_t kSignalTagIAte = 0xA1u;
+inline constexpr std::uint8_t kSignalTagIHunger = 0xA2u;
+inline constexpr std::uint8_t kSignalTagIActuate = 0xA3u;
+// Perceptor axonal vocabulary (PMA chain).
+inline constexpr std::uint8_t kSignalTagISenseFood = 0xB1u;
+inline constexpr std::uint8_t kSignalTagISenseOrganism = 0xB2u;
+inline constexpr std::uint8_t kSignalTagISenseBlock = 0xB3u;
+// Perceptor focus cone (radians): total width ≈ 90°.
+inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
+// Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
+inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
+inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
+inline constexpr float kPerceptorSenseRadiusFactor = 3.5f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.
@@ -38,7 +52,7 @@ inline constexpr float kOrganismFoodHeadingWeight = 0.7f;
 // Only kActuatorTranslationEta becomes directed motion; the rest is translation
 // entropy (viscous/thermal loss in low-Re flow).
 inline constexpr std::uint32_t kActuatorStrokeCostPerTick = 2u;
-inline constexpr float kActuatorThrustPerStrokeByte = 0.022f;
+inline constexpr float kActuatorThrustPerStrokeByte = 0.055f;
 inline constexpr float kActuatorTranslationEta = 0.12f;
 inline constexpr float kActuatorTumbleRate = 0.07f;
 inline constexpr float kActuatorTumbleTurn = 0.85f;

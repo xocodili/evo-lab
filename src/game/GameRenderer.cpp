@@ -1,7 +1,8 @@
 #include "game/GameRenderer.hpp"
 
 #include "engine/gl/GlContext.hpp"
-#include "sim/CellConstants.hpp"
+#include "game/GameShaders.hpp"
+#include "game/OrganismDrawer.hpp"
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 
@@ -15,156 +16,6 @@ namespace {
 
 using engine::gl::GlContext;
 
-const char* kTerrainVert = R"(#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec3 aColor;
-uniform mat4 uMvp;
-out vec3 vColor;
-void main() {
-  vColor = aColor;
-  gl_Position = uMvp * vec4(aPos, 1.0);
-}
-)";
-
-const char* kTerrainFrag = R"(#version 330 core
-in vec3 vColor;
-out vec4 FragColor;
-void main() {
-  FragColor = vec4(vColor, 1.0);
-}
-)";
-
-const char* kWaterVert = R"(#version 330 core
-layout(location = 0) in vec3 aPos;
-uniform mat4 uMvp;
-void main() {
-  gl_Position = uMvp * vec4(aPos, 1.0);
-}
-)";
-
-const char* kWaterFrag = R"(#version 330 core
-out vec4 FragColor;
-void main() {
-  FragColor = vec4(0.08, 0.35, 0.55, 0.45);
-}
-)";
-
-const char* kEnergonVert = R"(#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec4 aColor;
-uniform mat4 uMvp;
-out vec4 vColor;
-void main() {
-  vColor = aColor;
-  gl_Position = uMvp * vec4(aPos, 1.0);
-}
-)";
-
-const char* kEnergonFrag = R"(#version 330 core
-in vec4 vColor;
-out vec4 FragColor;
-void main() {
-  FragColor = vColor;
-}
-)";
-
-const char* kCellVert = R"(#version 330 core
-layout(location = 0) in vec3 aPos;
-layout(location = 1) in vec4 aColor;
-layout(location = 2) in vec2 aLocal;
-uniform mat4 uMvp;
-out vec4 vColor;
-out vec2 vLocal;
-void main() {
-  vColor = aColor;
-  vLocal = aLocal;
-  gl_Position = uMvp * vec4(aPos, 1.0);
-}
-)";
-
-const char* kCellFrag = R"(#version 330 core
-in vec4 vColor;
-in vec2 vLocal;
-out vec4 FragColor;
-void main() {
-  if (dot(vLocal, vLocal) > 1.0) {
-    discard;
-  }
-  FragColor = vColor;
-}
-)";
-
-struct CellVertex {
-  float x, y, z;
-  float r, g, b, a;
-  float lx, ly;
-};
-
-void appendCellBillboard(std::vector<CellVertex>& verts, float wx, float wy, float wz, float eyeX,
-                         float eyeY, float eyeZ, float r, float g, float b, float a,
-                         float halfSize) {
-  float toEyeX = eyeX - wx;
-  float toEyeY = eyeY - wy;
-  float toEyeZ = eyeZ - wz;
-  float toEyeLen = std::sqrt(toEyeX * toEyeX + toEyeY * toEyeY + toEyeZ * toEyeZ);
-  if (toEyeLen <= 0.0001f) {
-    return;
-  }
-  toEyeX /= toEyeLen;
-  toEyeY /= toEyeLen;
-  toEyeZ /= toEyeLen;
-
-  float rightX = toEyeZ;
-  float rightY = 0.0f;
-  float rightZ = -toEyeX;
-  float rightLen = std::sqrt(rightX * rightX + rightZ * rightZ);
-  if (rightLen <= 0.0001f) {
-    rightX = 1.0f;
-    rightZ = 0.0f;
-    rightLen = 1.0f;
-  }
-  rightX /= rightLen;
-  rightZ /= rightLen;
-
-  const float upX = rightY * toEyeZ - rightZ * toEyeY;
-  const float upY = rightZ * toEyeX - rightX * toEyeZ;
-  const float upZ = rightX * toEyeY - rightY * toEyeX;
-
-  const struct {
-    float lx, ly, sx, sy;
-  } corners[] = {
-      {-1.0f, -1.0f, -1.0f, -1.0f}, {1.0f, -1.0f, 1.0f, -1.0f},
-      {1.0f, 1.0f, 1.0f, 1.0f},     {-1.0f, 1.0f, -1.0f, 1.0f},
-  };
-
-  CellVertex quad[4];
-  for (int i = 0; i < 4; ++i) {
-    const auto& corner = corners[i];
-    const float px = wx + halfSize * (corner.sx * rightX + corner.sy * upX);
-    const float py = wy + halfSize * (corner.sx * rightY + corner.sy * upY);
-    const float pz = wz + halfSize * (corner.sx * rightZ + corner.sy * upZ);
-    quad[i] = {px, py, pz, r, g, b, a, corner.lx, corner.ly};
-  }
-
-  verts.push_back(quad[0]);
-  verts.push_back(quad[1]);
-  verts.push_back(quad[2]);
-  verts.push_back(quad[0]);
-  verts.push_back(quad[2]);
-  verts.push_back(quad[3]);
-}
-
-bool linkWorldDistanceOk(const SkeletonNode& a, const SkeletonNode& b, float maxLength) {
-  const float dx = b.worldX - a.worldX;
-  const float dz = b.worldZ - a.worldZ;
-  const float distSq = dx * dx + dz * dz;
-  if (distSq < 1.0e-4f) {
-    return false;
-  }
-  const float maxSpan = std::max(maxLength * 2.5f, 0.5f);
-  return distSq <= maxSpan * maxSpan;
-}
-
 struct EnergonVertex {
   float x, y, z;
   float r, g, b, a;
@@ -173,79 +24,6 @@ struct EnergonVertex {
 void pushEnergonVertex(std::vector<EnergonVertex>& out, float x, float y, float z, float r, float g,
                         float b, float a) {
   out.push_back({x, y, z, r, g, b, a});
-}
-
-void appendLinkLine(std::vector<EnergonVertex>& verts, const SkeletonNode& a, const SkeletonNode& b,
-                    float yOffset, float r, float g, float colB, float alpha, float maxLength) {
-  if (!linkWorldDistanceOk(a, b, maxLength)) {
-    return;
-  }
-  const float y = std::max(a.worldY, b.worldY) + yOffset;
-  pushEnergonVertex(verts, a.worldX, y, a.worldZ, r, g, colB, alpha);
-  pushEnergonVertex(verts, b.worldX, y, b.worldZ, r * 0.95f, g * 0.95f, colB * 0.95f, alpha * 0.9f);
-}
-
-void appendGroundBoneStrip(std::vector<CellVertex>& verts, const SkeletonNode& parent,
-                           const SkeletonNode& child, float r, float g, float b, float a,
-                           float halfWidth, float maxLength) {
-  if (!linkWorldDistanceOk(parent, child, maxLength)) {
-    return;
-  }
-  const float dx = child.worldX - parent.worldX;
-  const float dz = child.worldZ - parent.worldZ;
-  const float lenSq = dx * dx + dz * dz;
-  if (lenSq < 1.0e-6f) {
-    return;
-  }
-  const float len = std::sqrt(lenSq);
-  const float nx = -dz / len;
-  const float nz = dx / len;
-  const float y = std::max(parent.worldY, child.worldY) + 0.28f;
-
-  const float px0 = parent.worldX - nx * halfWidth;
-  const float pz0 = parent.worldZ - nz * halfWidth;
-  const float px1 = parent.worldX + nx * halfWidth;
-  const float pz1 = parent.worldZ + nz * halfWidth;
-  const float cx0 = child.worldX - nx * halfWidth;
-  const float cz0 = child.worldZ - nz * halfWidth;
-  const float cx1 = child.worldX + nx * halfWidth;
-  const float cz1 = child.worldZ + nz * halfWidth;
-
-  const CellVertex quad[] = {
-      {px0, y, pz0, r, g, b, a, 0.0f, 0.0f}, {px1, y, pz1, r, g, b, a, 0.0f, 0.0f},
-      {cx1, y, cz1, r, g, b, a * 0.85f, 0.0f, 0.0f}, {px0, y, pz0, r, g, b, a, 0.0f, 0.0f},
-      {cx1, y, cz1, r, g, b, a * 0.85f, 0.0f, 0.0f}, {cx0, y, cz0, r, g, b, a * 0.85f, 0.0f, 0.0f},
-  };
-  for (const CellVertex& vertex : quad) {
-    verts.push_back(vertex);
-  }
-}
-
-void appendHeadingChevron(std::vector<CellVertex>& verts, float wx, float wy, float wz, float heading,
-                          float length, float r, float g, float b, float a) {
-  const float y = wy + 0.14f;
-  const float fx = std::sin(heading);
-  const float fz = std::cos(heading);
-  const float px = -fz;
-  const float pz = fx;
-  const float back = length * 0.42f;
-  const float wing = length * 0.58f;
-
-  const float tipX = wx + fx * length;
-  const float tipZ = wz + fz * length;
-  const float leftX = wx - fx * back + px * wing;
-  const float leftZ = wz - fz * back + pz * wing;
-  const float rightX = wx - fx * back - px * wing;
-  const float rightZ = wz - fz * back - pz * wing;
-
-  const CellVertex tri[] = {
-      {tipX, y, tipZ, r, g, b, a, 0.5f, 1.0f},
-      {leftX, y, leftZ, r * 0.92f, g * 0.92f, b * 0.92f, a * 0.88f, 0.0f, 0.0f},
-      {rightX, y, rightZ, r * 0.92f, g * 0.92f, b * 0.92f, a * 0.88f, 1.0f, 0.0f},
-  };
-  for (const CellVertex& vertex : tri) {
-    verts.push_back(vertex);
-  }
 }
 
 void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob) {
@@ -545,87 +323,13 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   float eyeZ = 0.0f;
   camera.eyePosition(eyeX, eyeY, eyeZ);
 
-  std::vector<CellVertex> nodeVerts;
-  std::vector<EnergonVertex> boneLineVerts;
-  std::vector<EnergonVertex> neuralLineVerts;
-  nodeVerts.reserve(organisms.size() * 30);
-
-  for (const Organism& organism : organisms) {
-    if (!organism.alive) {
-      continue;
-    }
-
-    const float fill = static_cast<float>(organism.bodyStorage.size()) /
-                       static_cast<float>(kStemCellStorageMaxBytes);
-    const float alpha = 0.55f + 0.45f * std::min(1.0f, fill);
-    float maxBoneLen = 0.0f;
-    for (const SkeletonLink& link : organism.links) {
-      maxBoneLen = std::max(maxBoneLen, link.restLength);
-    }
-
-    for (const SkeletonLink& link : organism.links) {
-      const SkeletonNode* parent = organism.findNode(link.parentNodeId);
-      const SkeletonNode* child = organism.findNode(link.childNodeId);
-      if (parent == nullptr || child == nullptr) {
-        continue;
-      }
-      appendGroundBoneStrip(nodeVerts, *parent, *child, 0.98f, 0.88f, 0.22f, alpha * 0.95f, 0.16f,
-                            link.restLength);
-      appendLinkLine(boneLineVerts, *parent, *child, 0.32f, 1.0f, 0.92f, 0.15f, alpha, link.restLength);
-    }
-
-    if (!organism.neuralAxons.empty()) {
-      const NeuralAxon& axon = organism.neuralAxons.front();
-      const SkeletonNode* src = organism.findNode(axon.srcNodeId);
-      const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
-      if (src != nullptr && dst != nullptr) {
-        appendLinkLine(neuralLineVerts, *src, *dst, 0.42f, 0.75f, 0.25f, 1.0f, alpha * 0.95f,
-                       maxBoneLen > 0.0f ? maxBoneLen : 1.2f);
-      }
-    }
-
-    if (const SkeletonNode* root = organism.findNode(organism.rootNodeId)) {
-      const bool showHeading =
-          (root->neuron == NeuronType::Computer && organism.mouthCount() > 0) ||
-          (root->neuron == NeuronType::Actuator && organism.hasActuatorNeurons());
-      if (showHeading) {
-        const float chevronLen = maxBoneLen > 0.0f ? maxBoneLen * 0.55f : 0.42f;
-        appendHeadingChevron(nodeVerts, root->worldX, root->worldY, root->worldZ, organism.heading,
-                             chevronLen, 0.28f, 0.98f, 1.0f, alpha * 0.92f);
-      }
-    }
-
-    for (const SkeletonNode& node : organism.nodes) {
-      float r = 0.72f;
-      float g = 0.95f;
-      float b = 1.0f;
-      float halfSize = 0.16f;
-      if (node.neuron == NeuronType::Mouth) {
-        r = 1.0f;
-        g = 0.62f;
-        b = 0.28f;
-        halfSize = 0.13f;
-      } else if (node.neuron == NeuronType::Actuator) {
-        r = 0.78f;
-        g = 0.62f;
-        b = 0.88f;
-        halfSize = 0.15f;
-      } else if (node.neuron == NeuronType::Computer) {
-        r = 0.98f;
-        g = 0.92f;
-        b = 0.45f;
-        halfSize = 0.17f;
-      }
-      appendCellBillboard(nodeVerts, node.worldX, node.worldY, node.worldZ, eyeX, eyeY, eyeZ, r, g,
-                          b, alpha, halfSize);
-    }
-  }
+  const OrganismDrawBatch batch = buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ);
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.viewport(0, 0, viewportW, viewportH);
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
 
-  auto drawEnergonVerts = [&](const std::vector<EnergonVertex>& verts) {
+  auto drawLineVerts = [&](const std::vector<OrganismLineVertex>& verts) {
     if (verts.empty()) {
       return;
     }
@@ -633,14 +337,14 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     g.bindVertexArray(energonVao_);
     g.bindBuffer(engine::gl::GlEnum::kArrayBuffer, energonVbo_);
     g.bufferData(engine::gl::GlEnum::kArrayBuffer,
-                 static_cast<engine::gl::GLsizeiptr>(verts.size() * sizeof(EnergonVertex)),
+                 static_cast<engine::gl::GLsizeiptr>(verts.size() * sizeof(OrganismLineVertex)),
                  verts.data(), engine::gl::GlEnum::kDynamicDraw);
     g.enableVertexAttribArray(0);
     g.vertexAttribPointer(0, 3, engine::gl::GlEnum::kFloat, engine::gl::GlEnum::kFalse,
-                          sizeof(EnergonVertex), reinterpret_cast<void*>(0));
+                          sizeof(OrganismLineVertex), reinterpret_cast<void*>(0));
     g.enableVertexAttribArray(1);
     g.vertexAttribPointer(1, 4, engine::gl::GlEnum::kFloat, engine::gl::GlEnum::kFalse,
-                          sizeof(EnergonVertex), reinterpret_cast<void*>(3 * sizeof(float)));
+                          sizeof(OrganismLineVertex), reinterpret_cast<void*>(3 * sizeof(float)));
     energonProgram_.use();
     energonProgram_.setMat4("uMvp", mvp);
     g.drawArrays(engine::gl::GlEnum::kLines, 0, energonVertexCount_);
@@ -649,18 +353,18 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   g.enable(engine::gl::GlEnum::kDepthTest);
   g.enable(engine::gl::GlEnum::kBlend);
   g.blendFunc(engine::gl::GlEnum::kSrcAlpha, engine::gl::GlEnum::kOneMinusSrcAlpha);
-  drawEnergonVerts(boneLineVerts);
-  drawEnergonVerts(neuralLineVerts);
+  drawLineVerts(batch.boneLineVerts);
+  drawLineVerts(batch.neuralLineVerts);
 
   g.disable(engine::gl::GlEnum::kDepthTest);
 
-  if (!nodeVerts.empty()) {
-    cellVertexCount_ = static_cast<int>(nodeVerts.size());
+  if (!batch.cellVerts.empty()) {
+    cellVertexCount_ = static_cast<int>(batch.cellVerts.size());
     g.bindVertexArray(cellVao_);
     g.bindBuffer(engine::gl::GlEnum::kArrayBuffer, cellVbo_);
     g.bufferData(engine::gl::GlEnum::kArrayBuffer,
-                 static_cast<engine::gl::GLsizeiptr>(nodeVerts.size() * sizeof(CellVertex)),
-                 nodeVerts.data(), engine::gl::GlEnum::kDynamicDraw);
+                 static_cast<engine::gl::GLsizeiptr>(batch.cellVerts.size() * sizeof(CellVertex)),
+                 batch.cellVerts.data(), engine::gl::GlEnum::kDynamicDraw);
     g.enableVertexAttribArray(0);
     g.vertexAttribPointer(0, 3, engine::gl::GlEnum::kFloat, engine::gl::GlEnum::kFalse,
                           sizeof(CellVertex), reinterpret_cast<void*>(0));

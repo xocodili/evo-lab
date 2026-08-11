@@ -159,7 +159,7 @@ At spawn, each axon gets developmental baseline **100% ± 3% jitter** on `trustB
 | Neural axon feed | ~0.88 | ~12% per hop |
 | **Translation (stroke)** | **0.12** | **~88% dissipates as viscous heat** (`kActuatorTranslationEta`) |
 
-Mechanical displacement per stroke: `kActuatorStrokeCostPerTick × kActuatorThrustPerStrokeByte × kActuatorTranslationEta` (~0.0053 world units/tick). One fuel-day of continuous crawl ≈ **~150 world units** (~125 cell lengths) — costly vs idle drift, cheap enough to see motion.
+Mechanical displacement per stroke: `kActuatorStrokeCostPerTick × kActuatorThrustPerStrokeByte × kActuatorTranslationEta` (~0.013 world units/tick). One fuel-day of continuous crawl ≈ **~1100 world units** (~920 cell lengths) — costly vs idle drift, cheap enough to see motion at default zoom.
 
 **Factory:** `makeActuatorOrganism()` — single root node `NeuronType::Actuator`, body storage only.
 
@@ -355,11 +355,11 @@ Geography is **where you can swim** once life exists—derived from 3D data, not
 11. Reproduction (local mate preference when wet paths allow)
 12. Render (terrain, water, Energon strings, organisms, focus debug)
 
-**Current implementation (Phase 2.x twin-mouth):**
+**Current implementation (Phase 2.x — `[MA]` visual default):**
 
 1. World tick + day cycle + energon tick (sunfall with chaos jitter on spawn params)
-2. Per organism: advect root (heading, tide/food sense, FK) → metabolise → feed (each M) → purge depleted blobs → neural energy transfer → signal → **prune neural axons** → colony transfer → remove dead
-3. Render terrain, water, energon, organisms (bone + one neural line per dumbbell)
+2. Per organism: **feed** → **neuron pre-advect hooks** (`I_ATE` for MA) → **advect** (actuator stroke or passive drift) → metabolise → purge depleted blobs → neural energy transfer → signal → **prune neural axons** → colony transfer → remove dead
+3. Render terrain, water, energon, organisms (bone + neural line + inspector in `game/`)
 
 ### 3.4 Geographic isolation (tidal)
 
@@ -626,8 +626,8 @@ Target **Windows, macOS, Linux** via SDL platform backend. PS5 = future `platfor
 | Layer | Owns |
 |-------|------|
 | **platform** | Window, surface, input, clock, filesystem |
-| **engine** | Renderer3D (terrain/water), Camera, Application loop, aspect viewport |
-| **evo-lab (game)** | Terrain, tides, wetness, genome/neural chain, Energon rules, evolution |
+| **engine** | Renderer3D (terrain/water), Camera, **Viewport letterbox**, **FixedTimestepClock**, Application loop scaffold |
+| **evo-lab (game + app)** | Terrain, tides, wetness, genome/neural chain, Energon rules, evolution, **OrganismInspector** UI strings |
 
 **Sim source map (Phase 2.x):**
 
@@ -636,7 +636,12 @@ Target **Windows, macOS, Linux** via SDL platform backend. PS5 = future `platfor
 | `src/sim/WaterColumn.hpp`, `.cpp` | Depth bands, Nom habitat placement, tide-riding Y |
 | `src/sim/Chaos.hpp`, `Chaos.cpp` | ε rates, ±3% jitter, spawn RNG, `chaosInitialStorage` |
 | `src/sim/NeuralAxon.hpp`, `.cpp` | Axon struct, developmental trust init, pruning predicate |
-| `src/sim/Organism.hpp`, `.cpp` | Skeleton + neural graphs, `finalizeSpawn`, tick methods |
+| `src/sim/Organism.hpp`, `Organism.cpp`, `OrganismDetail.cpp`, `OrganismKinematics.cpp`, `OrganismFactories.cpp` | Skeleton + neural graphs, tick methods split by concern |
+| `src/sim/NeuronTick.hpp`, `.cpp` | Pre-advect hooks + locomotion dispatch (actuator vs passive drift) |
+| `src/sim/SimConfig.hpp`, `.cpp` | Runtime archetype, counts, tide period, design resolution |
+| `src/game/OrganismInspector.cpp` | Hover/architecture label formatting (presentation only) |
+| `src/game/OrganismDrawer.cpp`, `GameShaders.cpp` | Organism mesh batch + GLSL sources |
+| `engine/Viewport.cpp`, `FixedTimestepClock.cpp` | Letterbox layout + fixed sim timestep accumulator |
 | `src/sim/CellPopulation.cpp` | `seedOnWetTerrain`, population tick |
 | `src/sim/CellConstants.hpp` | Trust fixed-point (`kTrustBaseline`, min/max), mouth/axon constants |
 
@@ -666,7 +671,9 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 
 **2.2 Kinematic mouth organisms ✓:** Star-mouth (Computer hub + rim Mouths); organism yaw; food/tide heading; skeleton FK.
 
-**2.x Twin Mouth ✓ (current visual default):** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust. Visual app seeds ~60 twin-mouth Noms.
+**2.x Twin Mouth ✓:** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust.
+
+**2.x Mouth→Actuator [MA] ✓ (current visual default):** Developmental **M then A** chain — mouth feeds, actuator propels (rigid skeleton translation). Axon tags: `I_ATE`, `I_HUNGER`, `I_ACTUATE`. Visual app seeds ~60 `[MA]` Noms (`--archetype ma`).
 
 **2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
 

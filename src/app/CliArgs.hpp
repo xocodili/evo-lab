@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sim/SimConfig.hpp"
+
 #include <cstdint>
 #include <string>
 
@@ -14,7 +16,16 @@ struct CliArgs {
   std::uint64_t seed = 42;
   int resolution = 128;
   int frames = 120;
+
+  SeedArchetype archetype = SeedArchetype::PerceptorMouthActuator;
+  int nomCount = 60;
+  float tidePeriodTicks = 0.0f;
+  int designWidth = 1280;
+  int designHeight = 720;
+  float fixedSimHz = 60.0f;
 };
+
+SimConfig simConfigFromCli(const CliArgs& args);
 
 CliArgs parseCliArgs(int argc, char** argv);
 void printHelp();

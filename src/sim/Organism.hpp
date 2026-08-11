@@ -41,6 +41,8 @@ struct SkeletonNode {
 
   NeuronType neuron = NeuronType::None;
 
+  bool alive = true;
+
   float worldX = 0.0f;
 
   float worldY = 0.0f;
@@ -117,10 +119,21 @@ public:
   float lastMechanicalThrust = 0.0f;
   float lastTranslationEntropyLoss = 0.0f;
   std::uint32_t lastStrokeBytesPaid = 0;
+  std::uint32_t lastStrokeBytesFromBody = 0;
+  std::uint32_t lastStrokeBytesFromActuatorStore = 0;
+  bool lastActuatorInhibited = false;
+  std::uint8_t lastActuatorOutboundSignal = 0;
   bool lastInWater = false;
   float lastTideDelta = 0.0f;
   bool lastStrokePaid = false;
   bool lastTumbled = false;
+
+  // Proprioception (P neuron): last focus scan result.
+  std::uint8_t lastPerceptTag = 0;
+  float lastPerceptBearing = 0.0f;
+  float lastPerceptRange = 0.0f;
+  bool lastPerceptScanPaid = false;
+  std::uint32_t lastPerceptBytesPaid = 0;
 
 
 
@@ -150,7 +163,13 @@ public:
 
   void metabolise(const BarrenWorld& world, float cellSize, float heightScale);
 
+  void tickNeuronViability(EnergonField& field);
+
   void feed(EnergonField& field, float cellSize);
+
+  void perceive(const BarrenWorld& world, const EnergonField& energon, float cellSize,
+                float halfExtent, const std::vector<Organism>& population,
+                std::uint64_t simTick);
 
   void transferEnergy(EnergonField& field, float cellSize);
 
@@ -161,10 +180,19 @@ public:
 
 
   int mouthCount() const;
+  int perceptorCount() const;
   int actuatorCount() const;
 
   bool hasMouthNeurons() const;
+  bool hasPerceptorNeurons() const;
   bool hasActuatorNeurons() const;
+  bool hasLiveActuatorNeurons() const;
+  bool hasLiveFunctionalNeurons() const;
+  bool isMouthActuatorNom() const;
+  bool isPmaNom() const;
+  bool hasMouthActuatorChain() const;
+
+  void emitMouthActuatorPreAdvectSignals(std::uint64_t simTick);
 
   bool hasNeuralAxons() const;
 
@@ -176,12 +204,6 @@ public:
 
   bool allLocalStoresEmpty() const;
 
-
-
-  std::string architectureLabel() const;
-
-  std::string hoverSummary() const;
-
 };
 
 
@@ -192,6 +214,14 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
 
 Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
                               std::size_t storageBytes, std::uint64_t createdAtTick);
+
+Organism makeMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
+                                   std::size_t storageBytes, std::uint64_t createdAtTick,
+                                   float boneLength);
+
+Organism makePerceptorMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
+                                            std::size_t storageBytes, std::uint64_t createdAtTick,
+                                            float boneLength);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
 
