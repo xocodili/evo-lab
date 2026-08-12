@@ -100,34 +100,42 @@ void considerHit(PerceptHit& best, PerceptKind kind, float relBearing, float ran
 PerceptHit scanFood(const SkeletonNode& perceptor, float heading, float senseRadius,
                     const EnergonField& energon) {
   PerceptHit best;
-  for (const EnergonBlob& blob : energon.blobs()) {
-    if (!blob.grounded || !blob.onWet || blob.remaining == 0) {
-      continue;
-    }
-    float t = 0.0f;
-    const float distSq =
-        energonPointSegmentDistanceSq(perceptor.worldX, perceptor.worldZ, blob, t);
-    if (distSq > senseRadius * senseRadius) {
-      continue;
-    }
-    const float closestX = blob.tailX + t * (blob.headX - blob.tailX);
-    const float closestZ = blob.tailZ + t * (blob.headZ - blob.tailZ);
-    float relBearing = 0.0f;
-    float range01 = 0.0f;
-    if (!pointInFocusCone(perceptor.worldX, perceptor.worldZ, heading, kPerceptorFocusHalfAngle,
-                          senseRadius, closestX, closestZ, relBearing, range01)) {
-      continue;
-    }
-    considerHit(best, PerceptKind::Food, relBearing, range01);
-  }
+  energon.forEachBlobNear(
+      perceptor.worldX, perceptor.worldZ, senseRadius, [&](const EnergonBlob& blob) {
+        if (blob.remaining == 0) {
+          return;
+        }
+        float t = 0.0f;
+        const float distSq =
+            energonPointSegmentDistanceSq(perceptor.worldX, perceptor.worldZ, blob, t);
+        if (distSq > senseRadius * senseRadius) {
+          return;
+        }
+        const float closestX = blob.tailX + t * (blob.headX - blob.tailX);
+        const float closestZ = blob.tailZ + t * (blob.headZ - blob.tailZ);
+        float relBearing = 0.0f;
+        float range01 = 0.0f;
+        if (!pointInFocusCone(perceptor.worldX, perceptor.worldZ, heading, kPerceptorFocusHalfAngle,
+                              senseRadius, closestX, closestZ, relBearing, range01)) {
+          return;
+        }
+        considerHit(best, PerceptKind::Food, relBearing, range01);
+      });
   return best;
 }
 
 PerceptHit scanOrganisms(const Organism& self, const SkeletonNode& perceptor, float heading,
                          float senseRadius, const std::vector<Organism>& population) {
   PerceptHit best;
+  const float broadRadius = senseRadius * 1.5f;
+  const float broadRadiusSq = broadRadius * broadRadius;
   for (const Organism& other : population) {
     if (!other.alive || other.id == self.id) {
+      continue;
+    }
+    const float dx = other.rootWorldX() - perceptor.worldX;
+    const float dz = other.rootWorldZ() - perceptor.worldZ;
+    if (dx * dx + dz * dz > broadRadiusSq) {
       continue;
     }
     for (const SkeletonNode& node : other.nodes) {

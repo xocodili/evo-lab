@@ -8,17 +8,16 @@
 namespace evolab {
 
 enum class SeedArchetype : std::uint8_t {
+  Nom,
   StemCell,
   TwinMouth,
   Actuator,
-  MouthActuator,
-  PerceptorMouthActuator,
 };
 
 struct SimConfig {
   std::uint64_t seed = 42;
   int resolution = 128;
-  SeedArchetype archetype = SeedArchetype::PerceptorMouthActuator;
+  SeedArchetype archetype = SeedArchetype::Nom;
   int nomCount = 60;
   float tidePeriodTicks = 0.0f;
   int designWidth = 1280;

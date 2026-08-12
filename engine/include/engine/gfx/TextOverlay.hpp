@@ -1,6 +1,5 @@
 #pragma once
 
-#include "engine/gfx/ShaderProgram.hpp"
 #include "engine/gfx/UiFont.hpp"
 
 #include <string>
@@ -28,10 +27,6 @@ public:
 private:
   bool initialized_ = false;
   const UiFont* font_ = nullptr;
-  ShaderProgram solidProgram_;
-  ShaderProgram textProgram_;
-  unsigned vao_ = 0;
-  unsigned vbo_ = 0;
   unsigned textTexture_ = 0;
   int atlasW_ = 0;
   int atlasH_ = 0;

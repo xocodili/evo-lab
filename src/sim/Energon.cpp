@@ -2,6 +2,7 @@
 
 #include "sim/BarrenWorld.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/EnergonSpatialIndex.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WaterColumn.hpp"
@@ -45,7 +46,9 @@ std::uint64_t randomData(std::mt19937_64& rng, std::uint8_t byteCount) {
 }  // namespace
 
 EnergonField::EnergonField(std::uint64_t seed, EnergonConfig config)
-    : config_(config), seed_(seed) {}
+    : config_(config), seed_(seed), spatialIndex_(std::make_unique<EnergonSpatialIndex>()) {}
+
+EnergonField::~EnergonField() = default;
 
 void EnergonField::setSeed(std::uint64_t seed) {
   seed_ = seed;
@@ -169,6 +172,21 @@ void EnergonField::purgeDepletedBlobs() {
   blobs_.erase(std::remove_if(blobs_.begin(), blobs_.end(),
                               [](const EnergonBlob& blob) { return blob.remaining == 0; }),
                 blobs_.end());
+}
+
+void EnergonField::prepareSpatialQueries(float gridCellSize, float worldHalfExtent) {
+  if (!spatialIndex_) {
+    spatialIndex_ = std::make_unique<EnergonSpatialIndex>();
+  }
+  spatialIndex_->rebuild(blobs_, gridCellSize, worldHalfExtent);
+}
+
+void EnergonField::forEachBlobNear(float x, float z, float radius,
+                                   const std::function<void(const EnergonBlob&)>& fn) const {
+  if (!spatialIndex_ || !fn) {
+    return;
+  }
+  spatialIndex_->forEachNear(x, z, radius, blobs_, fn);
 }
 
 void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,

@@ -92,15 +92,25 @@ GameRenderer::GameRenderer() = default;
 
 GameRenderer::~GameRenderer() { shutdown(); }
 
-bool GameRenderer::init() {
+bool GameRenderer::init(const std::function<void()>& heartbeat) {
   if (initialized_) {
     return true;
   }
 
+  const auto beat = [&heartbeat]() {
+    if (heartbeat) {
+      heartbeat();
+    }
+  };
+
   terrainProgram_ = engine::gfx::ShaderProgram::create(kTerrainVert, kTerrainFrag);
+  beat();
   waterProgram_ = engine::gfx::ShaderProgram::create(kWaterVert, kWaterFrag);
+  beat();
   energonProgram_ = engine::gfx::ShaderProgram::create(kEnergonVert, kEnergonFrag);
+  beat();
   cellProgram_ = engine::gfx::ShaderProgram::create(kCellVert, kCellFrag);
+  beat();
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.genVertexArrays(1, &terrainVao_);

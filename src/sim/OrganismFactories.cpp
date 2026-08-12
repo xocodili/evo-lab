@@ -15,6 +15,15 @@ void splitStorageThreeWay(std::size_t total, std::size_t& a, std::size_t& b, std
   c = total - a - b;
 }
 
+void capMouthFuel(std::size_t& mouthBytes, std::size_t& redistributeBytes) {
+  const std::size_t cap = kMouthLocalStoreMaxBytes;
+  if (mouthBytes <= cap) {
+    return;
+  }
+  redistributeBytes += mouthBytes - cap;
+  mouthBytes = cap;
+}
+
 NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
   NeuralAxon axon;
   axon.srcNodeId = srcId;
@@ -62,65 +71,8 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
   return organism;
 }
 
-Organism makeMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
-                                   std::size_t storageBytes, std::uint64_t createdAtTick,
-                                   float boneLength) {
-  Organism organism;
-  organism.id = id;
-  organism.createdAtTick = createdAtTick;
-  organism.rootNodeId = 1;
-
-  SkeletonNode mouth;
-  mouth.id = 1;
-  mouth.neuron = NeuronType::Mouth;
-  mouth.worldX = wx;
-  mouth.worldZ = wz;
-  mouth.worldY = wy;
-
-  SkeletonNode actuator;
-  actuator.id = 2;
-  actuator.neuron = NeuronType::Actuator;
-  actuator.worldX = wx;
-  actuator.worldZ = wz + boneLength;
-  actuator.worldY = wy;
-
-  const std::size_t motorBytes = storageBytes / 2;
-  const std::size_t mouthBytes = storageBytes - motorBytes;
-  mouth.store.assign(mouthBytes, 0);
-  actuator.store.assign(motorBytes, 0);
-
-  organism.nodes.push_back(mouth);
-  organism.nodes.push_back(actuator);
-
-  SkeletonLink bone;
-  bone.parentNodeId = 1;
-  bone.childNodeId = 2;
-  bone.restLength = boneLength;
-  bone.jointAngle = 0.0f;
-  bone.energyEta = 0.0f;
-  organism.links.push_back(bone);
-
-  NeuralAxon mouthToActuator;
-  mouthToActuator.srcNodeId = 1;
-  mouthToActuator.dstNodeId = 2;
-  mouthToActuator.trustBelieve = kTrustBaseline;
-  mouthToActuator.trustFeed = kTrustMin;
-
-  NeuralAxon actuatorToMouth;
-  actuatorToMouth.srcNodeId = 2;
-  actuatorToMouth.dstNodeId = 1;
-  actuatorToMouth.trustBelieve = kTrustBaseline;
-  actuatorToMouth.trustFeed = kTrustMin;
-
-  organism.neuralAxons.push_back(mouthToActuator);
-  organism.neuralAxons.push_back(actuatorToMouth);
-
-  return organism;
-}
-
-Organism makePerceptorMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
-                                            std::size_t storageBytes, std::uint64_t createdAtTick,
-                                            float boneLength) {
+Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
+                         std::uint64_t createdAtTick, float boneLength) {
   Organism organism;
   organism.id = id;
   organism.createdAtTick = createdAtTick;
@@ -151,6 +103,7 @@ Organism makePerceptorMouthActuatorOrganism(std::uint32_t id, float wx, float wz
   std::size_t mouthBytes = 0;
   std::size_t motorBytes = 0;
   splitStorageThreeWay(storageBytes, perceptorBytes, mouthBytes, motorBytes);
+  capMouthFuel(mouthBytes, motorBytes);
   perceptor.store.assign(perceptorBytes, 0);
   mouth.store.assign(mouthBytes, 0);
   actuator.store.assign(motorBytes, 0);

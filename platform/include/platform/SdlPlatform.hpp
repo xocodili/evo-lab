@@ -2,7 +2,10 @@
 
 #include "platform/InputFrame.hpp"
 
+#include <SDL.h>
+
 #include <string>
+#include <vector>
 
 struct SDL_Window;
 
@@ -20,6 +23,7 @@ public:
   void shutdown();
 
   void poll(InputFrame& input, bool mouseLeftHeld);
+  void pumpEvents();
   void swap();
   void windowSize(int& width, int& height) const;
 
@@ -27,10 +31,13 @@ public:
   std::string basePath() const;
 
 private:
+  void handleEvent(const SDL_Event& event, InputFrame& input, bool mouseLeftHeld);
+
   SDL_Window* window_ = nullptr;
   void* glContext_ = nullptr;
   bool sdlInitialized_ = false;
   bool shouldClose_ = false;
+  std::vector<SDL_Event> pendingEvents_;
 };
 
 }  // namespace evolab::platform

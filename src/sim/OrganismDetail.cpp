@@ -93,7 +93,7 @@ bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
     consumeBytes(*pool, kStemCellBasalCostPerTick);
     return true;
   }
-  if (node.neuron == NeuronType::Mouth && !organism.hasMouthActuatorChain() &&
+  if (node.neuron == NeuronType::Mouth && !organism.isPmaNom() &&
       !organism.bodyStorage.empty()) {
     consumeBytes(organism.bodyStorage, kStemCellBasalCostPerTick);
     return true;
@@ -299,11 +299,14 @@ void spitMouthOverflow(Organism& organism, EnergonField& field) {
     if (!node.alive || node.neuron != NeuronType::Mouth) {
       continue;
     }
-    while (node.store.size() > kMouthLocalStoreMaxBytes) {
-      const std::uint8_t byte = node.store.front();
-      popFrontBytes(node.store, 1);
-      mouthSpitByte(node, field, byte);
+    if (node.store.size() <= kMouthLocalStoreMaxBytes) {
+      continue;
     }
+    const std::size_t spillCount = node.store.size() - kMouthLocalStoreMaxBytes;
+    for (std::size_t i = 0; i < spillCount; ++i) {
+      mouthSpitByte(node, field, node.store[i]);
+    }
+    popFrontBytes(node.store, spillCount);
   }
 }
 
@@ -328,38 +331,27 @@ bool emptyBlobInRange(const EnergonBlob& blob, float wx, float wz, float radius)
 MouthContact findMouthContact(const EnergonField& field, float wx, float wz, float radius) {
   MouthContact best;
   float bestDistSq = radius * radius;
+  bool foundFood = false;
 
-  for (const EnergonBlob& blob : field.blobs()) {
-    if (!blobInRange(blob, wx, wz, radius)) {
-      continue;
-    }
+  field.forEachBlobNear(wx, wz, radius, [&](const EnergonBlob& blob) {
     const float dx = blob.x - wx;
     const float dz = blob.z - wz;
     const float distSq = dx * dx + dz * dz;
-    if (distSq <= bestDistSq) {
-      bestDistSq = distSq;
-      best.kind = MouthContactKind::Food;
-      best.blobId = blob.id;
+    if (blob.remaining > 0) {
+      if (!foundFood || distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        best.kind = MouthContactKind::Food;
+        best.blobId = blob.id;
+        foundFood = true;
+      }
+      return;
     }
-  }
-
-  if (best.kind == MouthContactKind::Food) {
-    return best;
-  }
-
-  for (const EnergonBlob& blob : field.blobs()) {
-    if (!emptyBlobInRange(blob, wx, wz, radius)) {
-      continue;
-    }
-    const float dx = blob.x - wx;
-    const float dz = blob.z - wz;
-    const float distSq = dx * dx + dz * dz;
-    if (distSq <= bestDistSq) {
+    if (!foundFood && distSq <= bestDistSq) {
       bestDistSq = distSq;
       best.kind = MouthContactKind::EmptyString;
       best.blobId = blob.id;
     }
-  }
+  });
 
   return best;
 }
@@ -371,7 +363,7 @@ bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
       return true;
     }
   }
-  if (!organism.hasMouthActuatorChain() && !organism.bodyStorage.empty()) {
+  if (!organism.isPmaNom() && !organism.bodyStorage.empty()) {
     consumeBytes(organism.bodyStorage, kBiteCost);
     return true;
   }
@@ -446,25 +438,15 @@ FoodHeadingCue findNearestFoodHeading(const EnergonField& field, float wx, float
   const float maxRadiusSq = maxRadius * maxRadius;
   float bestDistSq = maxRadiusSq;
 
-  for (const EnergonBlob& blob : field.blobs()) {
-    if (!blob.grounded || !blob.onWet || blob.remaining == 0) {
-      continue;
-    }
-
-    const float spanX = std::abs(blob.headX - blob.tailX);
-    const float spanZ = std::abs(blob.headZ - blob.tailZ);
-    const float span = std::max(spanX, spanZ);
-    const float dx = blob.x - wx;
-    const float dz = blob.z - wz;
-    const float rejectRadius = maxRadius + span;
-    if (dx * dx + dz * dz > rejectRadius * rejectRadius) {
-      continue;
+  field.forEachBlobNear(wx, wz, maxRadius, [&](const EnergonBlob& blob) {
+    if (blob.remaining == 0) {
+      return;
     }
 
     float t = 0.0f;
     const float distSq = energonPointSegmentDistanceSq(wx, wz, blob, t);
     if (distSq >= bestDistSq) {
-      continue;
+      return;
     }
 
     bestDistSq = distSq;
@@ -473,7 +455,7 @@ FoodHeadingCue findNearestFoodHeading(const EnergonField& field, float wx, float
     cue.found = true;
     cue.heading = std::atan2(closestX - wx, closestZ - wz);
     cue.proximity = 1.0f - std::sqrt(distSq) / maxRadius;
-  }
+  });
 
   return cue;
 }
@@ -505,14 +487,14 @@ FoodHeadingCue findNearestFoodForOrganism(const Organism& organism, const Energo
 
   float foodBearing = 0.0f;
   for (const Probe& probe : probes) {
-    for (const EnergonBlob& blob : field.blobs()) {
-      if (!blob.grounded || !blob.onWet || blob.remaining == 0) {
-        continue;
+    field.forEachBlobNear(probe.x, probe.z, senseRadius, [&](const EnergonBlob& blob) {
+      if (blob.remaining == 0) {
+        return;
       }
       float t = 0.0f;
       const float distSq = energonPointSegmentDistanceSq(probe.x, probe.z, blob, t);
       if (distSq >= bestDistSq) {
-        continue;
+        return;
       }
       bestDistSq = distSq;
       const float closestX = blob.tailX + t * (blob.headX - blob.tailX);
@@ -523,7 +505,7 @@ FoodHeadingCue findNearestFoodForOrganism(const Organism& organism, const Energo
       if (distSq <= biteRadiusSq) {
         best.proximity = 1.0f;
       }
-    }
+    });
   }
 
   if (!best.found) {
@@ -532,22 +514,25 @@ FoodHeadingCue findNearestFoodForOrganism(const Organism& organism, const Energo
 
   if (bestDistSq < minHeadingDistSq) {
     // Sitting on food — use string axis so we still slew along the strand.
-    for (const EnergonBlob& blob : field.blobs()) {
-      if (!blob.grounded || !blob.onWet || blob.remaining == 0) {
-        continue;
+    bool axisFound = false;
+    field.forEachBlobNear(rootX, rootZ, biteRadius, [&](const EnergonBlob& blob) {
+      if (blob.remaining == 0 || axisFound) {
+        return;
       }
       float t = 0.0f;
       if (energonPointSegmentDistanceSq(rootX, rootZ, blob, t) > biteRadiusSq) {
-        continue;
+        return;
       }
       const float sx = blob.headX - blob.tailX;
       const float sz = blob.headZ - blob.tailZ;
       if (sx * sx + sz * sz > 1.0e-4f) {
         best.heading = std::atan2(sx, sz);
-        return best;
+        axisFound = true;
       }
+    });
+    if (!axisFound) {
+      best.found = false;
     }
-    best.found = false;
     return best;
   }
 
@@ -604,7 +589,7 @@ bool payActuatorStrokeCost(Organism& organism, std::uint32_t& fromBody,
   fromBody = 0;
   fromActuatorStore = 0;
 
-  if (organism.hasMouthActuatorChain()) {
+  if (organism.isPmaNom()) {
     SkeletonNode* motor = findActuatorNode(organism);
     if (motor == nullptr || !motor->alive) {
       return false;
@@ -661,7 +646,7 @@ void translateOrganismXZ(Organism& organism, float dx, float dz) {
 }
 
 void emitActuatorOutboundSignals(Organism& organism, std::uint64_t simTick) {
-  if (!organism.hasMouthActuatorChain()) {
+  if (!organism.isPmaNom()) {
     return;
   }
 
@@ -742,7 +727,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   organism.lastTideDelta = world.waterLevelDelta();
 
   const bool inhibited =
-      organism.hasMouthActuatorChain() && actuatorInhibitedByMouthSignal(organism, simTick);
+      organism.isPmaNom() && actuatorInhibitedByMouthSignal(organism, simTick);
   organism.lastActuatorInhibited = inhibited;
 
   std::mt19937 rng = chaosSpawnRng(world.tickCount(), static_cast<std::uint64_t>(organism.id) ^
@@ -808,4 +793,3 @@ void runMouthSignalPhase(Organism& organism, EnergonField& field, std::uint64_t 
 }
 
 }  // namespace evolab::organism_detail
-

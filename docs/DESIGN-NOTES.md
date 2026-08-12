@@ -355,10 +355,10 @@ Geography is **where you can swim** once life exists—derived from 3D data, not
 11. Reproduction (local mate preference when wet paths allow)
 12. Render (terrain, water, Energon strings, organisms, focus debug)
 
-**Current implementation (Phase 2.x — `[MA]` visual default):**
+**Current implementation (Phase 2.x — P-M-A Nom default):**
 
 1. World tick + day cycle + energon tick (sunfall with chaos jitter on spawn params)
-2. Per organism: **feed** → **neuron pre-advect hooks** (`I_ATE` for MA) → **advect** (actuator stroke or passive drift) → metabolise → purge depleted blobs → neural energy transfer → signal → **prune neural axons** → colony transfer → remove dead
+2. Per organism: **feed** → **perceive** (P scans focus cone) → **neuron pre-advect hooks** (`I_ATE`) → **advect** → metabolise → viability → purge → transfer → signal → prune → colony → remove dead
 3. Render terrain, water, energon, organisms (bone + neural line + inspector in `game/`)
 
 ### 3.4 Geographic isolation (tidal)
@@ -673,13 +673,11 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 
 **2.x Twin Mouth ✓:** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust.
 
-**2.x Mouth→Actuator [MA] ✓ (current visual default):** Developmental **M then A** chain — mouth feeds, actuator propels (rigid skeleton translation). Axon tags: `I_ATE`, `I_HUNGER`, `I_ACTUATE`. Visual app seeds ~60 `[MA]` Noms (`--archetype ma`).
+**2.x P-M-A Nom ✓ (current visual default):** Developmental **P → M → A** chain — perceptor scans (food/organism/block), mouth feeds, actuator propels. Axon tags: `SENSE_*`, `I_ATE`, `I_HUNGER`, `I_ACTUATE`. Visual app seeds ~60 Noms (`--archetype nom`).
 
 **2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
 
-**P neuron (planned):** Perceptor should register **tidal delta** (`waterLevelDelta`, local flow) as a paid sensory input — rate-of-change perception, not static wet/dry alone.
-
-**2.x+ (next):** Hebbian `trustBelieve[256]` per byte; C storage + blue expulsion when satiated; full P/M/C/A chain; mate on proximity.
+**P2 (next on Nom):** A steering from P signals (chemotaxis); Hebbian `trustBelieve[256]` per byte; C storage + blue expulsion when satiated; mate on proximity.
 
 ### Phase 3 — Genetics
 

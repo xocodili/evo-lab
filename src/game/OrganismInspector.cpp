@@ -106,7 +106,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
     }
     std::snprintf(buffer, sizeof(buffer),
                   "Nom #%u\n"
-                  "Type: perceptor->mouth->actuator [PMA]\n"
+                  "Type: P-M-A Nom\n"
                   "Nodes: 3  Links: 2  Axons: 4\n"
                   "Heading: %.0f deg\n"
                   "Energon (tick %llu):\n"
@@ -144,74 +144,6 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   aToM != nullptr && aToM->lastReceived.valid ? "active" : "—",
                   organism.lastStrokePaid ? "paid" : "skipped", organism.lastStrokeBytesPaid,
                   organism.lastActuatorInhibited ? "yes (I_ATE)" : "no",
-                  organism.landAdjacent ? "yes" : "no", organism.alive ? "alive" : "dead");
-    return buffer;
-  }
-
-  if (organism.isMouthActuatorNom()) {
-    const NeuralAxon* mouthToActuator = organism.findNeuralAxon(1, 2);
-    const NeuralAxon* actuatorToMouth = organism.findNeuralAxon(2, 1);
-    const SkeletonNode* mouthNode = organism.findNode(1);
-    const SkeletonNode* actuatorNode = findActuatorNode(organism);
-    const std::size_t mouthStoreBytes = mouthNode != nullptr ? mouthNode->store.size() : 0;
-    const std::size_t actuatorStoreBytes = actuatorNode != nullptr ? actuatorNode->store.size() : 0;
-    const bool mouthAte = mouthNode != nullptr && mouthNode->alive && mouthNode->ateThisTick;
-    const bool mouthLive = mouthNode != nullptr && mouthNode->alive && mouthNode->neuron == NeuronType::Mouth;
-    const bool actuatorLive =
-        actuatorNode != nullptr && actuatorNode->alive && actuatorNode->neuron == NeuronType::Actuator;
-    const std::size_t bodyBytes = organism.bodyStorage.size();
-    const std::size_t combinedBytes = bodyBytes + mouthStoreBytes + actuatorStoreBytes;
-    char maRecv[12] = "—";
-    char amRecv[12] = "—";
-    if (mouthToActuator != nullptr && mouthToActuator->lastReceived.valid) {
-      std::snprintf(maRecv, sizeof(maRecv), "0x%02X", mouthToActuator->lastReceived.byte);
-    }
-    if (actuatorToMouth != nullptr && actuatorToMouth->lastReceived.valid) {
-      std::snprintf(amRecv, sizeof(amRecv), "0x%02X", actuatorToMouth->lastReceived.byte);
-    }
-    const float strokeEfficiency = organism.lastIntendedThrust > 0.0f
-                                     ? organism.lastMechanicalThrust / organism.lastIntendedThrust
-                                     : 0.0f;
-    const float cellsPerTick = organism.lastDisplacement / kWorldCellSize;
-    std::snprintf(buffer, sizeof(buffer),
-                  "Nom #%u\n"
-                  "Type: mouth->actuator [MA]\n"
-                  "Heading: %.0f deg\n"
-                  "Energon (tick %llu):\n"
-                  "  body pool:  %zu B (%.2f d)\n"
-                  "  M [mouth]:  %zu/%u B (%.2f d)  %s  ate: %s\n"
-                  "  A [motor]:  %zu B (%.2f d)  %s\n"
-                  "  combined:   %zu B (%.2f d)\n"
-                  "Signals (last tick):\n"
-                  "  M->A: %s (%s)  inhibit: %s\n"
-                  "  A->M: %s (%s)\n"
-                  "  stroke: %s (%u B: body %u + A %u)  motor wet: %s\n"
-                  "Propulsion (last tick, rigid skeleton):\n"
-                  "  displacement: %.4f (%.2f cell/tick)\n"
-                  "  gross thrust: %.4f  mechanical: %.4f (eta %.0f%%)\n"
-                  "  stroke -> heat: %.2f B  tumbled: %s\n"
-                  "  stroke efficiency: %.2f  tide delta: %+.5f\n"
-                  "Land-adjacent: %s  %s",
-                  organism.id, organism.heading * 180.0f / 3.14159265f,
-                  static_cast<unsigned long long>(simTick != 0 ? simTick : organism.createdAtTick),
-                  bodyBytes, daysOfEnergon(bodyBytes), mouthStoreBytes, kMouthLocalStoreMaxBytes,
-                  daysOfEnergon(mouthStoreBytes), mouthLive ? "alive" : "dead",
-                  mouthAte ? "yes" : "no", actuatorStoreBytes, daysOfEnergon(actuatorStoreBytes),
-                  actuatorLive ? "alive" : "dead", combinedBytes, daysOfEnergon(combinedBytes),
-                  maRecv,
-                  mouthToActuator != nullptr && mouthToActuator->lastReceived.valid
-                      ? signalTagLabel(mouthToActuator->lastReceived.byte)
-                      : "—",
-                  organism.lastActuatorInhibited ? "yes (I_ATE)" : "no", amRecv,
-                  actuatorToMouth != nullptr && actuatorToMouth->lastReceived.valid
-                      ? signalTagLabel(actuatorToMouth->lastReceived.byte)
-                      : "—",
-                  organism.lastStrokePaid ? "paid" : "skipped", organism.lastStrokeBytesPaid,
-                  organism.lastStrokeBytesFromBody, organism.lastStrokeBytesFromActuatorStore,
-                  organism.lastInWater ? "yes" : "no — tail dry", organism.lastDisplacement,
-                  cellsPerTick, organism.lastIntendedThrust, organism.lastMechanicalThrust,
-                  kActuatorTranslationEta * 100.0f, organism.lastTranslationEntropyLoss,
-                  organism.lastTumbled ? "yes" : "no", strokeEfficiency, organism.lastTideDelta,
                   organism.landAdjacent ? "yes" : "no", organism.alive ? "alive" : "dead");
     return buffer;
   }
@@ -318,22 +250,12 @@ std::string formatOrganismHoverSummary(const Organism& organism) {
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
     std::snprintf(buffer, sizeof(buffer),
-                  "Hover: Nom #%u [PMA] P %zu M %zu A %zu sense %s",
+                  "Hover: Nom #%u P-M-A P %zu M %zu A %zu sense %s",
                   organism.id,
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   mouthNode != nullptr ? mouthNode->store.size() : 0,
                   actuatorNode != nullptr ? actuatorNode->store.size() : 0,
                   organism.lastPerceptScanPaid ? signalTagLabel(organism.lastPerceptTag) : "—");
-  } else if (organism.isMouthActuatorNom()) {
-    const SkeletonNode* mouthNode = organism.findNode(1);
-    const SkeletonNode* actuatorNode = findActuatorNode(organism);
-    const std::size_t mouthStoreBytes = mouthNode != nullptr ? mouthNode->store.size() : 0;
-    const std::size_t actuatorStoreBytes = actuatorNode != nullptr ? actuatorNode->store.size() : 0;
-    std::snprintf(buffer, sizeof(buffer),
-                  "Hover: Nom #%u [MA] M %zu A %zu stroke %s (body %u + A %u)",
-                  organism.id, mouthStoreBytes, actuatorStoreBytes,
-                  organism.lastStrokePaid ? "paid" : "skip", organism.lastStrokeBytesFromBody,
-                  organism.lastStrokeBytesFromActuatorStore);
   } else if (organism.hasActuatorNeurons() && !organism.hasMouthNeurons()) {
     std::snprintf(buffer, sizeof(buffer), "Hover: Nom #%u actuator (d=%.3f, stroke %s)",
                   organism.id, organism.lastDisplacement,

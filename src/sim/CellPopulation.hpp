@@ -34,10 +34,8 @@ public:
                              std::uint64_t seed);
   void seedActuatorOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                              std::uint64_t seed);
-  void seedMouthActuatorOrganisms(const BarrenWorld& world, float cellSize, float heightScale,
-                                  int count, std::uint64_t seed);
-  void seedPmaOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
-                        std::uint64_t seed);
+  void seedNoms(const BarrenWorld& world, float cellSize, float heightScale, int count,
+                std::uint64_t seed);
 
   void tick(const BarrenWorld& world, EnergonField& energon, float cellSize, float heightScale);
 

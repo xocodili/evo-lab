@@ -1,6 +1,7 @@
 #include "app/VisualApp.hpp"
 
 #include "app/CliArgs.hpp"
+#include "app/StartupTrace.hpp"
 #include "engine/FixedTimestepClock.hpp"
 #include "engine/Viewport.hpp"
 #include "engine/Camera.hpp"
@@ -25,9 +26,11 @@
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <random>
+#include <thread>
 
 namespace evolab {
 
@@ -45,16 +48,64 @@ void seedPopulation(CellPopulation& cells, const SimConfig& config, const Barren
     case SeedArchetype::Actuator:
       cells.seedActuatorOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
       break;
-    case SeedArchetype::MouthActuator:
-      cells.seedMouthActuatorOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
-      break;
-    case SeedArchetype::PerceptorMouthActuator:
-      cells.seedPmaOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
-      break;
+    case SeedArchetype::Nom:
     default:
-      std::cerr << "Unknown seed archetype; falling back to PMA.\n";
-      cells.seedPmaOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
+      cells.seedNoms(world, cellSize, heightScale, config.nomCount, config.seed);
       break;
+  }
+}
+
+struct ViewportSize {
+  int w = 0;
+  int h = 0;
+};
+
+ViewportSize resolveViewport(const platform::SdlPlatform& platform, int designW, int designH) {
+  ViewportSize out;
+  platform.windowSize(out.w, out.h);
+  if (out.w <= 0 || out.h <= 0) {
+    out.w = designW;
+    out.h = designH;
+  }
+  return out;
+}
+
+// Windows marks the process "Not Responding" if SDL events are not pumped during GL init.
+class StartupEventPump {
+public:
+  explicit StartupEventPump(platform::SdlPlatform& platform) : platform_(platform) {
+    thread_ = std::thread([this]() {
+      while (running_.load(std::memory_order_relaxed)) {
+        platform_.pumpEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    });
+  }
+
+  ~StartupEventPump() {
+    running_.store(false, std::memory_order_relaxed);
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+
+  StartupEventPump(const StartupEventPump&) = delete;
+  StartupEventPump& operator=(const StartupEventPump&) = delete;
+
+private:
+  platform::SdlPlatform& platform_;
+  std::atomic<bool> running_{true};
+  std::thread thread_;
+};
+
+void presentTerrainFrame(game::GameRenderer& renderer, const game::TerrainMesh& mesh,
+                         const BarrenWorld& world, const engine::OrbitCamera& camera, int viewW,
+                         int viewH) {
+  const float waterLevel = world.waterLevel();
+  renderer.beginFrame(0.53f, 0.75f, 0.92f);
+  renderer.drawTerrain(camera, viewW, viewH);
+  if (std::abs(world.waterLevelDelta()) <= 0.001f) {
+    renderer.drawWaterPlane(mesh, waterLevel * kTerrainHeightScale, camera, viewW, viewH);
   }
 }
 
@@ -62,77 +113,100 @@ void seedPopulation(CellPopulation& cells, const SimConfig& config, const Barren
 
 int runVisualApp(const CliArgs& args) {
   const SimConfig config = simConfigFromCli(args);
-
   const std::string windowTitle = windowTitleForConfig(config);
-  platform::SdlPlatform platform;
-  if (!platform.init(config.designWidth, config.designHeight, windowTitle.c_str())) {
-    return 1;
-  }
-  if (!engine::gl::loadGlContext()) {
-    std::cerr << "Failed to load OpenGL functions\n";
-    return 1;
-  }
+  StartupTrace trace;
 
-  game::GameRenderer renderer;
-  if (!renderer.init()) {
-    return 1;
-  }
-
-  engine::gfx::UiFont uiFont;
-  const std::string fontPath =
-      engine::gfx::resolveAssetPath(platform.basePath(), engine::gfx::kDefaultUiFontRelPath);
-  if (!uiFont.load(fontPath, engine::gfx::kDefaultUiFontPointSize)) {
-    std::cerr << "UI font failed to load: " << fontPath << '\n';
-  }
-
-  game::GameHud hud;
-  if (!uiFont.loaded() || !hud.init(uiFont)) {
-    std::cerr << "Diagnostics overlay disabled (font or HUD init failed).\n";
-  }
-
-  game::GameInspector inspector;
-  if (!uiFont.loaded() || !inspector.init(uiFont)) {
-    std::cerr << "Cell inspector disabled (font init failed).\n";
-  }
-
-  std::cout << "Building terrain and hydrology (seed=" << config.seed
+  trace.step("begin");
+  std::cout << "Generating terrain and hydrology (seed=" << config.seed
             << ", resolution=" << config.resolution << ", archetype="
             << seedArchetypeLabel(config.archetype) << ")...\n";
-  std::cout << "  (resolution 128 can take 20-30s on first launch)\n";
   std::cout.flush();
-
-  platform::InputFrame bootstrapInput;
-  bool bootstrapMouse = false;
-  platform.poll(bootstrapInput, bootstrapMouse);
 
   BarrenWorld world(config.seed, config.resolution, makeTideFromConfig(config));
-  platform.poll(bootstrapInput, bootstrapMouse);
-
-  std::cout << "Terrain ready. Seeding " << config.nomCount << " noms...\n";
-  std::cout.flush();
+  trace.step("world");
   DayCycle dayCycle(1800.0f);
   EnergonConfig energonConfig;
   energonConfig.spawnRateMax = 14.0f;
   energonConfig.maxBlobs = 2200;
   EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
-
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
-  renderer.uploadTerrainGeometry(mesh);
+  trace.step("mesh");
+  seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
+  trace.step("seed");
+
+  std::cout << "World ready (" << cells.organisms().size() << " noms). Opening window...\n";
+  std::cout.flush();
+
+  platform::SdlPlatform platform;
+  if (!platform.init(config.designWidth, config.designHeight, windowTitle.c_str())) {
+    trace.step("platform_init_failed");
+    return 1;
+  }
+  trace.open(platform.basePath() + "startup.trace");
+  std::cout << "Startup trace: " << platform.basePath() << "startup.trace\n";
+  std::cout.flush();
+  trace.step("begin");
+  trace.step("world");
+  trace.step("mesh");
+  trace.step("seed");
+  trace.step("window");
+
   engine::OrbitCamera camera;
   camera.pitch = 0.55f;
   camera.distance = 140.0f;
 
-  seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
-  if (cells.organisms().empty()) {
-    std::cerr << "Failed to seed any organisms — check wet terrain / archetype wiring.\n";
-    return 1;
+  game::GameRenderer renderer;
+  {
+    StartupEventPump startupPump(platform);
+
+    if (!engine::gl::loadGlContext()) {
+      std::cerr << "Failed to load OpenGL functions\n";
+      trace.step("gl_load_failed");
+      return 1;
+    }
+    trace.step("gl_load");
+
+    {
+      engine::gl::GlContext& g = engine::gl::gl();
+      g.clearColor(0.53f, 0.75f, 0.92f, 1.0f);
+      g.clear(engine::gl::GlEnum::kColorBufferBit | engine::gl::GlEnum::kDepthBufferBit);
+      platform.swap();
+      platform.pumpEvents();
+    }
+    trace.step("first_clear");
+
+    if (!renderer.init([&]() { platform.pumpEvents(); })) {
+      trace.step("renderer_init_failed");
+      return 1;
+    }
+    trace.step("renderer");
+
+    renderer.uploadTerrainGeometry(mesh);
+    trace.step("terrain_upload");
+
+    const ViewportSize bootViewport = resolveViewport(platform, config.designWidth, config.designHeight);
+    const engine::ViewportLayout bootLayout =
+        engine::computeLetterbox(bootViewport.w, bootViewport.h, config.designWidth, config.designHeight);
+    const int bootW = bootLayout.contentW > 0 ? bootLayout.contentW : bootViewport.w;
+    const int bootH = bootLayout.contentH > 0 ? bootLayout.contentH : bootViewport.h;
+
+    presentTerrainFrame(renderer, mesh, world, camera, bootW, bootH);
+    platform.swap();
+    platform.pumpEvents();
+    trace.step("terrain_present");
   }
-  std::cout << "Seeded " << cells.organisms().size() << " organisms.\n";
+
+  engine::gfx::UiFont uiFont;
+  game::GameHud hud;
+  game::GameInspector inspector;
+  bool uiReady = false;
 
   bool pauseSim = false;
   bool mouseDown = false;
+  int frameIndex = 0;
   std::uint64_t visualSeed = config.seed;
+  std::uint64_t lastTerrainColorTick = world.tickCount();
   float fps = 0.0f;
 
   engine::FixedTimestepClock simClock(config.fixedSimHz);
@@ -141,11 +215,30 @@ int runVisualApp(const CliArgs& args) {
   std::cout << "Phase 2.x — " << seedArchetypeLabel(config.archetype) << " Noms\n";
   std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, Esc=quit\n";
   std::cout << "Hover a Nom to inspect architecture.\n";
+  std::cout.flush();
+  trace.step("ready");
+  lastTime = std::chrono::steady_clock::now();
 
   while (!platform.shouldClose()) {
     platform::InputFrame input;
     platform.poll(input, mouseDown);
     mouseDown = input.mouseLeftDown;
+
+    if (!uiReady && frameIndex >= 2) {
+      platform.pumpEvents();
+      const std::string fontPath =
+          engine::gfx::resolveAssetPath(platform.basePath(), engine::gfx::kDefaultUiFontRelPath);
+      if (!uiFont.load(fontPath, engine::gfx::kDefaultUiFontPointSize)) {
+        std::cerr << "UI font failed to load: " << fontPath << '\n';
+      } else if (hud.init(uiFont) && inspector.init(uiFont)) {
+        uiReady = true;
+        trace.step("ui_ready");
+      } else {
+        std::cerr << "Diagnostics overlay disabled (HUD init failed).\n";
+        uiReady = true;
+      }
+      platform.pumpEvents();
+    }
 
     if (input.keyR) {
       std::random_device rd;
@@ -154,16 +247,19 @@ int runVisualApp(const CliArgs& args) {
       energon.setSeed(visualSeed);
       mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
       renderer.uploadTerrainGeometry(mesh);
+      lastTerrainColorTick = ~0ULL;
       cells.clear();
       SimConfig regenConfig = config;
       regenConfig.seed = visualSeed;
       seedPopulation(cells, regenConfig, world, kWorldCellSize, kTerrainHeightScale);
       std::cout << "Regenerated world seed=" << visualSeed << '\n';
+      std::cout.flush();
     }
 
     if (input.keySpace) {
       pauseSim = !pauseSim;
       std::cout << (pauseSim ? "Simulation paused\n" : "Simulation running\n");
+      std::cout.flush();
     }
 
     if (mouseDown) {
@@ -186,25 +282,28 @@ int runVisualApp(const CliArgs& args) {
       fps = fps <= 0.0f ? instantFps : fps * 0.88f + instantFps * 0.12f;
     }
 
-    if (!pauseSim && dt > 0.0f) {
+    if (!pauseSim && dt > 0.0f && frameIndex >= 1) {
       const int steps = std::min(config.maxSimStepsPerFrame, simClock.advance(dt));
       for (int i = 0; i < steps; ++i) {
         world.tick();
         const float sun = dayCycle.sunIntensity(world.tickCount());
         energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale);
         cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale);
+        if (i + 1 < steps) {
+          platform.pumpEvents();
+        }
       }
     }
 
-    const float waterLevel = world.waterLevel();
-    game::updateTerrainColors(mesh, world, kWorldCellSize);
-    renderer.uploadTerrainColors(mesh);
+    if (world.tickCount() != lastTerrainColorTick) {
+      game::updateTerrainColors(mesh, world, kWorldCellSize);
+      renderer.uploadTerrainColors(mesh);
+      lastTerrainColorTick = world.tickCount();
+    }
 
-    int drawableW = 0;
-    int drawableH = 0;
-    platform.windowSize(drawableW, drawableH);
+    const ViewportSize drawable = resolveViewport(platform, config.designWidth, config.designHeight);
     const engine::ViewportLayout viewport =
-        engine::computeLetterbox(drawableW, drawableH, config.designWidth, config.designHeight);
+        engine::computeLetterbox(drawable.w, drawable.h, config.designWidth, config.designHeight);
 
     int pickMouseX = input.mouseX;
     int pickMouseY = input.mouseY;
@@ -219,11 +318,11 @@ int runVisualApp(const CliArgs& args) {
 
     SimDiagnostics diag;
     diag.fps = fps;
-    diag.waterLevel = waterLevel;
+    diag.waterLevel = world.waterLevel();
     diag.tideMin = world.tide().minLevel();
     diag.tideMax = world.tide().maxLevel();
     diag.tidePhase =
-        tidePhaseLabel(waterLevel, diag.tideMin, diag.tideMax, world.tickCount(),
+        tidePhaseLabel(diag.waterLevel, diag.tideMin, diag.tideMax, world.tickCount(),
                        world.tide().config().periodTicks);
     diag.sunIntensity = dayCycle.sunIntensity(world.tickCount());
     dayCycle.clockTime(world.tickCount(), diag.clockHours, diag.clockMinutes);
@@ -239,43 +338,54 @@ int runVisualApp(const CliArgs& args) {
     diag.mouthOrganisms = cellStats.mouthOrganisms;
     diag.mouthNeurons = cellStats.mouthNeurons;
 
+    const int viewW = viewport.contentW > 0 ? viewport.contentW : drawable.w;
+    const int viewH = viewport.contentH > 0 ? viewport.contentH : drawable.h;
+
     renderer.beginFrame(skyR, skyG, skyB);
-    renderer.drawTerrain(camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
-                         viewport.contentH > 0 ? viewport.contentH : drawableH);
+    renderer.drawTerrain(camera, viewW, viewH);
     if (std::abs(world.waterLevelDelta()) <= 0.001f) {
-      renderer.drawWaterPlane(mesh, waterLevel * kTerrainHeightScale, camera,
-                              viewport.contentW > 0 ? viewport.contentW : drawableW,
-                              viewport.contentH > 0 ? viewport.contentH : drawableH);
+      renderer.drawWaterPlane(mesh, diag.waterLevel * kTerrainHeightScale, camera, viewW, viewH);
     }
-    renderer.drawEnergon(energon.blobs(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
-                         viewport.contentH > 0 ? viewport.contentH : drawableH);
-    renderer.drawOrganisms(cells.organisms(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
-                           viewport.contentH > 0 ? viewport.contentH : drawableH);
 
-    const std::uint32_t hoveredId = game::pickOrganismAtScreen(
-        cells.organisms(), camera, viewport.contentW > 0 ? viewport.contentW : drawableW,
-        viewport.contentH > 0 ? viewport.contentH : drawableH, pickMouseX, pickMouseY);
-    if (hoveredId != 0) {
-      if (const Organism* hovered = cells.findById(hoveredId)) {
-        diag.hoveredCellSummary = game::formatOrganismHoverSummary(*hovered);
-        inspector.draw(game::formatOrganismArchitectureLabel(*hovered, world.tickCount()),
-                       viewport.contentW > 0 ? viewport.contentW : drawableW,
-                       viewport.contentH > 0 ? viewport.contentH : drawableH);
+    if (frameIndex >= 1) {
+      renderer.drawEnergon(energon.blobs(), camera, viewW, viewH);
+      renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH);
+
+      const std::uint32_t hoveredId =
+          game::pickOrganismAtScreen(cells.organisms(), camera, viewW, viewH, pickMouseX, pickMouseY);
+      if (hoveredId != 0) {
+        if (const Organism* hovered = cells.findById(hoveredId)) {
+          diag.hoveredCellSummary = game::formatOrganismHoverSummary(*hovered);
+          if (uiReady) {
+            inspector.draw(game::formatOrganismArchitectureLabel(*hovered, world.tickCount()), viewW,
+                           viewH);
+          }
+        }
+      } else {
+        diag.hoveredCellSummary.clear();
       }
-    } else {
-      diag.hoveredCellSummary.clear();
     }
 
-    hud.draw(diag, viewport.contentW > 0 ? viewport.contentW : drawableW,
-             viewport.contentH > 0 ? viewport.contentH : drawableH);
+    if (uiReady) {
+      hud.draw(diag, viewW, viewH);
+    }
 
     platform.swap();
+    platform.pumpEvents();
+    ++frameIndex;
+
+    if (frameIndex == 1) {
+      trace.step("frame1");
+    }
   }
 
-  inspector.shutdown();
-  hud.shutdown();
+  if (uiReady) {
+    inspector.shutdown();
+    hud.shutdown();
+  }
   renderer.shutdown();
   platform.shutdown();
+  trace.step("shutdown");
   return 0;
 }
 

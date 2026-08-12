@@ -242,23 +242,14 @@ bool Organism::hasActuatorNeurons() const {
   return actuatorCount() > 0;
 }
 
-bool Organism::isMouthActuatorNom() const {
-  return hasMouthNeurons() && hasActuatorNeurons() && !hasPerceptorNeurons() && mouthCount() == 1 &&
-         actuatorCount() == 1 && nodes.size() == 2 && neuralAxons.size() == 2;
-}
-
 bool Organism::isPmaNom() const {
   return hasPerceptorNeurons() && hasMouthNeurons() && hasActuatorNeurons() &&
          perceptorCount() == 1 && mouthCount() == 1 && actuatorCount() == 1 && nodes.size() == 3 &&
          neuralAxons.size() == 4;
 }
 
-bool Organism::hasMouthActuatorChain() const {
-  return isMouthActuatorNom() || isPmaNom();
-}
-
-void Organism::emitMouthActuatorPreAdvectSignals(std::uint64_t simTick) {
-  if (!hasMouthActuatorChain()) {
+void Organism::emitPreAdvectSignals(std::uint64_t simTick) {
+  if (!isPmaNom()) {
     return;
   }
 

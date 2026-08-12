@@ -10,7 +10,7 @@ This repo is **public work-in-progress**: cute, experimental, and meant to be fu
 
 | Kind | What it is |
 |------|------------|
-| **Organisms** | Structured life — mouths, bones, neural links (current default: twin-mouth dumbbells) |
+| **Organisms** | Structured life — P-M-A chain (Perceptor, Mouth, Actuator), bones, neural links |
 | **Energon** | Byte-string food — sunfall rain, signal trails, fragments |
 
 Energon is still the technical term for the food substrate; **Nom** is the friendly collective when we mean “stuff in the water that eats or gets eaten.”
@@ -19,12 +19,12 @@ Energon is still the technical term for the food substrate; **Nom** is the frien
 
 - Procedural heightmap terrain with **global tides** and hydraulic spill/lake rules
 - **Water-column bands** — dry / benthic / shallow / pelagic / open deep
-- **Mouth→Actuator [MA]** chain — M→A `I_ATE` inhibits crawl; A→M `I_ACTUATE` / `I_HUNGER`; rigid skeleton propulsion
-- Also available via CLI: stem cells, twin-mouth, pure actuator archetypes
-- Interactive **SDL + OpenGL** viewer (default: ~60 `[MA]` Noms on wet terrain)
+- **P-M-A Nom** — Perceptor scans (food/organism/block), Mouth feeds, Actuator propels; M→A `I_ATE` inhibits crawl
+- Dev archetypes via CLI: stem cells, twin-mouth, pure actuator
+- Interactive **SDL + OpenGL** viewer (default: ~60 P-M-A Noms on wet terrain)
 - **Catch2** unit tests + headless smoke test
 
-**Not yet:** mating/genetics, perceptors (P), full P/M/C/A chain, Hebbian trust updates.
+**Not yet:** mating/genetics, A steering from P signals (chemotaxis), Hebbian trust updates.
 
 ## Design documentation
 
@@ -50,12 +50,12 @@ ctest --test-dir build --output-on-failure
 
 ```powershell
 .\build\src\evo-lab.exe
-# optional: --seed 42 --resolution 128 --archetype ma --nom-count 60
+# optional: --seed 42 --resolution 128 --archetype nom --nom-count 60
 ```
 
-Window title reflects the selected archetype (default **Mouth→Actuator [MA]**). Hover a Nom for architecture readout.
+Window title reflects the selected archetype (default **P-M-A Nom**). Hover a Nom for architecture readout.
 
-**Archetypes:** `stem`, `twomouth`, `actuator`, `ma`
+**Archetypes:** `nom` (default), `stem`, `twomouth`, `actuator`
 
 **Controls:** drag = orbit · scroll = zoom · **Space** = pause sim/tide · **R** = regenerate world
 

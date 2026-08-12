@@ -6,7 +6,7 @@ namespace {
 
 const char* kInspectSizeTemplate =
     "Nom #99999\n"
-    "Type: perceptor->mouth->actuator [PMA]\n"
+    "Type: P-M-A Nom\n"
     "Nodes: 3  Links: 2  Axons: 4\n"
     "Heading: 999 deg\n"
     "Energon (tick 9999999999):\n"

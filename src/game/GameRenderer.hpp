@@ -7,6 +7,7 @@
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 
+#include <functional>
 #include <vector>
 
 namespace evolab::game {
@@ -19,7 +20,7 @@ public:
   GameRenderer(const GameRenderer&) = delete;
   GameRenderer& operator=(const GameRenderer&) = delete;
 
-  bool init();
+  bool init(const std::function<void()>& heartbeat = {});
   void shutdown();
 
   void beginFrame(float clearR, float clearG, float clearB);

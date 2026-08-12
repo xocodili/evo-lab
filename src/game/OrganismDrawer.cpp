@@ -199,7 +199,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
 
     if (const SkeletonNode* root = organism.findNode(organism.rootNodeId)) {
       const SkeletonNode* headingAnchor = root;
-      if (organism.isMouthActuatorNom() || organism.isPmaNom()) {
+      if (organism.isPmaNom()) {
         for (const SkeletonNode& node : organism.nodes) {
           if (node.neuron == NeuronType::Actuator) {
             headingAnchor = organism.findNode(node.id);
@@ -210,7 +210,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
       const bool showHeading =
           (root->neuron == NeuronType::Computer && organism.mouthCount() > 0) ||
           (root->neuron == NeuronType::Actuator && organism.hasActuatorNeurons()) ||
-          organism.isMouthActuatorNom() || organism.isPmaNom();
+          organism.isPmaNom();
       if (showHeading && headingAnchor != nullptr) {
         const float chevronLen = maxBoneLen > 0.0f ? maxBoneLen * 0.55f : 0.42f;
         const float strokePulse = organism.lastStrokePaid ? 1.75f : 1.0f;

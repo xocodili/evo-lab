@@ -17,7 +17,7 @@ struct CliArgs {
   int resolution = 128;
   int frames = 120;
 
-  SeedArchetype archetype = SeedArchetype::PerceptorMouthActuator;
+  SeedArchetype archetype = SeedArchetype::Nom;
   int nomCount = 60;
   float tidePeriodTicks = 0.0f;
   int designWidth = 1280;

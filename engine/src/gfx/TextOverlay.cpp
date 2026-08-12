@@ -84,6 +84,56 @@ void main() {
 }
 )";
 
+struct SharedTextOverlayGl {
+  ShaderProgram solidProgram;
+  ShaderProgram textProgram;
+  unsigned vao = 0;
+  unsigned vbo = 0;
+  int refCount = 0;
+  bool ready = false;
+};
+
+SharedTextOverlayGl& sharedTextOverlayGl() {
+  static SharedTextOverlayGl shared;
+  return shared;
+}
+
+bool ensureSharedTextOverlayGl() {
+  SharedTextOverlayGl& shared = sharedTextOverlayGl();
+  if (shared.ready) {
+    return true;
+  }
+
+  shared.solidProgram = ShaderProgram::create(kSolidVert, kSolidFrag);
+  shared.textProgram = ShaderProgram::create(kTextVert, kTextFrag);
+
+  GlContext& g = gl::gl();
+  g.genVertexArrays(1, &shared.vao);
+  g.genBuffers(1, &shared.vbo);
+  shared.ready = true;
+  return true;
+}
+
+void releaseSharedTextOverlayGl() {
+  SharedTextOverlayGl& shared = sharedTextOverlayGl();
+  if (shared.refCount > 0 || !shared.ready) {
+    return;
+  }
+
+  GlContext& g = gl::gl();
+  if (shared.vbo) {
+    g.deleteBuffers(1, &shared.vbo);
+    shared.vbo = 0;
+  }
+  if (shared.vao) {
+    g.deleteVertexArrays(1, &shared.vao);
+    shared.vao = 0;
+  }
+  shared.solidProgram = ShaderProgram{};
+  shared.textProgram = ShaderProgram{};
+  shared.ready = false;
+}
+
 }  // namespace
 
 TextOverlay::TextOverlay() = default;
@@ -111,13 +161,14 @@ bool TextOverlay::init(const UiFont& font, const std::string& sizeTemplate) {
   panelW_ = static_cast<float>(atlasW_) + kPadX * 2.0f;
   panelH_ = static_cast<float>(atlasH_) + kPadY * 2.0f;
 
-  solidProgram_ = ShaderProgram::create(kSolidVert, kSolidFrag);
-  textProgram_ = ShaderProgram::create(kTextVert, kTextFrag);
+  if (!ensureSharedTextOverlayGl()) {
+    font_ = nullptr;
+    return false;
+  }
 
   GlContext& g = gl::gl();
-  g.genVertexArrays(1, &vao_);
-  g.genBuffers(1, &vbo_);
   g.genTextures(1, &textTexture_);
+  ++sharedTextOverlayGl().refCount;
 
   initialized_ = true;
   return true;
@@ -134,16 +185,11 @@ void TextOverlay::shutdown() {
     g.deleteTextures(1, &textTexture_);
     textTexture_ = 0;
   }
-  if (vbo_) {
-    g.deleteBuffers(1, &vbo_);
-    vbo_ = 0;
+  SharedTextOverlayGl& shared = sharedTextOverlayGl();
+  if (shared.refCount > 0) {
+    --shared.refCount;
   }
-  if (vao_) {
-    g.deleteVertexArrays(1, &vao_);
-    vao_ = 0;
-  }
-  solidProgram_ = ShaderProgram{};
-  textProgram_ = ShaderProgram{};
+  releaseSharedTextOverlayGl();
   initialized_ = false;
 }
 
@@ -156,6 +202,11 @@ void TextOverlay::draw(const std::string& text, int viewportW, int viewportH, Te
   int textW = atlasW_;
   int textH = atlasH_;
   if (!font_->renderTextBitmap(text, rgba, textW, textH, atlasW_, atlasH_)) {
+    return;
+  }
+
+  SharedTextOverlayGl& shared = sharedTextOverlayGl();
+  if (!shared.ready) {
     return;
   }
 
@@ -186,8 +237,8 @@ void TextOverlay::draw(const std::string& text, int viewportW, int viewportH, Te
   pushRect(solidVerts, panelX, panelY, panelW_, panelH_, 0.04f, 0.06f, 0.10f, 0.88f);
   pushRect(solidVerts, panelX, panelY, panelW_, 3.0f, 0.35f, 0.65f, 0.95f, 0.95f);
 
-  g.bindVertexArray(vao_);
-  g.bindBuffer(gl::GlEnum::kArrayBuffer, vbo_);
+  g.bindVertexArray(shared.vao);
+  g.bindBuffer(gl::GlEnum::kArrayBuffer, shared.vbo);
   g.bufferData(gl::GlEnum::kArrayBuffer, static_cast<gl::GLsizeiptr>(solidVerts.size() * sizeof(HudVertex)),
                solidVerts.data(), gl::GlEnum::kDynamicDraw);
   g.enableVertexAttribArray(0);
@@ -197,8 +248,8 @@ void TextOverlay::draw(const std::string& text, int viewportW, int viewportH, Te
   g.vertexAttribPointer(1, 4, gl::GlEnum::kFloat, gl::GlEnum::kFalse, sizeof(HudVertex),
                         reinterpret_cast<void*>(2 * sizeof(float)));
 
-  g.useProgram(solidProgram_.id());
-  g.uniform2f(g.getUniformLocation(solidProgram_.id(), "uScreen"), static_cast<float>(viewportW),
+  g.useProgram(shared.solidProgram.id());
+  g.uniform2f(g.getUniformLocation(shared.solidProgram.id(), "uScreen"), static_cast<float>(viewportW),
               static_cast<float>(viewportH));
   g.drawArrays(gl::GlEnum::kTriangles, 0, static_cast<int>(solidVerts.size()));
 
@@ -217,12 +268,12 @@ void TextOverlay::draw(const std::string& text, int viewportW, int viewportH, Te
   g.vertexAttribPointer(1, 2, gl::GlEnum::kFloat, gl::GlEnum::kFalse, sizeof(TextVertex),
                         reinterpret_cast<void*>(2 * sizeof(float)));
 
-  g.useProgram(textProgram_.id());
-  g.uniform2f(g.getUniformLocation(textProgram_.id(), "uScreen"), static_cast<float>(viewportW),
+  g.useProgram(shared.textProgram.id());
+  g.uniform2f(g.getUniformLocation(shared.textProgram.id(), "uScreen"), static_cast<float>(viewportW),
               static_cast<float>(viewportH));
   g.activeTexture(gl::GlEnum::kTexture0);
   g.bindTexture(gl::GlEnum::kTexture2D, textTexture_);
-  g.uniform1i(g.getUniformLocation(textProgram_.id(), "uTex"), 0);
+  g.uniform1i(g.getUniformLocation(shared.textProgram.id(), "uTex"), 0);
   g.drawArrays(gl::GlEnum::kTriangles, 0, static_cast<int>(textVerts.size()));
 
   g.bindVertexArray(0);

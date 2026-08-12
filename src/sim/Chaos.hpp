@@ -23,8 +23,7 @@ inline constexpr std::uint64_t kChaosSaltStemCell = 0xC011C011ULL;
 inline constexpr std::uint64_t kChaosSaltStarMouth = 0x0B17E011ULL;
 inline constexpr std::uint64_t kChaosSaltTwoMouth = 0x07210475ULL;
 inline constexpr std::uint64_t kChaosSaltActuator = 0xAC7A4710ULL;
-inline constexpr std::uint64_t kChaosSaltMouthActuator = 0x0BAA0700ULL;
-inline constexpr std::uint64_t kChaosSaltPma = 0x0BAA0701ULL;
+inline constexpr std::uint64_t kChaosSaltNom = 0x0BAA0701ULL;
 inline constexpr std::uint64_t kChaosSaltEnergonSunfall = 0xE16E6050111ULL;
 
 std::mt19937 chaosSpawnRng(std::uint64_t seed, std::uint64_t salt);

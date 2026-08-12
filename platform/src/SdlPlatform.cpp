@@ -37,7 +37,13 @@ bool SdlPlatform::init(int width, int height, const char* title) {
     return false;
   }
 
-  SDL_GL_SetSwapInterval(1);
+  if (SDL_GL_MakeCurrent(window_, glContext_) != 0) {
+    std::cerr << "SDL_GL_MakeCurrent failed: " << SDL_GetError() << '\n';
+    return false;
+  }
+
+  // Immediate mode avoids blocking the UI thread on a first-frame vsync stall.
+  SDL_GL_SetSwapInterval(0);
   return true;
 }
 
@@ -55,6 +61,62 @@ void SdlPlatform::shutdown() {
     sdlInitialized_ = false;
   }
   shouldClose_ = false;
+  pendingEvents_.clear();
+}
+
+void SdlPlatform::handleEvent(const SDL_Event& event, InputFrame& input, bool mouseLeftHeld) {
+  switch (event.type) {
+    case SDL_QUIT:
+      shouldClose_ = true;
+      input.quit = true;
+      break;
+    case SDL_KEYDOWN:
+      if (event.key.repeat) {
+        break;
+      }
+      if (event.key.keysym.sym == SDLK_ESCAPE) {
+        shouldClose_ = true;
+        input.quit = true;
+      } else if (event.key.keysym.sym == SDLK_r) {
+        input.keyR = true;
+      } else if (event.key.keysym.sym == SDLK_SPACE) {
+        input.keySpace = true;
+      }
+      break;
+    case SDL_MOUSEWHEEL:
+      input.scrollDelta += event.wheel.y;
+      break;
+    case SDL_MOUSEBUTTONDOWN:
+      if (event.button.button == SDL_BUTTON_LEFT) {
+        input.mouseLeftDown = true;
+      }
+      break;
+    case SDL_MOUSEBUTTONUP:
+      if (event.button.button == SDL_BUTTON_LEFT) {
+        input.mouseLeftDown = false;
+      }
+      break;
+    case SDL_MOUSEMOTION:
+      if (mouseLeftHeld) {
+        input.mouseDeltaX += event.motion.xrel;
+        input.mouseDeltaY += event.motion.yrel;
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void SdlPlatform::pumpEvents() {
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    if (event.type == SDL_QUIT) {
+      shouldClose_ = true;
+    } else {
+      pendingEvents_.push_back(event);
+    }
+  }
+  SDL_Delay(0);
 }
 
 void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
@@ -64,48 +126,15 @@ void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
   input.scrollDelta = 0;
   input.moveForward = 0.0f;
   input.moveRight = 0.0f;
+
+  for (const SDL_Event& event : pendingEvents_) {
+    handleEvent(event, input, mouseLeftHeld);
+  }
+  pendingEvents_.clear();
+
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
-    switch (event.type) {
-      case SDL_QUIT:
-        shouldClose_ = true;
-        input.quit = true;
-        break;
-      case SDL_KEYDOWN:
-        if (event.key.repeat) {
-          break;
-        }
-        if (event.key.keysym.sym == SDLK_ESCAPE) {
-          shouldClose_ = true;
-          input.quit = true;
-        } else if (event.key.keysym.sym == SDLK_r) {
-          input.keyR = true;
-        } else if (event.key.keysym.sym == SDLK_SPACE) {
-          input.keySpace = true;
-        }
-        break;
-      case SDL_MOUSEWHEEL:
-        input.scrollDelta += event.wheel.y;
-        break;
-      case SDL_MOUSEBUTTONDOWN:
-        if (event.button.button == SDL_BUTTON_LEFT) {
-          input.mouseLeftDown = true;
-        }
-        break;
-      case SDL_MOUSEBUTTONUP:
-        if (event.button.button == SDL_BUTTON_LEFT) {
-          input.mouseLeftDown = false;
-        }
-        break;
-      case SDL_MOUSEMOTION:
-        if (mouseLeftHeld) {
-          input.mouseDeltaX += event.motion.xrel;
-          input.mouseDeltaY += event.motion.yrel;
-        }
-        break;
-      default:
-        break;
-    }
+    handleEvent(event, input, mouseLeftHeld);
   }
 
   int mx = 0;

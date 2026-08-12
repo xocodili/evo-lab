@@ -188,11 +188,9 @@ public:
   bool hasActuatorNeurons() const;
   bool hasLiveActuatorNeurons() const;
   bool hasLiveFunctionalNeurons() const;
-  bool isMouthActuatorNom() const;
   bool isPmaNom() const;
-  bool hasMouthActuatorChain() const;
 
-  void emitMouthActuatorPreAdvectSignals(std::uint64_t simTick);
+  void emitPreAdvectSignals(std::uint64_t simTick);
 
   bool hasNeuralAxons() const;
 
@@ -215,13 +213,8 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
 Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
                               std::size_t storageBytes, std::uint64_t createdAtTick);
 
-Organism makeMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
-                                   std::size_t storageBytes, std::uint64_t createdAtTick,
-                                   float boneLength);
-
-Organism makePerceptorMouthActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
-                                            std::size_t storageBytes, std::uint64_t createdAtTick,
-                                            float boneLength);
+Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
+                         std::uint64_t createdAtTick, float boneLength);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
 

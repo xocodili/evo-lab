@@ -20,6 +20,7 @@ add_library(evolab_sim STATIC
   sim/DayCycle.cpp
   sim/Energon.cpp
   sim/EnergonString.cpp
+  sim/EnergonSpatialIndex.cpp
   sim/EnergonStats.cpp
   sim/SimDiagnostics.cpp
   sim/SimConfig.cpp
@@ -43,6 +44,7 @@ add_executable(evo-lab
   app/main.cpp
   app/CliArgs.cpp
   app/SmokeTest.cpp
+  app/StartupTrace.cpp
   app/VisualApp.cpp
 )
 target_link_libraries(evo-lab PRIVATE evolab_sim evolab_game evolab_engine evolab_platform)

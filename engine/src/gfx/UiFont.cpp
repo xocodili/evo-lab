@@ -15,6 +15,16 @@ namespace {
 
 constexpr float kFontDpi = 96.0f;
 
+struct CachedGlyph {
+  int advance = 0;
+  int x0 = 0;
+  int y0 = 0;
+  int w = 0;
+  int h = 0;
+  std::vector<unsigned char> alpha;
+  bool valid = false;
+};
+
 struct LoadedFont {
   std::vector<unsigned char> bytes;
   stbtt_fontinfo info{};
@@ -23,7 +33,11 @@ struct LoadedFont {
   int descent = 0;
   int lineGap = 0;
   bool ok = false;
+  std::vector<CachedGlyph> glyphCache;
 };
+
+void buildGlyphCache(LoadedFont& font);
+const CachedGlyph* lookupGlyph(const LoadedFont& font, unsigned char ch);
 
 bool isTrueTypeFont(const std::vector<unsigned char>& bytes) {
   if (bytes.size() < 4) {
@@ -65,12 +79,17 @@ bool loadFontFile(LoadedFont& font, const std::string& path, float pointSize) {
   font.scale = stbtt_ScaleForPixelHeight(&font.info, pixelHeight);
   stbtt_GetFontVMetrics(&font.info, &font.ascent, &font.descent, &font.lineGap);
   font.ok = true;
+  buildGlyphCache(font);
   return true;
 }
 
 int measureLineWidth(const LoadedFont& font, const std::string& line) {
   int width = 0;
   for (unsigned char ch : line) {
+    if (const CachedGlyph* glyph = lookupGlyph(font, ch)) {
+      width += glyph->advance;
+      continue;
+    }
     int advance = 0;
     int lsb = 0;
     stbtt_GetCodepointHMetrics(&font.info, ch, &advance, &lsb);
@@ -100,6 +119,56 @@ void blitGlyph(std::vector<unsigned char>& rgba, int atlasW, int atlasH, int dst
       pixel[3] = alpha;
     }
   }
+}
+
+void blitCachedGlyph(std::vector<unsigned char>& rgba, int atlasW, int atlasH, int dstX, int dstY,
+                     const CachedGlyph& glyph, unsigned char r, unsigned char g, unsigned char b) {
+  if (!glyph.valid || glyph.w <= 0 || glyph.h <= 0) {
+    return;
+  }
+  blitGlyph(rgba, atlasW, atlasH, dstX, dstY, const_cast<unsigned char*>(glyph.alpha.data()),
+            glyph.w, glyph.h, r, g, b);
+}
+
+void buildGlyphCache(LoadedFont& font) {
+  font.glyphCache.assign(128, {});
+  for (int codepoint = 32; codepoint < 127; ++codepoint) {
+    CachedGlyph& glyph = font.glyphCache[static_cast<std::size_t>(codepoint)];
+    int advance = 0;
+    int lsb = 0;
+    stbtt_GetCodepointHMetrics(&font.info, codepoint, &advance, &lsb);
+    glyph.advance = static_cast<int>(advance * font.scale);
+
+    int x0 = 0;
+    int y0 = 0;
+    int x1 = 0;
+    int y1 = 0;
+    stbtt_GetCodepointBitmapBox(&font.info, codepoint, font.scale, font.scale, &x0, &y0, &x1, &y1);
+    glyph.x0 = x0;
+    glyph.y0 = y0;
+
+    int gw = 0;
+    int gh = 0;
+    unsigned char* bitmap =
+        stbtt_GetCodepointBitmap(&font.info, 0, font.scale, codepoint, &gw, &gh, 0, 0);
+    glyph.w = gw;
+    glyph.h = gh;
+    if (bitmap != nullptr && gw > 0 && gh > 0) {
+      glyph.alpha.assign(bitmap, bitmap + static_cast<std::size_t>(gw * gh));
+    }
+    if (bitmap != nullptr) {
+      stbtt_FreeBitmap(bitmap, nullptr);
+    }
+    glyph.valid = true;
+  }
+}
+
+const CachedGlyph* lookupGlyph(const LoadedFont& font, unsigned char ch) {
+  if (font.glyphCache.size() < 128 || ch >= 128) {
+    return nullptr;
+  }
+  const CachedGlyph& glyph = font.glyphCache[static_cast<std::size_t>(ch)];
+  return glyph.valid ? &glyph : nullptr;
 }
 
 }  // namespace
@@ -168,6 +237,13 @@ bool UiFont::renderTextBitmap(const std::string& text, std::vector<unsigned char
   for (const std::string& line : lines) {
     int penX = kPad;
     for (unsigned char ch : line) {
+      if (const CachedGlyph* glyph = lookupGlyph(font, ch)) {
+        blitCachedGlyph(rgba, outW, outH, penX + glyph->x0, baselineY + glyph->y0, *glyph, textR,
+                        textG, textB);
+        penX += glyph->advance;
+        continue;
+      }
+
       int advance = 0;
       int lsb = 0;
       stbtt_GetCodepointHMetrics(&font.info, ch, &advance, &lsb);
