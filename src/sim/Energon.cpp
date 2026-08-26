@@ -61,6 +61,10 @@ void EnergonField::clear() {
 }
 
 void EnergonField::injectBlob(EnergonBlob blob) {
+  if (blob.origin == EnergonOrigin::Fragment &&
+      static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
+    return;
+  }
   if (blob.id == 0) {
     blob.id = nextId_++;
   }

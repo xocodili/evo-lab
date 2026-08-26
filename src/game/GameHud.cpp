@@ -8,13 +8,14 @@ namespace {
 
 const char* kHudSizeTemplate =
     "evo-lab  Phase 2.x\n"
+    "Archetype: P-M-A Nom\n"
     "FPS: 9999.9\n"
     "Time: Night 23:59  sun 100%\n"
     "Tide: +99.9  Falling  [-99..+99]\n"
     "Energon: 9999 blobs  99999999 bytes\n"
     "  wet 9999  dry 9999  falling 9999\n"
     "  cap 9999 / 9999\n"
-    "Cells: 999 twin mouth (999 M)\n"
+    "Cells: 999 P-M-A Noms (999 degraded, 999 stem)\n"
     "Hover: Organism #99999 twin mouth (2 axons)\n"
     "Tick: 99999999  Seed: 99999999\n"
     "[Paused]";
@@ -27,21 +28,23 @@ std::string formatDiagnosticsText(const SimDiagnostics& stats) {
   std::snprintf(
       buffer, sizeof(buffer),
       "evo-lab  Phase 2.x\n"
+      "Archetype: %s\n"
       "FPS: %.1f\n"
       "Time: %s %02d:%02d  sun %.0f%%\n"
       "Tide: %+.1f  %s  [%.0f..%.0f]\n"
       "Energon: %d blobs  %llu bytes\n"
       "  wet %d  dry %d  falling %d\n"
       "  cap %d / %d\n"
-      "Cells: %d twin mouth (%d M)\n"
+      "Cells: %d P-M-A Noms (%d degraded, %d stem)\n"
       "%s\n"
       "Tick: %llu  Seed: %llu\n"
       "%s",
-      stats.fps, stats.dayNight, stats.clockHours, stats.clockMinutes, stats.sunIntensity * 100.0f,
+      stats.archetypeLabel, stats.fps, stats.dayNight, stats.clockHours,
+      stats.clockMinutes, stats.sunIntensity * 100.0f,
       stats.waterLevel, stats.tidePhase, stats.tideMin, stats.tideMax, stats.energon.blobCount,
       static_cast<unsigned long long>(stats.energon.totalBytes), stats.energon.groundedWet,
       stats.energon.groundedDry, stats.energon.falling, stats.energon.blobCount, stats.energonCap,
-      stats.mouthOrganisms, stats.mouthNeurons, hoverLine,
+      stats.pmaNomOrganisms, stats.degradedNomOrganisms, stats.stemCells, hoverLine,
       static_cast<unsigned long long>(stats.simTick),
       static_cast<unsigned long long>(stats.seed), stats.paused ? "[Paused]" : "");
   return buffer;

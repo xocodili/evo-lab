@@ -27,6 +27,7 @@ add_library(evolab_sim STATIC
   sim/Organism.cpp
   sim/OrganismDetail.cpp
   sim/OrganismPerceptor.cpp
+  sim/NeuronSignal.cpp
   sim/OrganismKinematics.cpp
   sim/OrganismFactories.cpp
   sim/NeuronTick.cpp
@@ -39,6 +40,7 @@ add_library(evolab_sim STATIC
 )
 
 target_include_directories(evolab_sim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(evolab_sim PUBLIC evolab_engine)
 
 add_executable(evo-lab
   app/main.cpp

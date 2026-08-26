@@ -6,6 +6,7 @@
 
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/PerceptorFocus.hpp"
 
 
 
@@ -33,7 +34,8 @@ enum class NeuronType : std::uint8_t { None = 0, Mouth, Perceptor, Computer, Act
 
 
 
-// Joint / attachment site. World pose is filled each tick by kinematics.
+// Joint / attachment site. World pose is filled each tick by engine forward kinematics
+// (KinematicSkeleton + KinematicLocalPose — see docs/KINEMATICS.md) via Organism::updateKinematics.
 
 struct SkeletonNode {
 
@@ -55,11 +57,21 @@ struct SkeletonNode {
 
   std::uint8_t lastEmittedByte = 0;
 
+  // Local perceptor focus (valid when neuron == Perceptor).
+  float gazeHeading = 0.0f;
+  PerceptFocusKind focusKind = PerceptFocusKind::None;
+  float focusBearing = 0.0f;
+  float focusRange = 1.0f;
+  float focusSalience = 0.0f;
+  bool focusLocked = false;
+  std::uint8_t perceptConfidence = 0;
+
 };
 
 
 
 // Coupled mechanical bone (kinematic). Energy on this edge is optional (eta may be 0).
+// Kinematic fields mirror engine::kinematics::KinematicBone for FK solvers.
 
 struct SkeletonLink {
 
@@ -69,6 +81,7 @@ struct SkeletonLink {
 
   float restLength = 0.0f;
 
+  // Bind local yaw (radians) relative to parent; used as KinematicBone::jointAngle at FK build.
   float jointAngle = 0.0f;
 
   float energyEta = 0.88f;
@@ -113,6 +126,9 @@ public:
 
   float heading = 0.0f;
 
+  // Heritable sensory phenotype (jittered once at spawn).
+  float senseRadiusFactor = kPerceptorSenseRadiusFactor;
+
   // Proprioception (A neuron / pre-P): did the last stroke move us?
   float lastDisplacement = 0.0f;
   float lastIntendedThrust = 0.0f;
@@ -128,8 +144,9 @@ public:
   bool lastStrokePaid = false;
   bool lastTumbled = false;
 
-  // Proprioception (P neuron): last focus scan result.
-  std::uint8_t lastPerceptTag = 0;
+  // Proprioception (P neuron): mirror of primary perceptor focus (inspector / debug).
+  std::uint8_t lastPerceptConfidence = 0;
+  PerceptFocusKind lastPerceptFocusKind = PerceptFocusKind::None;
   float lastPerceptBearing = 0.0f;
   float lastPerceptRange = 0.0f;
   bool lastPerceptScanPaid = false;
@@ -169,7 +186,7 @@ public:
 
   void perceive(const BarrenWorld& world, const EnergonField& energon, float cellSize,
                 float halfExtent, const std::vector<Organism>& population,
-                std::uint64_t simTick);
+                std::uint64_t simTick, float sunIntensity = 1.0f);
 
   void transferEnergy(EnergonField& field, float cellSize);
 

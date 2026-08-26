@@ -32,7 +32,9 @@ TEST_CASE("developmental axon trust initializes near baseline", "[chaos]") {
 
   const float feedScale = evolab::axonTrustScale(axon.trustFeed);
   const float believeScale = evolab::axonTrustScale(axon.trustBelieve);
-  REQUIRE(feedScale == Catch::Approx(1.0f).margin(0.04f));
+  const float minFeedScale =
+      static_cast<float>(evolab::kTrustMin) / static_cast<float>(evolab::kTrustBaseline);
+  REQUIRE(feedScale == Catch::Approx(minFeedScale).margin(0.04f));
   REQUIRE(believeScale == Catch::Approx(1.0f).margin(0.04f));
   REQUIRE(axon.trustFeed >= evolab::kTrustMin);
   REQUIRE(axon.trustFeed <= evolab::kTrustMax);

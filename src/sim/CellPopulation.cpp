@@ -259,7 +259,7 @@ void CellPopulation::seedNoms(const BarrenWorld& world, float cellSize, float he
 }
 
 void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float cellSize,
-                          float heightScale) {
+                          float heightScale, float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
   energon.prepareSpatialQueries(cellSize, halfExtent);
   for (Organism& organism : organisms_) {
@@ -267,7 +267,8 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   }
   energon.prepareSpatialQueries(cellSize, halfExtent);
   for (Organism& organism : organisms_) {
-    organism.perceive(world, energon, cellSize, halfExtent, organisms_, world.tickCount());
+    organism.perceive(world, energon, cellSize, halfExtent, organisms_, world.tickCount(),
+                      sunIntensity);
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,
                                     heightScale, halfExtent, world.tickCount()};
@@ -307,9 +308,19 @@ CellPopulationStats CellPopulation::stats() const {
   out.liveCells = static_cast<int>(organisms_.size());
   out.organisms = countOrganisms(organisms_);
   for (const Organism& organism : organisms_) {
-    if (organism.hasActuatorNeurons()) {
+    if (organism.isPmaNom()) {
+      ++out.pmaNomOrganisms;
+      out.mouthNeurons += organism.mouthCount();
+      out.skeletonLinks += static_cast<int>(organism.links.size());
+      out.neuralAxons += static_cast<int>(organism.neuralAxons.size());
+    } else if (organism.hasPerceptorNeurons()) {
+      ++out.degradedNomOrganisms;
+      out.skeletonLinks += static_cast<int>(organism.links.size());
+      out.neuralAxons += static_cast<int>(organism.neuralAxons.size());
+    } else if (organism.hasActuatorNeurons()) {
       ++out.actuatorOrganisms;
-    } else if (!organism.hasMouthNeurons()) {
+    } else if (!organism.hasMouthNeurons() && !organism.hasActuatorNeurons() &&
+               !organism.hasPerceptorNeurons()) {
       ++out.stemCells;
     } else {
       ++out.mouthOrganisms;

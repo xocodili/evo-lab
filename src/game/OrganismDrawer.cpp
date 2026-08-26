@@ -154,6 +154,14 @@ void appendHeadingChevron(std::vector<CellVertex>& verts, float wx, float wy, fl
   }
 }
 
+std::size_t totalOrganismFuel(const Organism& organism) {
+  std::size_t total = organism.bodyStorage.size();
+  for (const SkeletonNode& node : organism.nodes) {
+    total += node.store.size();
+  }
+  return total;
+}
+
 }  // namespace
 
 OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms, float eyeX,
@@ -168,7 +176,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
       continue;
     }
 
-    const float fill = static_cast<float>(organism.bodyStorage.size()) /
+    const float fill = static_cast<float>(totalOrganismFuel(organism)) /
                        static_cast<float>(kStemCellStorageMaxBytes);
     const float alpha = 0.55f + 0.45f * std::min(1.0f, fill);
     float maxBoneLen = 0.0f;
@@ -251,6 +259,11 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
         g = 0.92f;
         b = 0.45f;
         halfSize = 0.17f;
+      } else if (node.neuron == NeuronType::None) {
+        r = 0.55f;
+        g = 0.82f;
+        b = 0.95f;
+        halfSize = 0.12f;
       }
       appendCellBillboard(batch.cellVerts, node.worldX, node.worldY, node.worldZ, eyeX, eyeY, eyeZ,
                           r, g, b, alpha, halfSize);

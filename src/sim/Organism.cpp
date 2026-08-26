@@ -109,8 +109,9 @@ void Organism::feed(EnergonField& field, float cellSize) {
 
 void Organism::perceive(const BarrenWorld& world, const EnergonField& energon, float cellSize,
                         float halfExtent, const std::vector<Organism>& population,
-                        std::uint64_t simTick) {
-  runPerceptorPhase(*this, world, energon, cellSize, halfExtent, population, simTick);
+                        std::uint64_t simTick, float sunIntensity) {
+  runPerceptorPhase(*this, world, energon, cellSize, halfExtent, population, simTick,
+                    sunIntensity);
 }
 
 void Organism::transferEnergy(EnergonField& field, float cellSize) {
@@ -243,34 +244,14 @@ bool Organism::hasActuatorNeurons() const {
 }
 
 bool Organism::isPmaNom() const {
-  return hasPerceptorNeurons() && hasMouthNeurons() && hasActuatorNeurons() &&
-         perceptorCount() == 1 && mouthCount() == 1 && actuatorCount() == 1 && nodes.size() == 3 &&
-         neuralAxons.size() == 4;
+  return organismHasPmaTopology(*this);
 }
 
 void Organism::emitPreAdvectSignals(std::uint64_t simTick) {
   if (!isPmaNom()) {
     return;
   }
-
-  for (const SkeletonNode& node : nodes) {
-    if (node.neuron != NeuronType::Mouth || !node.alive || !node.ateThisTick) {
-      continue;
-    }
-    for (NeuralAxon& axon : neuralAxons) {
-      if (axon.srcNodeId != node.id) {
-        continue;
-      }
-      const SkeletonNode* dst = findNode(axon.dstNodeId);
-      if (dst == nullptr || dst->neuron != NeuronType::Actuator) {
-        continue;
-      }
-      axon.lastSentByte = kSignalTagIAte;
-      axon.lastReceived.valid = true;
-      axon.lastReceived.byte = kSignalTagIAte;
-      axon.lastReceived.tick = simTick;
-    }
-  }
+  organism_detail::emitMouthConfidenceSignals(*this, simTick);
 }
 
 bool Organism::hasNeuralAxons() const {
@@ -283,6 +264,8 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
   }
 
   heading = chaosJitterHeading(heading, rng);
+
+  senseRadiusFactor = chaosJitterFloat(kPerceptorSenseRadiusFactor, rng);
 
   for (SkeletonLink& link : links) {
     link.restLength = chaosJitterFloat(link.restLength, rng);

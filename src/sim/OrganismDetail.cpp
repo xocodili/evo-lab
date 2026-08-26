@@ -1,5 +1,7 @@
 ﻿#include "sim/OrganismInternal.hpp"
 
+#include "engine/kinematics/ForwardKinematics.hpp"
+
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
@@ -7,6 +9,9 @@
 #include "sim/EnergonString.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/Organism.hpp"
+#include "sim/OrganismPerceptor.hpp"
+#include "sim/NeuronSignal.hpp"
+#include "sim/PerceptorFocus.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WorldConstants.hpp"
 
@@ -232,7 +237,8 @@ void buildOutboundPlans(const Organism& organism, std::uint64_t simTick,
       }
 
       const int bandwidth = axonFeedBandwidth(axon);
-      if (bandwidth > 0) {
+      // P-M-A v1: axons carry interoception/sense signals only; fuel stays in local stores.
+      if (bandwidth > 0 && !organism.isPmaNom()) {
         const std::size_t take =
             std::min(node.store.size(), static_cast<std::size_t>(bandwidth));
         plan.feedBytes.assign(node.store.begin(),
@@ -295,6 +301,12 @@ void applyOutboundPlans(Organism& organism, const std::vector<AxonOutboundPlan>&
 }
 
 void spitMouthOverflow(Organism& organism, EnergonField& field) {
+  // P-M-A Noms keep fuel in per-neuron stores (mitochondria analogue). Ingestion
+  // overflow is handled in creditMouthStore; do not cap the birth/endowment budget.
+  if (organism.isPmaNom()) {
+    return;
+  }
+
   for (SkeletonNode& node : organism.nodes) {
     if (!node.alive || node.neuron != NeuronType::Mouth) {
       continue;
@@ -584,6 +596,43 @@ void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity
   }
 }
 
+bool applyPmaPerceptorReflexHeading(Organism& organism, std::uint64_t simTick) {
+  if (!organism.isPmaNom()) {
+    return false;
+  }
+
+  const NeuralAxon* pToA = organism.findNeuralAxon(1, 3);
+  if (pToA == nullptr || !pToA->lastReceived.valid || pToA->lastReceived.tick != simTick ||
+      !isNeuronConfidenceByte(pToA->lastReceived.byte)) {
+    return false;
+  }
+
+  const SkeletonNode* perceptor = nullptr;
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.alive && node.neuron == NeuronType::Perceptor) {
+      perceptor = &node;
+      break;
+    }
+  }
+  if (perceptor == nullptr || !perceptor->focusLocked) {
+    return false;
+  }
+
+  const float confidence = static_cast<float>(pToA->lastReceived.byte);
+  const float valence = (confidence - 3.5f) / 3.5f;
+  if (std::abs(valence) < kOrganismPmaReflexMinValence) {
+    return false;
+  }
+
+  const float fleeOffset = valence < 0.0f ? 3.14159265f : 0.0f;
+  const float targetHeading =
+      normalizeAngle(perceptor->gazeHeading + perceptor->focusBearing + fleeOffset);
+  const float turnRate = kOrganismMaxTurnPerTick * std::abs(valence) *
+                         (0.5f + perceptor->focusSalience * 0.5f);
+  organism.heading = turnToward(organism.heading, targetHeading, turnRate);
+  return true;
+}
+
 bool payActuatorStrokeCost(Organism& organism, std::uint32_t& fromBody,
                            std::uint32_t& fromActuatorStore) {
   fromBody = 0;
@@ -621,8 +670,9 @@ bool actuatorInhibitedByMouthSignal(const Organism& organism, std::uint64_t simT
         src->neuron != NeuronType::Mouth || dst->neuron != NeuronType::Actuator) {
       continue;
     }
-    if (axon.lastReceived.valid && axon.lastReceived.byte == kSignalTagIAte &&
-        axon.lastReceived.tick == simTick) {
+    if (axon.lastReceived.valid && axon.lastReceived.tick == simTick &&
+        isNeuronConfidenceByte(axon.lastReceived.byte) &&
+        axon.lastReceived.byte >= kMouthInhibitActuatorConfidence) {
       return true;
     }
   }
@@ -639,13 +689,10 @@ SkeletonNode* findActuatorNode(Organism& organism) {
 }
 
 void translateOrganismXZ(Organism& organism, float dx, float dz) {
-  for (SkeletonNode& node : organism.nodes) {
-    node.worldX += dx;
-    node.worldZ += dz;
-  }
+  engine::kinematics::translateNodesXZ(std::span(organism.nodes), dx, dz);
 }
 
-void emitActuatorOutboundSignals(Organism& organism, std::uint64_t simTick) {
+void emitActuatorConfidenceSignals(Organism& organism, std::uint64_t simTick) {
   if (!organism.isPmaNom()) {
     return;
   }
@@ -661,39 +708,44 @@ void emitActuatorOutboundSignals(Organism& organism, std::uint64_t simTick) {
     return;
   }
 
-  std::uint8_t tag = 0;
-  if (organism.lastStrokePaid) {
-    tag = kSignalTagIActuate;
-  } else if (organism.lastInWater && !organism.lastActuatorInhibited) {
-    bool mouthEmpty = true;
-    for (const SkeletonNode& node : organism.nodes) {
-      if (node.alive && node.neuron == NeuronType::Mouth && !node.store.empty()) {
-        mouthEmpty = false;
-        break;
-      }
-    }
-    const bool fuelPoor = actuator->store.size() < kActuatorStrokeCostPerTick;
-    if (fuelPoor && mouthEmpty) {
-      tag = kSignalTagIHunger;
-    }
-  }
-  if (tag == 0) {
-    return;
-  }
+  const std::uint8_t confidence =
+      actuatorActivityConfidence(organism.lastStrokePaid, organism.lastStrokeBytesPaid);
+  organism.lastActuatorOutboundSignal = confidence;
 
-  organism.lastActuatorOutboundSignal = tag;
   for (NeuralAxon& axon : organism.neuralAxons) {
     if (axon.srcNodeId != actuator->id) {
       continue;
     }
     const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
-    if (dst == nullptr || dst->neuron != NeuronType::Mouth) {
+    if (dst == nullptr || !dst->alive ||
+        (dst->neuron != NeuronType::Mouth && dst->neuron != NeuronType::Perceptor)) {
       continue;
     }
-    axon.lastSentByte = tag;
-    axon.lastReceived.valid = true;
-    axon.lastReceived.byte = tag;
-    axon.lastReceived.tick = simTick;
+    writeAxonConfidence(axon, confidence, simTick);
+  }
+}
+
+void emitMouthConfidenceSignals(Organism& organism, std::uint64_t simTick) {
+  if (!organism.isPmaNom()) {
+    return;
+  }
+
+  for (const SkeletonNode& node : organism.nodes) {
+    if (!node.alive || node.neuron != NeuronType::Mouth) {
+      continue;
+    }
+    const std::uint8_t confidence = mouthFuelConfidence(node);
+    for (NeuralAxon& axon : organism.neuralAxons) {
+      if (axon.srcNodeId != node.id) {
+        continue;
+      }
+      const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
+      if (dst == nullptr || !dst->alive ||
+          (dst->neuron != NeuronType::Perceptor && dst->neuron != NeuronType::Actuator)) {
+        continue;
+      }
+      writeAxonConfidence(axon, confidence, simTick);
+    }
   }
 }
 
@@ -739,6 +791,10 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     organism.lastTumbled = true;
   }
 
+  if (organism.isPmaNom()) {
+    applyPmaPerceptorReflexHeading(organism, simTick);
+  }
+
   if (organism.lastInWater && !inhibited &&
       payActuatorStrokeCost(organism, organism.lastStrokeBytesFromBody,
                             organism.lastStrokeBytesFromActuatorStore)) {
@@ -777,7 +833,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   }
   clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
 
-  emitActuatorOutboundSignals(organism, simTick);
+  emitActuatorConfidenceSignals(organism, simTick);
 
   const float dx = root->worldX - startX;
   const float dz = root->worldZ - startZ;
@@ -785,6 +841,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 }
 
 void runMouthSignalPhase(Organism& organism, EnergonField& field, std::uint64_t simTick) {
+  emitMouthConfidenceSignals(organism, simTick);
   std::vector<AxonOutboundPlan> plans;
   buildOutboundPlans(organism, simTick, plans);
   deliverOutboundPlans(organism, field, simTick, plans);

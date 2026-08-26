@@ -32,7 +32,8 @@ bool axonMarkedForPruning(const NeuralAxon& axon) {
 
 void initializeDevelopmentalAxonTrust(NeuralAxon& axon, std::mt19937& rng) {
   axon.trustBelieve = chaosJitterTrust(kTrustBaseline, rng);
-  axon.trustFeed = chaosJitterTrust(kTrustBaseline, rng);
+  // Feed channel starts gated at developmental minimum (see makeDevelopmentalAxon).
+  axon.trustFeed = chaosJitterTrust(kTrustMin, rng);
   axon.etaSignal = chaosJitterFloat(kDefaultNeuralAxonEta, rng);
   axon.etaEnergy = chaosJitterFloat(kDefaultNeuralAxonEta, rng);
 }

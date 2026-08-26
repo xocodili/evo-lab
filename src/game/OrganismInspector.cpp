@@ -1,6 +1,8 @@
 #include "game/OrganismInspector.hpp"
 
 #include "sim/CellConstants.hpp"
+#include "sim/NeuronSignal.hpp"
+#include "sim/PerceptorFocus.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <cstdio>
@@ -15,6 +17,9 @@ int trustDisplayPercent(std::uint16_t trust) {
 }
 
 const char* signalTagLabel(std::uint8_t tag) {
+  if (isNeuronConfidenceByte(tag)) {
+    return "CONF";
+  }
   switch (tag) {
     case kSignalTagIAte:
       return "I_ATE";
@@ -66,22 +71,75 @@ float daysOfEnergon(std::size_t bytes) {
   return static_cast<float>(bytes) / static_cast<float>(kTicksPerStemCellDay);
 }
 
+std::size_t totalNodeFuel(const Organism& organism) {
+  std::size_t total = 0;
+  for (const SkeletonNode& node : organism.nodes) {
+    total += node.store.size();
+  }
+  return total;
+}
+
+const char* neuronAliveFlag(const Organism& organism, NeuronType type) {
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.alive && node.neuron == type) {
+      return "alive";
+    }
+  }
+  return "dead";
+}
+
+void formatAxonConfidence(char* buffer, std::size_t bufferSize, std::uint8_t byte,
+                          NeuronType source) {
+  if (isNeuronConfidenceByte(byte)) {
+    std::snprintf(buffer, bufferSize, "%u/7 (%s)", static_cast<unsigned>(byte),
+                  neuronConfidenceRoleLabel(source));
+  } else {
+    std::snprintf(buffer, bufferSize, "%s", signalTagLabel(byte));
+  }
+}
+
 }  // namespace
 
 std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint64_t simTick) {
   char buffer[2048];
-  const float daysRemaining = daysOfEnergon(organism.bodyStorage.size());
+  const std::size_t nodeFuel = totalNodeFuel(organism);
+  const float daysRemaining = daysOfEnergon(nodeFuel + organism.bodyStorage.size());
 
   if (!organism.hasMouthNeurons() && !organism.hasActuatorNeurons()) {
+    if (organism.hasPerceptorNeurons()) {
+      const SkeletonNode* perceptorNode = findPerceptorNode(organism);
+      const SkeletonNode* mouthNode = findMouthNode(organism);
+      const SkeletonNode* actuatorNode = findActuatorNode(organism);
+      std::snprintf(buffer, sizeof(buffer),
+                    "Nom #%u (degraded P-M-A)\n"
+                    "Type: partial chain — M/A lost, not a stem cell\n"
+                    "Nodes: %zu  Links: %zu  Axons: %zu\n"
+                    "Fuel: P %zu (%s)  M %zu (%s)  A %zu (%s)\n"
+                    "Body storage: %zu bytes (unused on intact Nom)\n"
+                    "Land-adjacent: %s  tick %llu  %s",
+                    organism.id, organism.nodes.size(), organism.links.size(),
+                    organism.neuralAxons.size(),
+                    perceptorNode != nullptr ? perceptorNode->store.size() : 0,
+                    neuronAliveFlag(organism, NeuronType::Perceptor),
+                    mouthNode != nullptr ? mouthNode->store.size() : 0,
+                    neuronAliveFlag(organism, NeuronType::Mouth),
+                    actuatorNode != nullptr ? actuatorNode->store.size() : 0,
+                    neuronAliveFlag(organism, NeuronType::Actuator),
+                    organism.bodyStorage.size(), organism.landAdjacent ? "yes" : "no",
+                    static_cast<unsigned long long>(simTick), organism.alive ? "alive" : "dead");
+      return buffer;
+    }
+
     std::snprintf(buffer, sizeof(buffer),
                   "StemCell #%u\n"
                   "Type: undifferentiated\n"
-                  "Nodes: 1  Links: 0\n"
+                  "Nodes: %zu  Links: %zu\n"
                   "Storage: %zu bytes (%.2f d)\n"
                   "Land-adjacent: %s\n"
                   "Created: tick %llu\n"
                   "Status: %s",
-                  organism.id, organism.bodyStorage.size(), daysRemaining,
+                  organism.id, organism.nodes.size(), organism.links.size(),
+                  organism.bodyStorage.size(), daysRemaining,
                   organism.landAdjacent ? "yes" : "no",
                   static_cast<unsigned long long>(organism.createdAtTick),
                   organism.alive ? "alive" : "dead");
@@ -96,31 +154,54 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
     const NeuralAxon* pToA = organism.findNeuralAxon(1, 3);
     const NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
     const NeuralAxon* aToM = organism.findNeuralAxon(3, 2);
-    char pToMRecv[12] = "—";
-    char pToARecv[12] = "—";
+    const NeuralAxon* mToP = organism.findNeuralAxon(2, 1);
+    const NeuralAxon* aToP = organism.findNeuralAxon(3, 1);
+    char pToMRecv[24] = "—";
+    char pToARecv[24] = "—";
+    char mToPRecv[24] = "—";
+    char aToPRecv[24] = "—";
+    char mToARecv[24] = "—";
+    char aToMRecv[24] = "—";
     if (pToM != nullptr && pToM->lastReceived.valid) {
-      std::snprintf(pToMRecv, sizeof(pToMRecv), "0x%02X", pToM->lastReceived.byte);
+      formatAxonConfidence(pToMRecv, sizeof(pToMRecv), pToM->lastReceived.byte,
+                           NeuronType::Perceptor);
     }
     if (pToA != nullptr && pToA->lastReceived.valid) {
-      std::snprintf(pToARecv, sizeof(pToARecv), "0x%02X", pToA->lastReceived.byte);
+      formatAxonConfidence(pToARecv, sizeof(pToARecv), pToA->lastReceived.byte,
+                           NeuronType::Perceptor);
+    }
+    if (mToP != nullptr && mToP->lastReceived.valid) {
+      formatAxonConfidence(mToPRecv, sizeof(mToPRecv), mToP->lastReceived.byte, NeuronType::Mouth);
+    }
+    if (aToP != nullptr && aToP->lastReceived.valid) {
+      formatAxonConfidence(aToPRecv, sizeof(aToPRecv), aToP->lastReceived.byte,
+                           NeuronType::Actuator);
+    }
+    if (mToA != nullptr && mToA->lastReceived.valid) {
+      formatAxonConfidence(mToARecv, sizeof(mToARecv), mToA->lastReceived.byte, NeuronType::Mouth);
+    }
+    if (aToM != nullptr && aToM->lastReceived.valid) {
+      formatAxonConfidence(aToMRecv, sizeof(aToMRecv), aToM->lastReceived.byte,
+                           NeuronType::Actuator);
     }
     std::snprintf(buffer, sizeof(buffer),
                   "Nom #%u\n"
                   "Type: P-M-A Nom\n"
-                  "Nodes: 3  Links: 2  Axons: 4\n"
-                  "Heading: %.0f deg\n"
+                  "Nodes: 3  Links: %zu  Axons: %zu\n"
+                  "Heading: %.0f deg  senseR: %.2f cells\n"
                   "Energon (tick %llu):\n"
                   "  P [sense]:  %zu B  %s  scan: %s (%u B)\n"
                   "  M [mouth]:  %zu B  %s  ate: %s\n"
                   "  A [motor]:  %zu B  %s\n"
-                  "Perception (last tick):\n"
-                  "  tag: %s (0x%02X)  bearing: %+.0f deg  range: %.0f%%\n"
-                  "Signals (last tick):\n"
-                  "  P->M: %s (%s)  P->A: %s (%s)\n"
-                  "  M->A: %s  A->M: %s\n"
+                  "Focus (last tick):\n"
+                  "  kind: %s  confidence: %u/7  bearing: %+.0f deg  range: %.0f%%\n"
+                  "Signals (analog 0-7, last tick):\n"
+                  "  P->M: %s  P->A: %s\n"
+                  "  M->P: %s  A->P: %s  M->A: %s  A->M: %s\n"
                   "  stroke: %s (%u B)  inhibit: %s\n"
                   "Land-adjacent: %s  %s",
-                  organism.id, organism.heading * 180.0f / 3.14159265f,
+                  organism.id, organism.links.size(), organism.neuralAxons.size(),
+                  organism.heading * 180.0f / 3.14159265f, organism.senseRadiusFactor,
                   static_cast<unsigned long long>(simTick != 0 ? simTick : organism.createdAtTick),
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   perceptorNode != nullptr && perceptorNode->alive ? "alive" : "dead",
@@ -130,20 +211,13 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   mouthNode != nullptr && mouthNode->alive && mouthNode->ateThisTick ? "yes" : "no",
                   actuatorNode != nullptr ? actuatorNode->store.size() : 0,
                   actuatorNode != nullptr && actuatorNode->alive ? "alive" : "dead",
-                  organism.lastPerceptTag != 0 ? signalTagLabel(organism.lastPerceptTag) : "—",
-                  organism.lastPerceptTag, organism.lastPerceptBearing * 180.0f / 3.14159265f,
-                  organism.lastPerceptRange * 100.0f, pToMRecv,
-                  pToM != nullptr && pToM->lastReceived.valid
-                      ? signalTagLabel(pToM->lastReceived.byte)
-                      : "—",
-                  pToARecv,
-                  pToA != nullptr && pToA->lastReceived.valid
-                      ? signalTagLabel(pToA->lastReceived.byte)
-                      : "—",
-                  mToA != nullptr && mToA->lastReceived.valid ? "active" : "—",
-                  aToM != nullptr && aToM->lastReceived.valid ? "active" : "—",
+                  perceptFocusKindLabel(organism.lastPerceptFocusKind),
+                  static_cast<unsigned>(organism.lastPerceptConfidence),
+                  organism.lastPerceptBearing * 180.0f / 3.14159265f,
+                  organism.lastPerceptRange * 100.0f, pToMRecv, pToARecv, mToPRecv, aToPRecv,
+                  mToARecv, aToMRecv,
                   organism.lastStrokePaid ? "paid" : "skipped", organism.lastStrokeBytesPaid,
-                  organism.lastActuatorInhibited ? "yes (I_ATE)" : "no",
+                  organism.lastActuatorInhibited ? "yes (M fuel high)" : "no",
                   organism.landAdjacent ? "yes" : "no", organism.alive ? "alive" : "dead");
     return buffer;
   }
@@ -249,19 +323,27 @@ std::string formatOrganismHoverSummary(const Organism& organism) {
     const SkeletonNode* perceptorNode = findPerceptorNode(organism);
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
+    char senseSummary[16] = "—";
+    if (organism.lastPerceptScanPaid) {
+      std::snprintf(senseSummary, sizeof(senseSummary), "%u/7",
+                    static_cast<unsigned>(organism.lastPerceptConfidence));
+    }
     std::snprintf(buffer, sizeof(buffer),
                   "Hover: Nom #%u P-M-A P %zu M %zu A %zu sense %s",
                   organism.id,
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   mouthNode != nullptr ? mouthNode->store.size() : 0,
-                  actuatorNode != nullptr ? actuatorNode->store.size() : 0,
-                  organism.lastPerceptScanPaid ? signalTagLabel(organism.lastPerceptTag) : "—");
+                  actuatorNode != nullptr ? actuatorNode->store.size() : 0, senseSummary);
   } else if (organism.hasActuatorNeurons() && !organism.hasMouthNeurons()) {
     std::snprintf(buffer, sizeof(buffer), "Hover: Nom #%u actuator (d=%.3f, stroke %s)",
                   organism.id, organism.lastDisplacement,
                   organism.lastStrokePaid ? "paid" : "skipped");
-  } else if (!organism.hasMouthNeurons()) {
-    std::snprintf(buffer, sizeof(buffer), "Hover: StemCell #%u (undifferentiated)", organism.id);
+  } else if (!organism.hasMouthNeurons() && !organism.hasActuatorNeurons()) {
+    if (organism.hasPerceptorNeurons()) {
+      std::snprintf(buffer, sizeof(buffer), "Hover: Nom #%u degraded P-M-A", organism.id);
+    } else {
+      std::snprintf(buffer, sizeof(buffer), "Hover: StemCell #%u (undifferentiated)", organism.id);
+    }
   } else if (organism.hasNeuralAxons() && organism.mouthCount() == 2) {
     std::snprintf(buffer, sizeof(buffer), "Hover: Organism #%u twin mouth (2 axons)", organism.id);
   } else {

@@ -44,6 +44,8 @@ There are **only four** neuron types. Do not conflate **Mouth** with a separate 
 
 **Implementation (Phase 2.x):** Skeleton **bones** (`SkeletonLink`) are kinematic only. **Neural axons** (`NeuralAxon`) are a separate directed graph for byte signals + store sharing. Trust, η, and pruning live on the axon; **emit timing lives on the neuron** (Mouth bites / heartbeat).
 
+**Kinematics engine:** reusable FK in `engine/kinematics/` — see **[KINEMATICS.md](KINEMATICS.md)** for rollout phases (skeleton resource, local pose, constraints, future IK).
+
 ### 2.2 Dual genotype
 
 Evolution targets two coupled layers:

@@ -8,6 +8,7 @@ add_library(evolab_engine STATIC
   src/gfx/UiFont.cpp
   src/gfx/TextOverlay.cpp
   src/gfx/TextPanel.cpp
+  src/kinematics/KinematicSkeleton.cpp
 )
 
 target_include_directories(evolab_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -27,8 +27,11 @@ struct SimDiagnostics {
   int liveCells = 0;
   int organisms = 0;
   int stemCells = 0;
+  int pmaNomOrganisms = 0;
+  int degradedNomOrganisms = 0;
   int mouthOrganisms = 0;
   int mouthNeurons = 0;
+  const char* archetypeLabel = "P-M-A Nom";
   std::string hoveredCellSummary;
 };
 

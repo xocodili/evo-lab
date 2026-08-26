@@ -31,6 +31,13 @@ TEST_CASE("undifferentiated organism basal metabolism consumes one byte per tick
   REQUIRE(!organism.alive);
 }
 
+TEST_CASE("stem cell constants define shared neuron analog signal range", "[stemcell]") {
+  REQUIRE(evolab::kNeuronConfidenceMax == 7u);
+  REQUIRE(evolab::kNeuronConfidenceNeutral == 4u);
+  REQUIRE(evolab::kNeuronConfidenceFullFuelBytes == evolab::kTicksPerStemCellDay);
+  REQUIRE(evolab::kMouthInhibitActuatorConfidence >= evolab::kNeuronConfidenceNeutral);
+}
+
 TEST_CASE("stem cell storage constants match sixty hertz day length", "[stemcell]") {
   REQUIRE(evolab::kTicksPerStemCellDay == 86400u);
   REQUIRE(evolab::kStemCellStorageMaxBytes == 259200u);

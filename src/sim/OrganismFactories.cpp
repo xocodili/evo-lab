@@ -15,15 +15,6 @@ void splitStorageThreeWay(std::size_t total, std::size_t& a, std::size_t& b, std
   c = total - a - b;
 }
 
-void capMouthFuel(std::size_t& mouthBytes, std::size_t& redistributeBytes) {
-  const std::size_t cap = kMouthLocalStoreMaxBytes;
-  if (mouthBytes <= cap) {
-    return;
-  }
-  redistributeBytes += mouthBytes - cap;
-  mouthBytes = cap;
-}
-
 NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
   NeuralAxon axon;
   axon.srcNodeId = srcId;
@@ -89,21 +80,22 @@ Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::si
   mouth.id = 2;
   mouth.neuron = NeuronType::Mouth;
   mouth.worldX = wx;
-  mouth.worldZ = wz + boneLength;
+  mouth.worldZ = wz;
   mouth.worldY = wy;
 
   SkeletonNode actuator;
   actuator.id = 3;
   actuator.neuron = NeuronType::Actuator;
   actuator.worldX = wx;
-  actuator.worldZ = wz + boneLength * 2.0f;
+  actuator.worldZ = wz;
   actuator.worldY = wy;
 
   std::size_t perceptorBytes = 0;
   std::size_t mouthBytes = 0;
   std::size_t motorBytes = 0;
+  // Spawn endowment: equal thirds per neuron. kMouthLocalStoreMaxBytes is a runtime
+  // eating/forwarding buffer — do not cap the birth fuel budget (that starved M in ~32 ticks).
   splitStorageThreeWay(storageBytes, perceptorBytes, mouthBytes, motorBytes);
-  capMouthFuel(mouthBytes, motorBytes);
   perceptor.store.assign(perceptorBytes, 0);
   mouth.store.assign(mouthBytes, 0);
   actuator.store.assign(motorBytes, 0);
@@ -112,20 +104,28 @@ Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::si
   organism.nodes.push_back(mouth);
   organism.nodes.push_back(actuator);
 
+  SkeletonLink perceptorToActuator;
+  perceptorToActuator.parentNodeId = 1;
+  perceptorToActuator.childNodeId = 3;
+  perceptorToActuator.restLength = boneLength;
+  perceptorToActuator.jointAngle = kPmaNomActuatorJointAngle;
+  perceptorToActuator.energyEta = 0.0f;
+
   SkeletonLink perceptorToMouth;
   perceptorToMouth.parentNodeId = 1;
   perceptorToMouth.childNodeId = 2;
   perceptorToMouth.restLength = boneLength;
-  perceptorToMouth.jointAngle = 0.0f;
+  perceptorToMouth.jointAngle = kPmaNomMouthJointAngle;
   perceptorToMouth.energyEta = 0.0f;
 
   SkeletonLink mouthToActuator;
   mouthToActuator.parentNodeId = 2;
   mouthToActuator.childNodeId = 3;
   mouthToActuator.restLength = boneLength;
-  mouthToActuator.jointAngle = 0.0f;
+  mouthToActuator.jointAngle = kPmaNomMouthJointAngle - kPmaNomActuatorJointAngle;
   mouthToActuator.energyEta = 0.0f;
 
+  organism.links.push_back(perceptorToActuator);
   organism.links.push_back(perceptorToMouth);
   organism.links.push_back(mouthToActuator);
 
@@ -133,6 +133,10 @@ Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::si
   organism.neuralAxons.push_back(makeDevelopmentalAxon(1, 3));
   organism.neuralAxons.push_back(makeDevelopmentalAxon(2, 3));
   organism.neuralAxons.push_back(makeDevelopmentalAxon(3, 2));
+  organism.neuralAxons.push_back(makeDevelopmentalAxon(2, 1));
+  organism.neuralAxons.push_back(makeDevelopmentalAxon(3, 1));
+
+  organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
 
   return organism;
 }

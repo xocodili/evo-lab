@@ -227,11 +227,13 @@ TEST_CASE("spawn initializes axon trust near 100 percent with jitter", "[twomout
   population.seedTwoMouthOrganisms(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 8,
                                    4242);
 
+  const float minFeedScale =
+      static_cast<float>(evolab::kTrustMin) / static_cast<float>(evolab::kTrustBaseline);
   for (const evolab::Organism& organism : population.organisms()) {
     for (const evolab::NeuralAxon& axon : organism.neuralAxons) {
       const float feed = evolab::axonTrustScale(axon.trustFeed);
       const float believe = evolab::axonTrustScale(axon.trustBelieve);
-      REQUIRE(feed == Catch::Approx(1.0f).margin(0.04f));
+      REQUIRE(feed == Catch::Approx(minFeedScale).margin(0.04f));
       REQUIRE(believe == Catch::Approx(1.0f).margin(0.04f));
     }
   }

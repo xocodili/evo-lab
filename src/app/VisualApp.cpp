@@ -135,7 +135,18 @@ int runVisualApp(const CliArgs& args) {
   seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
   trace.step("seed");
 
-  std::cout << "World ready (" << cells.organisms().size() << " noms). Opening window...\n";
+  const CellPopulationStats seedStats = cells.stats();
+  std::cout << "World ready (" << cells.organisms().size() << " organisms: "
+            << seedStats.pmaNomOrganisms << " P-M-A Noms, " << seedStats.stemCells
+            << " stem, archetype=" << seedArchetypeLabel(config.archetype) << "). Opening window...\n";
+  if (config.archetype == SeedArchetype::Nom && seedStats.pmaNomOrganisms == 0) {
+    std::cerr << "WARNING: --archetype nom but no P-M-A Noms were seeded. "
+                 "Rebuild evo-lab.exe or check wet spawn sites.\n";
+  }
+  if (config.archetype == SeedArchetype::StemCell) {
+    std::cerr << "NOTE: StemCell dev mode — perceptor/M-P-A wiring is inactive. "
+                 "Use --archetype nom to test the P-M-A Nom.\n";
+  }
   std::cout.flush();
 
   platform::SdlPlatform platform;
@@ -288,7 +299,7 @@ int runVisualApp(const CliArgs& args) {
         world.tick();
         const float sun = dayCycle.sunIntensity(world.tickCount());
         energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale);
-        cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale);
+        cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale, sun);
         if (i + 1 < steps) {
           platform.pumpEvents();
         }
@@ -335,8 +346,11 @@ int runVisualApp(const CliArgs& args) {
     diag.liveCells = cellStats.liveCells;
     diag.organisms = cellStats.organisms;
     diag.stemCells = cellStats.stemCells;
+    diag.pmaNomOrganisms = cellStats.pmaNomOrganisms;
+    diag.degradedNomOrganisms = cellStats.degradedNomOrganisms;
     diag.mouthOrganisms = cellStats.mouthOrganisms;
     diag.mouthNeurons = cellStats.mouthNeurons;
+    diag.archetypeLabel = seedArchetypeLabel(config.archetype);
 
     const int viewW = viewport.contentW > 0 ? viewport.contentW : drawable.w;
     const int viewH = viewport.contentH > 0 ? viewport.contentH : drawable.h;

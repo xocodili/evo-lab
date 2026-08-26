@@ -18,11 +18,23 @@ inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
 inline constexpr std::uint32_t kMouthStoreSoftPressureBytes = 8u;
 inline constexpr std::uint32_t kMouthSignalHeartbeatTicks = 30u;
 inline constexpr std::uint8_t kMouthSignalTagShipping = 0xF0u;
-// Axonal vocabulary (local tags — Phase 2.x MA chain).
+// Universal axon analog byte (all neuron types): 0–7 on the believe channel.
+// Semantics depend on source neuron — see NeuronSignal.hpp.
+inline constexpr std::uint8_t kNeuronConfidenceMax = 7u;
+inline constexpr std::uint8_t kNeuronConfidenceNeutral = 4u;
+inline constexpr std::uint32_t kNeuronConfidenceFullFuelBytes = kTicksPerStemCellDay;
+// Mouth satiation at/above this level inhibits actuator stroke (M→A brake).
+inline constexpr std::uint8_t kMouthInhibitActuatorConfidence = 5u;
+// Perceptor world-focus outbound uses the same encoding (0=avoid … 7=approach).
+inline constexpr std::uint8_t kPerceptorConfidenceMax = kNeuronConfidenceMax;
+inline constexpr std::uint8_t kPerceptorConfidenceNeutral = kNeuronConfidenceNeutral;
+// P-M-A Nom skeleton: equilateral triangle (A forward, M at -60°, closing M-A bone).
+inline constexpr float kPmaNomActuatorJointAngle = 0.0f;
+inline constexpr float kPmaNomMouthJointAngle = -1.0471976f;  // -60° from heading forward
 inline constexpr std::uint8_t kSignalTagIAte = 0xA1u;
 inline constexpr std::uint8_t kSignalTagIHunger = 0xA2u;
 inline constexpr std::uint8_t kSignalTagIActuate = 0xA3u;
-// Perceptor axonal vocabulary (PMA chain).
+// Legacy sense tags (superseded by confidence bytes on P outbound axons).
 inline constexpr std::uint8_t kSignalTagISenseFood = 0xB1u;
 inline constexpr std::uint8_t kSignalTagISenseOrganism = 0xB2u;
 inline constexpr std::uint8_t kSignalTagISenseBlock = 0xB3u;
@@ -32,6 +44,12 @@ inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
 inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
 inline constexpr float kPerceptorSenseRadiusFactor = 3.5f;
+// Diurnal transduction: night shrinks effective radius and inflates perceptual noise.
+inline constexpr float kPerceptDiurnalRadiusFloor = 0.35f;
+inline constexpr float kPerceptNoiseBearingRad = 0.05f;
+inline constexpr float kPerceptNightChaosGain = 2.5f;
+inline constexpr float kPerceptFalseNegativeNightRate = 0.12f;
+inline constexpr float kOrganismPmaReflexMinValence = 0.15f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.

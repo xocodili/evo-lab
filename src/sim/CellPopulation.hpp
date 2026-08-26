@@ -16,6 +16,8 @@ struct CellPopulationStats {
   int liveCells = 0;
   int organisms = 0;
   int stemCells = 0;
+  int pmaNomOrganisms = 0;
+  int degradedNomOrganisms = 0;
   int mouthOrganisms = 0;
   int mouthNeurons = 0;
   int actuatorOrganisms = 0;
@@ -37,7 +39,8 @@ public:
   void seedNoms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                 std::uint64_t seed);
 
-  void tick(const BarrenWorld& world, EnergonField& energon, float cellSize, float heightScale);
+  void tick(const BarrenWorld& world, EnergonField& energon, float cellSize, float heightScale,
+            float sunIntensity = 1.0f);
 
   const std::vector<Organism>& organisms() const { return organisms_; }
   CellPopulationStats stats() const;
