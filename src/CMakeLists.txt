@@ -26,8 +26,14 @@ add_library(evolab_sim STATIC
   sim/SimConfig.cpp
   sim/Organism.cpp
   sim/OrganismDetail.cpp
+  sim/OrganismActuator.cpp
+  sim/OrganismMouth.cpp
+  sim/OrganismNeuron.cpp
   sim/OrganismPerceptor.cpp
   sim/NeuronSignal.cpp
+  sim/NeuronTrust.cpp
+  sim/NeuronFuel.cpp
+  sim/EnergonConveyance.cpp
   sim/OrganismKinematics.cpp
   sim/OrganismFactories.cpp
   sim/NeuronTick.cpp

@@ -22,9 +22,6 @@ SeedArchetype parseSeedArchetype(const char* text) {
   if (value == "stem" || value == "stemcell") {
     return SeedArchetype::StemCell;
   }
-  if (value == "twin" || value == "twomouth") {
-    return SeedArchetype::TwinMouth;
-  }
   if (value == "actuator" || value == "a") {
     return SeedArchetype::Actuator;
   }
@@ -37,8 +34,6 @@ const char* seedArchetypeLabel(SeedArchetype archetype) {
       return "P-M-A Nom";
     case SeedArchetype::StemCell:
       return "StemCell";
-    case SeedArchetype::TwinMouth:
-      return "Twin Mouth";
     case SeedArchetype::Actuator:
       return "Actuator";
   }

@@ -38,6 +38,27 @@ std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeByt
   return static_cast<std::uint8_t>(std::lround(activity * static_cast<float>(kNeuronConfidenceMax)));
 }
 
+std::uint8_t predictionErrorByte(float outcome, float expected) {
+  const float pe = std::clamp(outcome - expected, -1.0f, 1.0f);
+  const int rpe = static_cast<int>(std::lround(
+      static_cast<float>(kNeuronConfidenceNeutral) +
+      static_cast<float>(kNeuronConfidenceNeutral) * pe));
+  return static_cast<std::uint8_t>(
+      std::clamp(rpe, 0, static_cast<int>(kNeuronConfidenceMax)));
+}
+
+int trustDeltaFromPredictionError(std::uint8_t rpeByte) {
+  const int centered =
+      static_cast<int>(rpeByte) - static_cast<int>(kNeuronConfidenceNeutral);
+  if (centered == 0) {
+    return 0;
+  }
+  const int rawMagnitude =
+      std::max(1, (std::abs(centered) * static_cast<int>(kTrustLearnStep)) / 3);
+  const int magnitude = std::min(static_cast<int>(kTrustLearnStep), rawMagnitude);
+  return (centered > 0 ? 1 : -1) * magnitude;
+}
+
 void writeAxonConfidence(NeuralAxon& axon, std::uint8_t confidence, std::uint64_t simTick) {
   if (!isNeuronConfidenceByte(confidence)) {
     return;

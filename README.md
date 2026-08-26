@@ -19,17 +19,17 @@ Energon is still the technical term for the food substrate; **Nom** is the frien
 
 - Procedural heightmap terrain with **global tides** and hydraulic spill/lake rules
 - **Water-column bands** — dry / benthic / shallow / pelagic / open deep
-- **P-M-A Nom** — Perceptor scans (food/organism/block), Mouth feeds, Actuator propels; M→A `I_ATE` inhibits crawl
-- Dev archetypes via CLI: stem cells, twin-mouth, pure actuator
+- **P-M-A Nom** — Perceptor scans (food/organism/block), Mouth feeds, Actuator propels; universal 0–7 confidence bytes on all neural axons
+- Dev archetypes via CLI: stem cells, pure actuator
 - Interactive **SDL + OpenGL** viewer (default: ~60 P-M-A Noms on wet terrain)
 - **Catch2** unit tests + headless smoke test
 
-**Not yet:** mating/genetics, A steering from P signals (chemotaxis), Hebbian trust updates.
+**Not yet:** mating/genetics, Hebbian trust updates, temporal chemotaxis gradient, Computer neuron.
 
 ## Design documentation
 
 - **[docs/DESIGN-NOTES.md](docs/DESIGN-NOTES.md)** — architecture, Noms, water bands, trust/chaos, roadmap
-- **[docs/TESTING-PHASE0.md](docs/TESTING-PHASE0.md)** — barren-world verification; Phase 2.x tests use `[water]`, `[chaos]`, `[twomouth]` filters
+- **[docs/TESTING-PHASE0.md](docs/TESTING-PHASE0.md)** — barren-world verification; Phase 2.x tests use `[water]`, `[chaos]`, `[nom]` filters
 
 ## Requirements
 
@@ -55,7 +55,7 @@ ctest --test-dir build --output-on-failure
 
 Window title reflects the selected archetype (default **P-M-A Nom**). Hover a Nom for architecture readout.
 
-**Archetypes:** `nom` (default), `stem`, `twomouth`, `actuator`
+**Archetypes:** `nom` (default), `stem`, `actuator`
 
 **Controls:** drag = orbit · scroll = zoom · **Space** = pause sim/tide · **R** = regenerate world
 
@@ -64,7 +64,7 @@ Window title reflects the selected archetype (default **P-M-A Nom**). Hover a No
 ```powershell
 .\build\tests\evo-lab-tests.exe "[water]"
 .\build\tests\evo-lab-tests.exe "[chaos]"
-.\build\tests\evo-lab-tests.exe "[twomouth]"
+.\build\tests\evo-lab-tests.exe "[nom]"
 ```
 
 Headless smoke (no GPU required):

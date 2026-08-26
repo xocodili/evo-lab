@@ -3,7 +3,7 @@
 Consolidated review of architecture, simulation, evolution, engine, and quantum-integration discussions.
 
 **Status:** Phase 2.x Actuator Nom + water-column bands — public WIP  
-**Last updated:** 2026-08-10 (single `[A]` nom, proprioception delta, mouths shelved in visual app)
+**Last updated:** 2026-08-26 (PMA energon conveyance + trust learning)
 
 **Delivery:** Native C++ binary (SDL desktop). Web viewer deferred.
 
@@ -95,41 +95,61 @@ Mate → if wet, proximate, energy thresholds met (see §3.5)
 
 No separate Consumer neuron. **M eats; C processes.**
 
-### 2.5 Twin-mouth prototype (Phase 2.x — shipped)
+### 2.5 P-M-A neural signaling (Phase 2.x — shipped)
 
-Simplest “complex” organism for axon/trust experiments:
+Universal **0–7 confidence byte** on the believe channel (`NeuronSignal.hpp`). Semantics depend on source neuron:
 
-```text
-  [M1] ===== bone (kinematic, energyEta=0) ===== [M2]
-    |                                             |
-    +--- neural axon M1→M2 (signal + energon) ---+
-    +--- neural axon M2→M1 ----------------------+
-```
+| Source | Encoding |
+|--------|----------|
+| **M** | Mouth fuel satiation (0 = starving … 7 = full local store) |
+| **P** | World-focus valence (0 = avoid … 7 = approach) |
+| **A** | Flagellar activity (stroke paid this tick) |
 
-- **Factory:** `makeTwoMouthOrganism()` — dumbbell topology; body storage on organism; per-mouth local `store`.
-- **Tick order (organism):** advect root → metabolise → feed (each M) → **mouth signal fire** → prune axons at 0% trust → colony transfer.
-- **Bite:** Personal ingest only — byte + `kBiteCost` tax into mouth store (or **M-cloaca** spit if store full). **No axon fire on bite.**
-- **Mouth signal fire (`Organism::signal`):** receive → forward → spit. Under store pressure (≥24 B), heartbeat (every 30 ticks), or hard full: emit **signal tag** (`0xF0`, believe channel) then **feed burst** (`floor(64 × trustFeed/256 × η_energy)` bytes). Received overflow at dst → **M-cloaca**.
-- **Energy (legacy skeleton):** star-mouth rim→hub via bone `energyEta`. Neural feed uses signal-fire burst, not separate drip.
+Mouth **pre-advect emit** (`emitPreAdvectSignals`) writes fuel confidence on M→P and M→A axons — no discrete shipping tags. Bite credits **Fresh** bytes to M’s local store (§2.7); surplus routes on feed axons after spend. The late **signal** phase skips duplicate PMA mouth emit.
 
-#### Neural axon trust (developmental model)
+**Tick order (P-M-A Nom):** `perceive → feed → preAdvect (M emit) → advect → metabolise → viability → convey → feed-trust learn → signal → prune`
 
-Inspired by exuberant early connectivity + activity-dependent refinement (see peer discussion 2026-08). Trust is **not** inhibition—it is **synaptic efficacy** on two channels:
+| Phase | Who emits | Who reads (same tick unless noted) |
+|-------|-----------|-----------------------------------|
+| perceive | P → P→M, P→A | — |
+| feed | — | M ← P→M (same tick); M ← A→M (**prior tick**, A emits end of advect) |
+| preAdvect | M → M→P, M→A | — |
+| advect | A → A→P, A→M (end) | A ← P→A, M→A (same tick) |
+
+**Actuator interoception (chemotaxis v1):** A gathers P→A (approach/flee) and M→A (satiation), trust-weighted via `OrganismNeuron` (`trustBelieveByConfidence[byte]`). Motor intent = `max(baseline crawl, approach) × (1 − satiation)`; above mouth brake threshold only approach × (1 − satiation) applies. Graded stroke pays 0–`kActuatorStrokeCostPerTick` bytes; thrust scales linearly. Tumble rate biased down when approaching, up when fleeing or satiated. Heading slews from perceptor focus via the same prior — no direct energon query on PMA advect.
+
+**Mouth interoception (feed v1):** M gathers P→M (approach/flee) and A→M activity (prior-tick actuator confidence). Threat/flee-dominant focus suppresses bite even on energon contact; approach + hunger enables bite. Baseline feed drive when P is neutral and mouth store has room.
+
+**Shared neuron layer:** `OrganismNeuron.hpp` — inbound axon fusion, P valence decode, outbound confidence emit. Stem basal metabolism remains in `OrganismDetail`.
+
+#### Neural axon trust (three-factor believe + developmental feed)
+
+Inspired by exuberant early connectivity + activity-dependent refinement (neo-Hebbian / reward-modulated plasticity). Trust is **not** inhibition—it is **synaptic efficacy** on two channels:
 
 | Field | Role | Baseline |
 |-------|------|----------|
-| `trustBelieve` | Weight on incoming **signal byte** (future Hebbian / per-byte table) | 100% |
-| `trustFeed` | Gate on **energon** shared along this directed edge | 100% |
+| `trustBelieveByConfidence[8]` | Weight on incoming **confidence byte 0–7** (tag-specific plasticity) | 100% per bin |
+| `trustFeed` | Gate on **energon** shared along this directed edge | 33% at spawn (PMA dev axons) |
 
-**Fixed-point:** `256 = 100%` (`kTrustBaseline`). Modifiable range **85–426** (~33%–166%). Values below ~33% feed trust do not share energon.
+**Fixed-point:** `256 = 100%` (`kTrustBaseline`). Believe bins modifiable **85–426** (~33%–166%). `kTrustLearnStep = 6` per qualifying outcome. Values below ~33% feed trust do not share energon.
 
-**Pruning:** When **both** `trustBelieve` and `trustFeed` reach **0**, the axon is removed structurally (`pruneNeuralAxons`)—“kill me”, not “shh”. Partial zero (one channel only) leaves a degraded but living edge (signal-only or feed-only).
+**Runtime learning (`NeuronTrust.cpp`):** Post-perceive on M→P / A→P; post-feed on P→M / A→M; post-advect on P→A / M→A; post-transfer on feed-channel `trustFeed`. Third factor = **prediction-error byte 0–7** (`predictionErrorByte`, §8.1.1). Eligibility = **tick-aligned co-activation** (see §8.1) + open gate + confidence byte.
+
+**Shipped on trust:**
+- **P←M/A believe learning** — post-perceive three-factor updates when satiation/activity signals match focus outcome.
+- **Prediction-error byte (0–7)** — RPE discretization gates believe and feed nudge magnitude/sign.
+- **`trustFeed` runtime plasticity** — `conveyPmaEnergon` + chaos-jittered `nudgeTrustFeed` when transfer helps or wastes fuel.
+
+**Deferred:**
+- **C inbound trust** — post-digest learning when Computer phase ships.
+
+**Pruning:** When **all eight** believe bins **and** `trustFeed` reach **0**, the axon is removed structurally (`pruneNeuralAxons`)—“kill me”, not “shh”. Partial zero (one channel only) leaves a degraded but living edge (signal-only or feed-only).
 
 **E/I note:** Excitation vs inhibition is **not** modeled as negative trust; future inhibitory channels should be separate axon classes or signed signal interpretation—not a scalar below zero.
 
 #### Spawn chaos on axons
 
-At spawn, each axon gets developmental baseline **100% ± 3% jitter** on `trustBelieve`, `trustFeed`, `η_signal`, and `η_energy`. Emit decisions remain on the Mouth neuron.
+At spawn (`initializeDevelopmentalAxonTrust`), each axon gets developmental baseline **±3% multiplicative jitter** (`chaosJitterTrust`, `chaosJitterFloat`) on **each believe bin**, **`trustFeed`**, `η_signal`, and `η_energy` — all clamped to `[kTrustMin, kTrustMax]` where applicable. PMA developmental axons use believe baseline **100%** and feed baseline **33%** before jitter. Emit decisions remain on the source neuron.
 
 ### 2.6 Actuator Nom (Phase 2.x — shipped; mouths shelved in visual app)
 
@@ -182,6 +202,81 @@ We treat the actuator stroke as a **minimal IMF/PMF analog**, not ATP hydrolysis
 - **Sim mapping:** `kActuatorTumbleRate` / `kActuatorTumbleTurn` = stochastic tumble without CheY biochemistry yet; future **P** reads `lastTideDelta` and food cues to modulate tumble bias (chemotaxis-shaped, not hard-wired to nearest blob).
 
 **Success criterion (design-centric):** A stroke is “successful” when `lastDisplacement` reflects paid thrust against tide/passive drift — inspectable now; learnable later when **P→A** closes the loop.
+
+### 2.7 PMA energon conveyance (Phase 2.x — shipped)
+
+Directed **axon feed** with **η loss on payload**, **believe + feed gating**, and **two field interfaces** — ingress at **M**, egress of **returned waste only**. No scripted “mouth dies last”; receiver/spender asymmetry is emergent.
+
+**Modules:** `NeuronFuel.hpp/cpp` (store helpers), `EnergonConveyance.hpp/cpp` (`conveyPmaEnergon`).
+
+#### Substrate
+
+| Compartment | Role |
+|-------------|------|
+| **Field** | Abiotic energon (sunfall, waste fragments) |
+| **`node.store`** | Per-neuron wallet (P, M, A) |
+| **Neural axon (feed)** | Directed byte pipe; bandwidth ∝ `trustFeed × η_energy` |
+| **Neural axon (believe)** | 0–7 confidence bytes; route weight uses outbound source byte × inbound believe trust |
+| **Skeleton bones** | Kinematics only — **η = 0**, no fuel |
+
+PMA has **no central `bodyStorage`** and **no C** yet. M is ingress port and (temporarily) waste port; C later subsumes hub store + expulsion.
+
+#### Byte lifecycle (provenance)
+
+| Class | Origin | May leave via |
+|-------|--------|----------------|
+| **Fresh** | Field bite at M | Axons only — **never** direct cloaca on overflow |
+| **Returned** | Any byte routed to M via axon | Dissipates at M (entropy) — not stored, no field blob |
+
+Death-release (neuron killed → store spat at node) stays distinct from cloaca policy.
+
+#### Ingress (field → M)
+
+Unchanged bite economics: gross 2 B, mastication tax 1 B → net +1 B credited as **Fresh** (`creditMouthStore`). If M.store exceeds **`kNeuronStoreMaxBytes` (32)**, surplus waits for **conveyance** — no immediate `mouthSpitByte` on fresh overflow.
+
+#### Conveyance phase
+
+Called from `Organism::transferEnergy` after metabolism/viability, before feed-trust learning:
+
+```text
+perceive → feed → preAdvect → advect → metabolise → viability → convey → feed-trust learn → prune
+```
+
+Each tick, **two passes** over neurons in order **M → P → A** (ingress before peripherals):
+
+1. **Surplus:** bytes above `kNeuronStoreMaxBytes` are conveyable (`neuronStoreSurplus`).
+2. **Edge weight:** for each outbound axon, `believeWeight(outboundSignalByte) × trustFeed × η_energy × bandwidth`.
+3. **Split:** surplus allocated proportionally across open edges (last edge gets remainder); capped per-edge by bandwidth.
+4. **Hop:** pop surplus from source; **`delivered = round(bytes × η_energy)`** on payload (`applyHopLoss`); undelivered fraction dissipated (not stored).
+5. **Return at M:** axon deliveries to M **dissipate** (η loss still applies) — no store growth, no per-byte field injection.
+6. Skips convey entirely when no neuron exceeds the 32 B cap.
+
+**Feed-trust learning:** any axon that **delivers bytes** (`bytesMoved > 0`) gets a positive `trustFeed` nudge — same cap rule as routing (room below 32 B).
+
+#### Entropy ledger (η on irreversible steps)
+
+| Step | η | Effect |
+|------|---|--------|
+| **Mastication** | 0.50 net/gross | 2 gross → 1 stored |
+| **Axon feed hop** | `η_energy` (~0.88 default) | Payload bytes scaled each hop |
+| **A translation** | `kActuatorTranslationEta` (0.12) | Stroke heat (`lastTranslationEntropyLoss`) |
+| **Basal** | 1 B/tick | Per-neuron maintenance |
+
+Spawn ε-chaos jitter on axon `η_energy` / `η_signal` (already shipped).
+
+#### PMA vs future P-M-C-A
+
+```text
+PMA (now):     Field ──bite──► M ──axons──► P ↔ A
+                         waste ◄── return ──┘
+                               └── cloaca ──► Field (waste only)
+
+P-M-C-A:       Field ──bite──► M ──► C (hub store, digest)
+                                    ├── axons ──► P, A
+                                    └── expulsion (signal / waste)
+```
+
+Same conveyance machinery; **C replaces M as long-term store** and takes over most expulsion.
 
 ## 3. World & Simulation Loop
 
@@ -253,6 +348,7 @@ Constants: `kWaterBandBenthicMaxDepth`, `kWaterBandShallowMaxDepth`, `kWaterBand
 |--------|------|--------------|-------|
 | **Sunfall** | Day phase of cycle | Random 1–8 bytes | Spawns at sky; falls on land and sea; **active only in wet cells** (or rots on land) |
 | **Expulsion** | C satiated | Short 1–3 byte blob | v1: fixed **blue** signal trail; attracts P focus → A approach → mating proximity |
+| **Waste** | M cloaca (PMA) | 1 byte fragments | Returned/degraded axon bytes only; shorter wet TTL than sunfall |
 | **Decay** | TTL exhausted | — | Uneaten Energon **dissolves** (entropy); prevents memory blow-up |
 
 #### Day/night
@@ -270,7 +366,7 @@ Strings may land half on shore, half in water—fine. Only wet Energon is food f
 struct EnergonBlob {
   uint64_t data;           // up to 8 bytes per bite; carcass-like blobs hold more total
   uint16_t remaining;      // bytes left in this blob
-  uint8_t  origin;         // Sunfall | Signal | Fragment
+  uint8_t  origin;         // Sunfall | Signal | Fragment | Waste
   float x, y, z;
   float ttl;               // decay timer — mandatory
 };
@@ -360,7 +456,7 @@ Geography is **where you can swim** once life exists—derived from 3D data, not
 **Current implementation (Phase 2.x — P-M-A Nom default):**
 
 1. World tick + day cycle + energon tick (sunfall with chaos jitter on spawn params)
-2. Per organism: **feed** → **perceive** (P scans focus cone) → **neuron pre-advect hooks** (`I_ATE`) → **advect** → metabolise → viability → purge → transfer → signal → prune → colony → remove dead
+2. Per organism: **perceive** (P scans focus cone) → **feed** (M interoception bite gate) → **neuron pre-advect hooks** (M fuel signals) → **advect** → metabolise → viability → purge → transfer → signal → prune → colony → remove dead
 3. Render terrain, water, energon, organisms (bone + neural line + inspector in `game/`)
 
 ### 3.4 Geographic isolation (tidal)
@@ -434,7 +530,7 @@ Similarly `ε_random_mate` (~0.05) for partner choice. ε never zero.
 
 | API | Purpose |
 |-----|---------|
-| `chaosSpawnRng(worldSeed, salt)` | Deterministic RNG per spawn class (stem / star-mouth / twin-mouth / energon) |
+| `chaosSpawnRng(worldSeed, salt)` | Deterministic RNG per spawn class (stem / star-mouth / nom / energon) |
 | `chaosJitterFloat(baseline, rng)` | ±3% on floats (bone length, η, sky height, fall speed, …) |
 | `chaosJitterTrust(baseline, rng)` | ±3% on trust, clamped to `[kTrustMin, kTrustMax]` |
 | `chaosJitterHeading(heading, rng)` | ±3% of one revolution (additive micro-jitter) |
@@ -453,7 +549,7 @@ build factory (nominal parameters)
 
 Do **not** jitter the same parameter twice (e.g. bone `restLength` pre- and post-factory). Regression test: `bone length receives a single chaos jitter at spawn`.
 
-**Population spawn:** `CellPopulation::seedOnWetTerrain(...)` — shared wet placement, surface Y jitter (`kSpawnSurfaceYOffset`), `finalizeSpawn`, archetype-specific factory callback. Used by stem-cell, star-mouth, and twin-mouth seed paths.
+**Population spawn:** `CellPopulation::seedOnWetTerrain(...)` — shared wet placement, surface Y jitter (`kSpawnSurfaceYOffset`), `finalizeSpawn`, archetype-specific factory callback. Used by stem-cell, star-mouth, nom, and actuator seed paths.
 
 **Where ±3% jitter applies today:**
 
@@ -468,7 +564,7 @@ Do **not** jitter the same parameter twice (e.g. bone `restLength` pre- and post
 
 **Still macro-random (by design):** wet XZ placement, energon byte-count bias distribution, world seed. Large dice first; jitter second.
 
-**Tests:** `tests/unit/test_chaos.cpp`, `[twomouth]` spawn trust cases.
+**Tests:** `tests/unit/test_chaos.cpp`, `[nom]` spawn trust cases.
 
 ### 4.5 Fitness (when explicitly needed)
 
@@ -673,13 +769,15 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 
 **2.2 Kinematic mouth organisms ✓:** Star-mouth (Computer hub + rim Mouths); organism yaw; food/tide heading; skeleton FK.
 
-**2.x Twin Mouth ✓:** Simplest complex organism — **2 Mouths, 1 bone, 2 directed neural axons**. Separate skeleton vs neural graphs. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust.
-
-**2.x P-M-A Nom ✓ (current visual default):** Developmental **P → M → A** chain — perceptor scans (food/organism/block), mouth feeds, actuator propels. Axon tags: `SENSE_*`, `I_ATE`, `I_HUNGER`, `I_ACTUATE`. Visual app seeds ~60 Noms (`--archetype nom`).
+**2.x P-M-A Nom ✓ (current visual default):** Developmental **P → M → A** chain — perceptor scans (food/organism/block), mouth feeds, actuator propels. Universal 0–7 confidence bytes on outbound axons. Developmental axon trust (100% baseline, 33–166% range), spawn chaos module, axon pruning at 0/0 trust. Visual app seeds ~60 Noms (`--archetype nom`).
 
 **2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
 
-**P2 (next on Nom):** A steering from P signals (chemotaxis); Hebbian `trustBelieve[256]` per byte; C storage + blue expulsion when satiated; mate on proximity.
+**P2 (next on Nom):** Computer (C) storage + digestion + blue expulsion; temporal chemotaxis gradient (Δsalience); mate on proximity. ~~Hebbian believe trust~~ ✓ (`trustBelieveByConfidence[8]`, `NeuronTrust.cpp`).
+
+**Chemotaxis v1 ✓:** A interoception from P→A + M→A; graded stroke; tumble bias; P-driven heading — see §2.5.
+
+**PMA energon conveyance ✓:** Provenance-tagged stores, axon routing with η payload loss, waste-only M cloaca — see §2.7.
 
 ### Phase 3 — Genetics
 
@@ -713,11 +811,57 @@ Grover at seed/mating boundaries, QAGA mutation, QPU via simulators first. Only 
 | Axonal energy biology | Syntaphilin / mitochondrial trafficking reviews |
 | Braitenberg / sensorimotor | BraGenBrain, Frontiers 2020 |
 
+### 8.1 Synaptic trust, eligibility, and prediction error (P-M-A)
+
+Peer basis for the axon believe channel — **not backpropagation**, but **three-factor neo-Hebbian plasticity**:
+
+| Concept | Literature | evo-lab mapping |
+|---------|------------|-----------------|
+| Co-activation | Hebb (1949); LTP Bliss & Lømo (1973) | Pre byte emitted + post neuron integrates same phase |
+| Causal order | STDP Bi & Poo (1998); Markram et al. (1997) | Tick order table §2.5 (P before M/A; A→M uses prior tick) |
+| Third factor / neuromodulator | Frémaux & Gerstner (2016) *Front. Neural Circuits*; Izhikevich (2007) *PLoS Comp Biol* | Metabolic outcome after feed/advect |
+| Reward prediction error | Schultz (1998, 2016 dopamine RPE reviews) | **Shipped:** `predictionErrorByte` 0–7 third factor (§8.1.1) |
+| Tag-specific plasticity | Synaptic tagging (Frey & Morris 1997) | `trustBelieveByConfidence[8]` per emitted byte |
+| Homeostasis / bounded weights | BCM Bienenstock et al. (1982); Oja (1982) | Fixed-point clamp 85–426; spawn ε-chaos jitter |
+
+**Eligibility (tick-based, keep for v1):** Literature eligibility *traces* bridge delays between co-activation and reward (Frémaux & Gerstner 2016; Gerstner *Neuronal Dynamics* §19.4). Our sim phases are **discrete and causally ordered within one tick** (perceive → feed → preAdvect → advect), so **same-tick (±1 tick for A→M) co-activation is sufficient** for credit assignment. Multi-tick traces become necessary only if we introduce **delayed outcomes** (e.g. digestion ticks later on C) — defer until C phase.
+
+#### 8.1.1 Universal byte gradient (signals + prediction error)
+
+All neuron axon **believe** traffic uses bytes **0–7**:
+
+| Byte | Signal semantics (P/M/A) | Planned prediction-error semantics (third factor) |
+|------|--------------------------|---------------------------------------------------|
+| 0 | Strong avoid / empty / idle | **Firmly disbelieve** — outcome contradicts this bin’s prediction |
+| 4 | Neutral | **No update** — outcome matches expectation |
+| 7 | Strong approach / full / active | **Firmly believe** — outcome strongly confirms this bin |
+
+Discrete RPE: compare predicted confidence (what the post neuron expected from this bin) to realised metabolic outcome; map \((\text{outcome} - \text{expected})\) to a **0–7 confirmation byte** that gates `nudgeBelieveTrustBin` magnitude/sign. This keeps the RNA metaphor one alphabet — no parallel tag namespace (`I_ATE`, `I_ACTUATE`, etc. removed).
+
+**Believe vs feed channels:** `trustBelieveByConfidence[8]` learns which **signal bytes** to weight; `trustFeed` gates **energon** on the edge (developmental 33% baseline + ε-chaos jitter at spawn; runtime `nudgeTrustFeed` after `conveyPmaEnergon`).
+
+### 8.2 Metabolic routing, dissipation, and waste export (PMA conveyance)
+
+Peer basis for axon **feed** channel economics — complementary to §8.1 (believe/plasticity):
+
+| Concept | Literature | evo-lab mapping |
+|---------|------------|-----------------|
+| Activity-coupled metabolite routing | Astrocyte–neuron lactate shuttle (Pellerin & Magistretti 1994; glutamate-triggered export) | Surplus routes on open feed axons when source confidence + believe trust align |
+| Per-hop dissipation | Attwell & Laughlin (2001) — brain energy budget; synaptic costs ≫ Landauer floor | `applyHopLoss`: `delivered = round(bytes × η_energy)` each hop |
+| Saturated store → export | Lysosomal exocytosis / secretory autophagy when capacity exceeded | Axon returns to M **dissipate** (entropy sink) |
+| Irreversibility / degraded return | Second-law thermodynamics; no “perfect recycle” in open systems | Bytes re-entering field via M cloaca are lower-grade `Waste` blobs |
+
+**Honest gap:** No single biological paper specifies “mouth cloaca only on returns”; the split is a **design hygiene** choice — fresh ingress never bypasses axon circulation, routed bytes lose grade on re-entry.
+
 ---
 
 ## 9. Open Decisions
 
-- [ ] **Hebbian trust** — per-byte `trustBelieve[256]` on axons; runtime updates in 33–166% band; who triggers learning (neuron vs axon)?
+- [x] **Hebbian believe trust (M/A receivers)** — `trustBelieveByConfidence[8]`; three-factor updates; tick-aligned eligibility.
+- [x] **Believe trust on P** — post-perceive learning on M→P / A→P (`applyPmaPerceptorTrustLearning`); C deferred.
+- [x] **Prediction-error byte (0–7)** — discretized RPE third factor (§8.1.1) in `NeuronTrust.cpp` / `NeuronSignal.hpp`.
+- [x] **`trustFeed` runtime plasticity** — PMA axon energon transfer + chaos-jittered `nudgeTrustFeed` after `conveyPmaEnergon`.
+- [x] **PMA energon conveyance** — provenance tags, axon surplus routing, η payload loss, waste-only M cloaca (§2.7).
 - [ ] **Seed policy** — hand-curated basis set vs Grover/QIEA covering search for generation 0?
 - [ ] **Basic-class taxonomy** — functional (M/C/A presence) vs structural (length) vs ecological (pelagic vs strand)?
 - [ ] **Chain vs FC wiring** when leaving v1 chain model.
@@ -774,7 +918,7 @@ Grover at seed/mating boundaries, QAGA mutation, QPU via simulators first. Only 
 | **Energon** | Byte-string information–energy in the world (sunfall, signals, fragments) |
 | **Sunfall** | Abiotic Energon rain during day phase |
 | **Neural axon** | Directed sim edge: byte signal + energon transfer; `trustBelieve` / `trustFeed` (256 = 100%) |
-| **Skeleton link** | Kinematic bone between skeleton nodes; optional legacy energy η (0 for twin-mouth) |
+| **Skeleton link** | Kinematic bone between skeleton nodes; optional legacy energy η |
 | **finalizeSpawn** | Single organism hook: developmental axon trust + ±3% jitter on skeleton/heading |
 | **Chaos module** | `Chaos.hpp` — all ε rates, jitter helpers, spawn RNG salts |
 | **Water column** | Depth band + habitat placement at a world XZ sample (`WaterColumn.hpp`) |

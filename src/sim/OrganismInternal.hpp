@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sim/OrganismMouth.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/TideAdvection.hpp"
 
 #include <cstdint>
@@ -15,7 +17,10 @@ struct SkeletonNode;
 namespace organism_detail {
 
 void consumeBytes(std::vector<std::uint8_t>& storage, std::uint32_t count);
-void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float radius);
+void creditMouthStore(SkeletonNode& node, EnergonField& field, std::uint8_t byte,
+                      std::uint32_t units);
+void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float radius,
+                   std::uint64_t simTick, const FeedIntent* pmaFeedIntent);
 void tickNeuronViability(Organism& organism, EnergonField& field);
 void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity,
                            const EnergonField& energon, float cellSize);

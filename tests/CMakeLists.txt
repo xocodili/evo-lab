@@ -20,10 +20,11 @@ add_executable(evo-lab-tests
   unit/test_energon.cpp
   unit/test_stem_cell.cpp
   unit/test_skeleton.cpp
-  unit/test_two_mouth.cpp
   unit/test_actuator.cpp
   unit/test_nom.cpp
   unit/test_neuron_signal.cpp
+  unit/test_neuron_trust.cpp
+  unit/test_energon_conveyance.cpp
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp
   unit/test_hydrology.cpp

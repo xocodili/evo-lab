@@ -15,29 +15,29 @@ inline constexpr std::uint32_t kEnergonUnitsPerByte = 2u;
 inline constexpr std::uint32_t kBiteCost = 1u;
 // Empty-string contact: same tax, paid from organism body storage.
 inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
-inline constexpr std::uint32_t kMouthStoreSoftPressureBytes = 8u;
-inline constexpr std::uint32_t kMouthSignalHeartbeatTicks = 30u;
-inline constexpr std::uint8_t kMouthSignalTagShipping = 0xF0u;
+inline constexpr std::uint32_t kNeuronStoreMaxBytes = kMouthLocalStoreMaxBytes;
 // Universal axon analog byte (all neuron types): 0–7 on the believe channel.
 // Semantics depend on source neuron — see NeuronSignal.hpp.
 inline constexpr std::uint8_t kNeuronConfidenceMax = 7u;
 inline constexpr std::uint8_t kNeuronConfidenceNeutral = 4u;
+inline constexpr std::size_t kNeuronConfidenceBinCount =
+    static_cast<std::size_t>(kNeuronConfidenceMax) + 1u;
 inline constexpr std::uint32_t kNeuronConfidenceFullFuelBytes = kTicksPerStemCellDay;
-// Mouth satiation at/above this level inhibits actuator stroke (M→A brake).
+// Mouth satiation at/above this level inhibits baseline crawl (M→A brake threshold).
 inline constexpr std::uint8_t kMouthInhibitActuatorConfidence = 5u;
+// PMA horror-crawl baseline when hungry and mouth is not signaling satiation.
+inline constexpr float kActuatorBaselineCrawlDrive = 0.35f;
+inline constexpr float kMouthBaselineFeedDrive = 0.35f;
+inline constexpr float kMouthFeedIntentMinBite = 0.08f;
+// Minimum integrated motor drive (× max stroke bytes) before paying fuel.
+inline constexpr float kActuatorMotorIntentMinStroke = 0.08f;
 // Perceptor world-focus outbound uses the same encoding (0=avoid … 7=approach).
 inline constexpr std::uint8_t kPerceptorConfidenceMax = kNeuronConfidenceMax;
 inline constexpr std::uint8_t kPerceptorConfidenceNeutral = kNeuronConfidenceNeutral;
 // P-M-A Nom skeleton: equilateral triangle (A forward, M at -60°, closing M-A bone).
 inline constexpr float kPmaNomActuatorJointAngle = 0.0f;
 inline constexpr float kPmaNomMouthJointAngle = -1.0471976f;  // -60° from heading forward
-inline constexpr std::uint8_t kSignalTagIAte = 0xA1u;
-inline constexpr std::uint8_t kSignalTagIHunger = 0xA2u;
-inline constexpr std::uint8_t kSignalTagIActuate = 0xA3u;
-// Legacy sense tags (superseded by confidence bytes on P outbound axons).
-inline constexpr std::uint8_t kSignalTagISenseFood = 0xB1u;
-inline constexpr std::uint8_t kSignalTagISenseOrganism = 0xB2u;
-inline constexpr std::uint8_t kSignalTagISenseBlock = 0xB3u;
+inline constexpr std::uint8_t kSignalTagReservedMin = 0xA0u;
 // Perceptor focus cone (radians): total width ≈ 90°.
 inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 // Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
@@ -84,6 +84,7 @@ inline constexpr std::uint16_t kTrustMin = 85;
 inline constexpr std::uint16_t kTrustMax = 426;
 inline constexpr std::uint16_t kNeuralAxonDefaultTrust = kTrustBaseline;
 inline constexpr std::uint16_t kNeuralAxonMinTrustFeed = kTrustMin;
-inline constexpr std::uint32_t kNeuralAxonShareMinStoreBytes = 6u;
+// Three-factor believe-trust nudge per qualifying outcome (fixed-point step).
+inline constexpr std::uint16_t kTrustLearnStep = 6u;
 
 }  // namespace evolab

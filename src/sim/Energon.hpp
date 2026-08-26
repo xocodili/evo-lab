@@ -22,7 +22,7 @@ class EnergonSpatialIndex;
 
 
 
-enum class EnergonOrigin : std::uint8_t { Sunfall = 0, Signal = 1, Fragment = 2 };
+enum class EnergonOrigin : std::uint8_t { Sunfall = 0, Signal = 1, Fragment = 2, Waste = 3 };
 
 
 

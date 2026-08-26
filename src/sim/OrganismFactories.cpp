@@ -19,7 +19,7 @@ NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
   NeuralAxon axon;
   axon.srcNodeId = srcId;
   axon.dstNodeId = dstId;
-  axon.trustBelieve = kTrustBaseline;
+  setAllBelieveTrust(axon, kTrustBaseline);
   axon.trustFeed = kTrustMin;
   return axon;
 }
@@ -175,59 +175,6 @@ Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
     organism.nodes.push_back(mouth);
     organism.links.push_back(link);
   }
-
-  return organism;
-}
-
-Organism makeTwoMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
-                              std::size_t storageBytes, std::uint64_t createdAtTick,
-                              float boneLength, std::uint16_t trustFeedM1ToM2,
-                              std::uint16_t trustFeedM2ToM1) {
-  Organism organism;
-  organism.id = id;
-  organism.createdAtTick = createdAtTick;
-  organism.bodyStorage.resize(storageBytes);
-  organism.rootNodeId = 1;
-
-  SkeletonNode mouthA;
-  mouthA.id = 1;
-  mouthA.neuron = NeuronType::Mouth;
-  mouthA.worldX = wx;
-  mouthA.worldZ = wz;
-  mouthA.worldY = wy;
-
-  SkeletonNode mouthB;
-  mouthB.id = 2;
-  mouthB.neuron = NeuronType::Mouth;
-  mouthB.worldX = wx;
-  mouthB.worldZ = wz + boneLength;
-  mouthB.worldY = wy;
-
-  organism.nodes.push_back(mouthA);
-  organism.nodes.push_back(mouthB);
-
-  SkeletonLink bone;
-  bone.parentNodeId = 1;
-  bone.childNodeId = 2;
-  bone.restLength = boneLength;
-  bone.jointAngle = 0.0f;
-  bone.energyEta = 0.0f;
-  organism.links.push_back(bone);
-
-  NeuralAxon axonAtoB;
-  axonAtoB.srcNodeId = 1;
-  axonAtoB.dstNodeId = 2;
-  axonAtoB.trustBelieve = kTrustBaseline;
-  axonAtoB.trustFeed = trustFeedM1ToM2;
-
-  NeuralAxon axonBtoA;
-  axonBtoA.srcNodeId = 2;
-  axonBtoA.dstNodeId = 1;
-  axonBtoA.trustBelieve = kTrustBaseline;
-  axonBtoA.trustFeed = trustFeedM2ToM1;
-
-  organism.neuralAxons.push_back(axonAtoB);
-  organism.neuralAxons.push_back(axonBtoA);
 
   return organism;
 }

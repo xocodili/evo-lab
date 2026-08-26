@@ -1,0 +1,84 @@
+#include "sim/CellConstants.hpp"
+#include "sim/Energon.hpp"
+#include "sim/EnergonConveyance.hpp"
+#include "sim/NeuronFuel.hpp"
+#include "sim/NeuralAxon.hpp"
+#include "sim/Organism.hpp"
+#include "sim/OrganismInternal.hpp"
+
+#include <catch2/catch_test_macros.hpp>
+
+TEST_CASE("mouth bite credits fresh bytes without immediate cloaca overflow", "[energon_conveyance]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.alive = true;
+
+  evolab::SkeletonNode* mouth = organism.findNode(2);
+  REQUIRE(mouth != nullptr);
+  mouth->store.clear();
+
+  for (int i = 0; i < static_cast<int>(evolab::kNeuronStoreMaxBytes); ++i) {
+    evolab::neuronStorePush(*mouth, 1);
+  }
+  REQUIRE(mouth->store.size() == evolab::kNeuronStoreMaxBytes);
+
+  evolab::organism_detail::creditMouthStore(*mouth, field, 7, 1);
+  REQUIRE(mouth->store.size() == evolab::kNeuronStoreMaxBytes + 1);
+  REQUIRE(field.activeCount() == 0);
+}
+
+TEST_CASE("conveyance applies eta energy loss on axon hops", "[energon_conveyance]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.alive = true;
+
+  evolab::SkeletonNode* mouth = organism.findNode(2);
+  evolab::SkeletonNode* actuator = organism.findNode(3);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(actuator != nullptr);
+
+  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
+  REQUIRE(mToA != nullptr);
+  mToA->trustFeed = evolab::kTrustBaseline;
+  mToA->etaEnergy = 0.5f;
+  mToA->etaSignal = 1.0f;
+
+  for (int i = 0; i < 40; ++i) {
+    evolab::neuronStorePush(*mouth, 1);
+  }
+  actuator->store.clear();
+
+  const std::size_t actuatorBefore = actuator->store.size();
+  evolab::conveyPmaEnergon(organism, field, 1);
+  REQUIRE(actuator->store.size() > actuatorBefore);
+}
+
+TEST_CASE("returned axon bytes dissipate at mouth without field spam", "[energon_conveyance]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.alive = true;
+
+  evolab::SkeletonNode* mouth = organism.findNode(2);
+  evolab::SkeletonNode* perceptor = organism.findNode(1);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(perceptor != nullptr);
+
+  evolab::NeuralAxon* pToM = organism.findNeuralAxon(1, 2);
+  REQUIRE(pToM != nullptr);
+  pToM->trustFeed = evolab::kTrustBaseline;
+  pToM->etaEnergy = 1.0f;
+  pToM->etaSignal = 1.0f;
+
+  for (int i = 0; i < 35; ++i) {
+    evolab::neuronStorePush(*perceptor, 2);
+  }
+
+  const std::size_t mouthBefore = mouth->store.size();
+  const int blobsBefore = field.activeCount();
+  evolab::conveyPmaEnergon(organism, field, 2);
+  REQUIRE(mouth->store.size() == mouthBefore);
+  REQUIRE(field.activeCount() == blobsBefore);
+}

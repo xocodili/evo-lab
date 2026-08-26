@@ -138,6 +138,10 @@ public:
   std::uint32_t lastStrokeBytesFromBody = 0;
   std::uint32_t lastStrokeBytesFromActuatorStore = 0;
   bool lastActuatorInhibited = false;
+  float lastActuatorNetDrive = 0.0f;
+  float lastMouthBiteDrive = 0.0f;
+  bool lastMouthFeedSuppressed = false;
+  bool lastMouthHadFoodContact = false;
   std::uint8_t lastActuatorOutboundSignal = 0;
   bool lastInWater = false;
   float lastTideDelta = 0.0f;
@@ -182,13 +186,13 @@ public:
 
   void tickNeuronViability(EnergonField& field);
 
-  void feed(EnergonField& field, float cellSize);
+  void feed(EnergonField& field, float cellSize, std::uint64_t simTick = 0);
 
   void perceive(const BarrenWorld& world, const EnergonField& energon, float cellSize,
                 float halfExtent, const std::vector<Organism>& population,
                 std::uint64_t simTick, float sunIntensity = 1.0f);
 
-  void transferEnergy(EnergonField& field, float cellSize);
+  void transferEnergy(EnergonField& field, float cellSize, std::uint64_t simTick = 0);
 
   void signal(EnergonField& field, std::uint64_t simTick);
 
@@ -234,22 +238,8 @@ Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::si
                          std::uint64_t createdAtTick, float boneLength);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
-
                                std::size_t storageBytes, std::uint64_t createdAtTick,
-
                                int mouthCount, float boneLength);
-
-
-
-Organism makeTwoMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
-
-                              std::size_t storageBytes, std::uint64_t createdAtTick,
-
-                              float boneLength,
-                              std::uint16_t trustFeedM1ToM2 = kNeuralAxonDefaultTrust,
-                              std::uint16_t trustFeedM2ToM1 = kNeuralAxonDefaultTrust);
-
-
 
 bool organismLandAdjacent(const BarrenWorld& world, float wx, float wz, float cellSize);
 

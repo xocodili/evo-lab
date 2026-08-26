@@ -18,6 +18,9 @@
 
 #include "sim/OrganismInternal.hpp"
 
+#include "sim/NeuronFuel.hpp"
+#include "sim/OrganismNeuron.hpp"
+#include "sim/NeuronTrust.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/NeuronSignal.hpp"
 
@@ -469,71 +472,22 @@ InteroceptionPrior gatherInteroception(const Organism& organism, std::uint32_t p
 
   InteroceptionPrior prior;
 
-  for (const NeuralAxon& axon : organism.neuralAxons) {
-
-    if (axon.dstNodeId != perceptorId || !axon.lastReceived.valid || !axonSignalGateOpen(axon)) {
-
-      continue;
-
+  forEachInboundAxon(organism, perceptorId, 0, false, [&](const InboundAxon& inbound) {
+    if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
+      return;
     }
 
-    const SkeletonNode* src = organism.findNode(axon.srcNodeId);
+    const float level = confidenceToUnit(inbound.axon.lastReceived.byte) * inbound.weight;
 
-    if (src == nullptr || !src->alive) {
-
-      continue;
-
+    if (inbound.src.neuron == NeuronType::Mouth) {
+      prior.satiation = std::max(prior.satiation, level);
+      prior.hunger = std::max(prior.hunger,
+                              (1.0f - confidenceToUnit(inbound.axon.lastReceived.byte)) *
+                                  inbound.weight);
+    } else if (inbound.src.neuron == NeuronType::Actuator) {
+      prior.movementSmear = std::max(prior.movementSmear, level);
     }
-
-    const float weight = clamp01(axonTrustScale(axon.trustBelieve) * axon.etaSignal);
-
-    if (isNeuronConfidenceByte(axon.lastReceived.byte)) {
-
-      const float level = confidenceToUnit(axon.lastReceived.byte) * weight;
-
-      if (src->neuron == NeuronType::Mouth) {
-
-        prior.satiation = std::max(prior.satiation, level);
-
-        prior.hunger = std::max(prior.hunger, (1.0f - confidenceToUnit(axon.lastReceived.byte)) * weight);
-
-      } else if (src->neuron == NeuronType::Actuator) {
-
-        prior.movementSmear = std::max(prior.movementSmear, level);
-
-      }
-
-      continue;
-
-    }
-
-    switch (axon.lastReceived.byte) {
-
-      case kSignalTagIHunger:
-
-        prior.hunger = std::max(prior.hunger, weight);
-
-        break;
-
-      case kSignalTagIAte:
-
-        prior.satiation = std::max(prior.satiation, weight);
-
-        break;
-
-      case kSignalTagIActuate:
-
-        prior.movementSmear = std::max(prior.movementSmear, weight);
-
-        break;
-
-      default:
-
-        break;
-
-    }
-
-  }
+  });
 
   prior.hunger = clamp01(prior.hunger);
 
@@ -743,29 +697,7 @@ void emitPerceptSignals(Organism& organism, std::uint32_t perceptorId, std::uint
 
                         std::uint64_t simTick) {
 
-  if (!isNeuronConfidenceByte(confidence)) {
-
-    return;
-
-  }
-
-  for (NeuralAxon& axon : organism.neuralAxons) {
-
-    if (axon.srcNodeId != perceptorId) {
-
-      continue;
-
-    }
-
-    axon.lastSentByte = confidence;
-
-    axon.lastReceived.valid = true;
-
-    axon.lastReceived.byte = confidence;
-
-    axon.lastReceived.tick = simTick;
-
-  }
+  emitOutboundConfidence(organism, perceptorId, confidence, simTick);
 
 }
 
@@ -845,7 +777,7 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
-  organism_detail::consumeBytes(perceptor.store, bytesDue);
+  neuronConsumeBack(perceptor, bytesDue);
 
   organism.lastPerceptScanPaid = true;
 
@@ -880,6 +812,22 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
   syncOrganismPerceptMirror(organism, perceptor);
 
   emitPerceptSignals(organism, perceptor.id, confidence, simTick);
+
+  bool hadFoodCandidate = false;
+  for (const PerceptCandidate& candidate : candidates) {
+    if (candidate.kind == PerceptFocusKind::Food) {
+      hadFoodCandidate = true;
+      break;
+    }
+  }
+
+  PerceptorTrustEvent trustEvent;
+  trustEvent.scanPaid = true;
+  trustEvent.hadFoodCandidate = hadFoodCandidate;
+  trustEvent.focusLocked = focus.locked;
+  trustEvent.focusKind = focus.kind;
+  trustEvent.confidence = confidence;
+  applyPmaPerceptorTrustLearning(organism, perceptor.id, trustEvent, simTick);
 
 }
 

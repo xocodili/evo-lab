@@ -32,8 +32,6 @@ public:
                      std::uint64_t seed);
   void seedMouthOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                           std::uint64_t seed, int mouthsPerOrganism = 1);
-  void seedTwoMouthOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
-                             std::uint64_t seed);
   void seedActuatorOrganisms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                              std::uint64_t seed);
   void seedNoms(const BarrenWorld& world, float cellSize, float heightScale, int count,

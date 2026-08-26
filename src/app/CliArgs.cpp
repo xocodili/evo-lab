@@ -128,7 +128,7 @@ void printHelp() {
             << "  --frames N           Simulation ticks to run (default: 120)\n"
             << "  --seed N             World seed (default: 42)\n"
             << "  --resolution N       Heightmap resolution (default: 128)\n"
-            << "  --archetype NAME     nom | stem | twomouth | actuator (default: nom)\n"
+            << "  --archetype NAME     nom | stem | actuator (default: nom)\n"
             << "  --nom-count N        Organisms to seed (default: 60)\n"
             << "  --tide-period N      Tide period in ticks (default: engine default)\n"
             << "  --design-width N     Design resolution width (default: 1280)\n"

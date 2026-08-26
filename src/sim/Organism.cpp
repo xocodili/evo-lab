@@ -7,6 +7,9 @@
 #include "sim/NeuronTick.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/OrganismInternal.hpp"
+#include "sim/OrganismMouth.hpp"
+#include "sim/EnergonConveyance.hpp"
+#include "sim/NeuronTrust.hpp"
 #include "sim/OrganismPerceptor.hpp"
 
 #include <algorithm>
@@ -90,7 +93,7 @@ void Organism::tickNeuronViability(EnergonField& field) {
   organism_detail::tickNeuronViability(*this, field);
 }
 
-void Organism::feed(EnergonField& field, float cellSize) {
+void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) {
   if (!alive) {
     return;
   }
@@ -98,12 +101,48 @@ void Organism::feed(EnergonField& field, float cellSize) {
   for (SkeletonNode& node : nodes) {
     node.ateThisTick = false;
   }
+  lastMouthBiteDrive = 0.0f;
+  lastMouthFeedSuppressed = false;
+  lastMouthHadFoodContact = false;
+
+  const FeedIntent* pmaFeedIntent = nullptr;
+  FeedIntent feedIntent{};
+  MouthInteroception mouthInteroception{};
+  std::uint32_t pmaMouthId = 0;
+  if (isPmaNom()) {
+    for (SkeletonNode& node : nodes) {
+      if (!node.alive || node.neuron != NeuronType::Mouth) {
+        continue;
+      }
+      mouthInteroception = gatherMouthInteroception(*this, node.id, node, simTick);
+      feedIntent = computePmaFeedIntent(mouthInteroception);
+      lastMouthBiteDrive = feedIntent.biteDrive;
+      lastMouthFeedSuppressed = feedIntent.feedSuppressed;
+      pmaFeedIntent = &feedIntent;
+      pmaMouthId = node.id;
+      break;
+    }
+  }
 
   const float radius = cellSize * kMouthContactRadiusFactor;
   for (SkeletonNode& node : nodes) {
     if (node.alive && node.neuron == NeuronType::Mouth) {
-      organism_detail::tickMouthNode(*this, node, field, radius);
+      organism_detail::tickMouthNode(*this, node, field, radius, simTick, pmaFeedIntent);
     }
+  }
+
+  if (isPmaNom() && pmaMouthId != 0) {
+    MouthTrustEvent trustEvent;
+    trustEvent.hadFoodContact = lastMouthHadFoodContact;
+    trustEvent.ate = false;
+    for (const SkeletonNode& node : nodes) {
+      if (node.alive && node.neuron == NeuronType::Mouth && node.ateThisTick) {
+        trustEvent.ate = true;
+        break;
+      }
+    }
+    trustEvent.feedSuppressed = lastMouthFeedSuppressed;
+    applyPmaMouthTrustLearning(*this, pmaMouthId, trustEvent, simTick);
   }
 }
 
@@ -114,10 +153,15 @@ void Organism::perceive(const BarrenWorld& world, const EnergonField& energon, f
                     sunIntensity);
 }
 
-void Organism::transferEnergy(EnergonField& field, float cellSize) {
+void Organism::transferEnergy(EnergonField& field, float cellSize, std::uint64_t simTick) {
   (void)field;
   (void)cellSize;
   if (!alive) {
+    return;
+  }
+
+  if (isPmaNom() && hasNeuralAxons()) {
+    conveyPmaEnergon(*this, field, simTick);
     return;
   }
 

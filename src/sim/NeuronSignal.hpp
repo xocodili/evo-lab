@@ -36,6 +36,13 @@ std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeByt
 
 void writeAxonConfidence(NeuralAxon& axon, std::uint8_t confidence, std::uint64_t simTick);
 
+// Discretized reward-prediction error on the universal 0–7 gradient (DESIGN-NOTES §8.1.1).
+// outcome and expected are signed scores in roughly [-1, 1]; 4 = neutral / no plasticity.
+std::uint8_t predictionErrorByte(float outcome, float expected = 0.0f);
+
+// Map RPE byte distance from neutral (4) to believe-trust nudge magnitude/sign.
+int trustDeltaFromPredictionError(std::uint8_t rpeByte);
+
 const char* neuronConfidenceRoleLabel(NeuronType source);
 
 }  // namespace evolab

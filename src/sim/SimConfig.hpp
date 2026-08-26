@@ -10,7 +10,6 @@ namespace evolab {
 enum class SeedArchetype : std::uint8_t {
   Nom,
   StemCell,
-  TwinMouth,
   Actuator,
 };
 

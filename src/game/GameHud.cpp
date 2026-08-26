@@ -16,7 +16,7 @@ const char* kHudSizeTemplate =
     "  wet 9999  dry 9999  falling 9999\n"
     "  cap 9999 / 9999\n"
     "Cells: 999 P-M-A Noms (999 degraded, 999 stem)\n"
-    "Hover: Organism #99999 twin mouth (2 axons)\n"
+    "Hover: Nom #99999 P-M-A\n"
     "Tick: 99999999  Seed: 99999999\n"
     "[Paused]";
 

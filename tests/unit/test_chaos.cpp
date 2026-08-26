@@ -31,7 +31,7 @@ TEST_CASE("developmental axon trust initializes near baseline", "[chaos]") {
   evolab::initializeDevelopmentalAxonTrust(axon, rng);
 
   const float feedScale = evolab::axonTrustScale(axon.trustFeed);
-  const float believeScale = evolab::axonTrustScale(axon.trustBelieve);
+  const float believeScale = evolab::axonTrustScale(evolab::axonMaxBelieveTrust(axon));
   const float minFeedScale =
       static_cast<float>(evolab::kTrustMin) / static_cast<float>(evolab::kTrustBaseline);
   REQUIRE(feedScale == Catch::Approx(minFeedScale).margin(0.04f));
@@ -43,10 +43,10 @@ TEST_CASE("developmental axon trust initializes near baseline", "[chaos]") {
 
 TEST_CASE("axon marked for pruning only when both trusts are zero", "[chaos]") {
   evolab::NeuralAxon axon;
-  axon.trustBelieve = 100;
+  axon.trustBelieveByConfidence.fill(100);
   axon.trustFeed = 0;
   REQUIRE_FALSE(evolab::axonMarkedForPruning(axon));
-  axon.trustBelieve = 0;
+  axon.trustBelieveByConfidence.fill(0);
   REQUIRE(evolab::axonMarkedForPruning(axon));
 }
 
@@ -62,14 +62,15 @@ TEST_CASE("chaos initial storage stays in one to three day band", "[chaos]") {
 TEST_CASE("bone length receives a single chaos jitter at spawn", "[chaos]") {
   evolab::BarrenWorld world(11, 64);
   evolab::CellPopulation population;
-  population.seedTwoMouthOrganisms(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 12,
-                                   77);
+  population.seedNoms(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 12, 77);
 
   const float nominal = evolab::nominalBoneLength(evolab::kWorldCellSize);
   for (const evolab::Organism& organism : population.organisms()) {
-    REQUIRE(organism.links.size() == 1);
-    const float ratio = organism.links[0].restLength / nominal;
-    REQUIRE(ratio >= 0.97f);
-    REQUIRE(ratio <= 1.03f);
+    REQUIRE(organism.links.size() == 3);
+    for (const evolab::SkeletonLink& link : organism.links) {
+      const float ratio = link.restLength / nominal;
+      REQUIRE(ratio >= 0.97f);
+      REQUIRE(ratio <= 1.03f);
+    }
   }
 }

@@ -200,26 +200,6 @@ void CellPopulation::seedMouthOrganisms(const BarrenWorld& world, float cellSize
       });
 }
 
-void CellPopulation::seedTwoMouthOrganisms(const BarrenWorld& world, float cellSize,
-                                           float heightScale, int count, std::uint64_t seed) {
-  (void)seed;
-  seedOnWetTerrain(
-      world, cellSize, heightScale, count, kChaosSaltTwoMouth, true, 100,
-      [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
-        Organism organism =
-            makeTwoMouthOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount(),
-                                 nominalBoneLength(cellSize));
-        organism.heading = chaosSpawnHeading(rng);
-        return organism;
-      },
-      [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
-        (void)rng;
-        organism.updateKinematics(world, cellSize, heightScale);
-        organism.landAdjacent =
-            organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
-      });
-}
-
 void CellPopulation::seedActuatorOrganisms(const BarrenWorld& world, float cellSize,
                                            float heightScale, int count, std::uint64_t seed) {
   (void)seed;
@@ -263,12 +243,11 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   const float halfExtent = worldHalfExtent(world, cellSize);
   energon.prepareSpatialQueries(cellSize, halfExtent);
   for (Organism& organism : organisms_) {
-    organism.feed(energon, cellSize);
-  }
-  energon.prepareSpatialQueries(cellSize, halfExtent);
-  for (Organism& organism : organisms_) {
     organism.perceive(world, energon, cellSize, halfExtent, organisms_, world.tickCount(),
                       sunIntensity);
+  }
+  for (Organism& organism : organisms_) {
+    organism.feed(energon, cellSize, world.tickCount());
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,
                                     heightScale, halfExtent, world.tickCount()};
@@ -286,7 +265,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   }
   energon.purgeDepletedBlobs();
   for (Organism& organism : organisms_) {
-    organism.transferEnergy(energon, cellSize);
+    organism.transferEnergy(energon, cellSize, world.tickCount());
   }
   for (Organism& organism : organisms_) {
     organism.signal(energon, world.tickCount());

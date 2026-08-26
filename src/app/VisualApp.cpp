@@ -42,9 +42,6 @@ void seedPopulation(CellPopulation& cells, const SimConfig& config, const Barren
     case SeedArchetype::StemCell:
       cells.seedStemCells(world, cellSize, heightScale, config.nomCount, config.seed);
       break;
-    case SeedArchetype::TwinMouth:
-      cells.seedTwoMouthOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
-      break;
     case SeedArchetype::Actuator:
       cells.seedActuatorOrganisms(world, cellSize, heightScale, config.nomCount, config.seed);
       break;
