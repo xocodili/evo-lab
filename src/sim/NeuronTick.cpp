@@ -47,7 +47,7 @@ void runOrganismPreAdvectHooks(Organism& organism, const OrganismTickContext& ct
   if (!organism.alive) {
     return;
   }
-  if (organism.isPmaNom()) {
+  if (organism.isCampNom()) {
     organism.emitPreAdvectSignals(ctx.simTick);
   }
   // Perceptor (P) pre-advect hooks register here.

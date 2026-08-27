@@ -11,6 +11,7 @@ struct ActuatorInteroception {
   float approach = 0.0f;
   float flee = 0.0f;
   float satiation = 0.0f;
+  float hubSatiation = 0.0f;
   float mouthConfidence = 0.0f;
   float perceptorSalience = 0.0f;
   bool perceptorLocked = false;
@@ -30,10 +31,10 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
                                                   std::uint32_t actuatorId,
                                                   std::uint64_t simTick);
 
-MotorIntent computePmaMotorIntent(const ActuatorInteroception& interoception,
+MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
                                   std::uint32_t actuatorFuelBytes);
 
-void applyPmaChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
+void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
                                const MotorIntent& intent);
 
 }  // namespace evolab

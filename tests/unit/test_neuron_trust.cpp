@@ -49,7 +49,7 @@ TEST_CASE("axon pruning requires all believe bins and feed trust zero", "[neuron
 }
 
 TEST_CASE("mouth trust learning strengthens P approach byte after successful bite", "[neuron_trust]") {
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::NeuralAxon* pToM = organism.findNeuralAxon(1, 2);
@@ -66,14 +66,14 @@ TEST_CASE("mouth trust learning strengthens P approach byte after successful bit
   event.ate = true;
   event.feedSuppressed = false;
 
-  evolab::applyPmaMouthTrustLearning(organism, 2, event, 42);
+  evolab::applyCampMouthTrustLearning(organism, 2, event, 42);
   REQUIRE(pToM->trustBelieveByConfidence[7] == before + evolab::kTrustLearnStep);
   REQUIRE(pToM->trustBelieveByConfidence[4] == evolab::kTrustBaseline);
 }
 
 TEST_CASE("mouth trust learning weakens P approach byte when feed suppressed at food",
           "[neuron_trust]") {
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::NeuralAxon* pToM = organism.findNeuralAxon(1, 2);
@@ -89,7 +89,7 @@ TEST_CASE("mouth trust learning weakens P approach byte when feed suppressed at 
   event.ate = false;
   event.feedSuppressed = true;
 
-  evolab::applyPmaMouthTrustLearning(organism, 2, event, 9);
+  evolab::applyCampMouthTrustLearning(organism, 2, event, 9);
   REQUIRE(pToM->trustBelieveByConfidence[7] == evolab::kTrustBaseline - evolab::kTrustLearnStep);
 }
 
@@ -99,9 +99,9 @@ TEST_CASE("actuator inbound tick aligns with prior advect for mouth interoceptio
   REQUIRE(evolab::inboundAxonTickEligible(evolab::NeuronType::Actuator, 9, 10, true));
   REQUIRE_FALSE(evolab::inboundAxonTickEligible(evolab::NeuronType::Actuator, 8, 10, true));
 
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
-  evolab::NeuralAxon* aToM = organism.findNeuralAxon(3, 2);
+  evolab::NeuralAxon* aToM = organism.findNeuralAxon(4, 2);
   REQUIRE(aToM != nullptr);
   aToM->lastReceived.valid = true;
   aToM->lastReceived.byte = evolab::kNeuronConfidenceMax;
@@ -139,7 +139,7 @@ TEST_CASE("prediction error byte maps outcome to 0-7 gradient", "[neuron_trust]"
 
 TEST_CASE("perceptor trust strengthens M satiation byte when full and not food locked",
           "[neuron_trust]") {
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::NeuralAxon* mToP = organism.findNeuralAxon(2, 1);
@@ -157,12 +157,12 @@ TEST_CASE("perceptor trust strengthens M satiation byte when full and not food l
   event.focusLocked = false;
   event.focusKind = evolab::PerceptFocusKind::None;
 
-  evolab::applyPmaPerceptorTrustLearning(organism, 1, event, 5);
+  evolab::applyCampPerceptorTrustLearning(organism, 1, event, 5);
   REQUIRE(mToP->trustBelieveByConfidence[6] == before + evolab::kTrustLearnStep);
 }
 
 TEST_CASE("perceptor trust weakens M satiation byte when full but food locked", "[neuron_trust]") {
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::NeuralAxon* mToP = organism.findNeuralAxon(2, 1);
@@ -179,7 +179,7 @@ TEST_CASE("perceptor trust weakens M satiation byte when full but food locked", 
   event.focusLocked = true;
   event.focusKind = evolab::PerceptFocusKind::Food;
 
-  evolab::applyPmaPerceptorTrustLearning(organism, 1, event, 10);
+  evolab::applyCampPerceptorTrustLearning(organism, 1, event, 10);
   REQUIRE(mToP->trustBelieveByConfidence[6] == evolab::kTrustBaseline - evolab::kTrustLearnStep);
 }
 
@@ -190,7 +190,7 @@ TEST_CASE("mouth prior tick aligns with perceptor interoception", "[neuron_trust
 
 TEST_CASE("feed trust strengthens when axon transfer delivers bytes", "[neuron_trust]") {
   evolab::EnergonField field(1, {});
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
@@ -209,6 +209,6 @@ TEST_CASE("feed trust strengthens when axon transfer delivers bytes", "[neuron_t
   }
   actuator->store.clear();
 
-  evolab::conveyPmaEnergon(organism, field, 42);
+  evolab::conveyCampEnergon(organism, field, 42);
   REQUIRE(mToA->trustFeed > before);
 }

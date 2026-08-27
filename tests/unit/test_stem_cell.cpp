@@ -27,6 +27,24 @@ TEST_CASE("undifferentiated organism basal metabolism consumes one byte per tick
   REQUIRE(organism.alive);
   REQUIRE(organism.bodyStorage.empty());
 
+  for (std::uint32_t i = 0; i < evolab::kNeuronBasalGraceTicks; ++i) {
+    organism.tickNeuronViability(energon);
+    REQUIRE(organism.alive);
+  }
+  organism.tickNeuronViability(energon);
+  REQUIRE(!organism.alive);
+}
+
+TEST_CASE("neuron basal grace delays death when wallet empty but no refill", "[stemcell]") {
+  evolab::BarrenWorld world(42, 32);
+  evolab::EnergonField energon(1, {});
+  evolab::Organism organism = evolab::makeUndifferentiatedOrganism(1, 0.0f, 0.0f, 1.0f, 0, 0);
+  organism.alive = true;
+
+  for (std::uint32_t i = 0; i < evolab::kNeuronBasalGraceTicks; ++i) {
+    organism.tickNeuronViability(energon);
+    REQUIRE(organism.alive);
+  }
   organism.tickNeuronViability(energon);
   REQUIRE(!organism.alive);
 }
@@ -81,10 +99,13 @@ TEST_CASE("population tick removes dead organisms after metabolism", "[stemcell]
     organism.bodyStorage.resize(1);
   }
 
-  world.tick();
-  population.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  world.tick();
-  population.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  for (int i = 0; i < static_cast<int>(evolab::kNeuronBasalGraceTicks) + 4; ++i) {
+    world.tick();
+    population.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+    if (population.organisms().empty()) {
+      break;
+    }
+  }
   REQUIRE(population.organisms().empty());
 }
 

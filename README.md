@@ -10,7 +10,7 @@ This repo is **public work-in-progress**: cute, experimental, and meant to be fu
 
 | Kind | What it is |
 |------|------------|
-| **Organisms** | Structured life — P-M-A chain (Perceptor, Mouth, Actuator), bones, neural links |
+| **Organisms** | Structured life — **CAMP** chain (Perceptor, Mouth, Computer, Actuator), bones, neural links |
 | **Energon** | Byte-string food — sunfall rain, signal trails, fragments |
 
 Energon is still the technical term for the food substrate; **Nom** is the friendly collective when we mean “stuff in the water that eats or gets eaten.”
@@ -19,9 +19,9 @@ Energon is still the technical term for the food substrate; **Nom** is the frien
 
 - Procedural heightmap terrain with **global tides** and hydraulic spill/lake rules
 - **Water-column bands** — dry / benthic / shallow / pelagic / open deep
-- **P-M-A Nom** — Perceptor scans (food/organism/block), Mouth feeds, Actuator propels; universal 0–7 confidence bytes on all neural axons
+- **CAMP Nom** — Perceptor scans, Mouth feeds, Computer digests/dispatches hub fuel, Actuator propels; universal 0–7 confidence bytes on all neural axons
 - Dev archetypes via CLI: stem cells, pure actuator
-- Interactive **SDL + OpenGL** viewer (default: ~60 P-M-A Noms on wet terrain)
+- Interactive **SDL + OpenGL** viewer (default: ~60 CAMP Noms on wet terrain)
 - **Catch2** unit tests + headless smoke test
 
 **Not yet:** mating/genetics, Hebbian trust updates, temporal chemotaxis gradient, Computer neuron.
@@ -53,7 +53,7 @@ ctest --test-dir build --output-on-failure
 # optional: --seed 42 --resolution 128 --archetype nom --nom-count 60
 ```
 
-Window title reflects the selected archetype (default **P-M-A Nom**). Hover a Nom for architecture readout.
+Window title reflects the selected archetype (default **CAMP Nom**). Hover a Nom for architecture readout.
 
 **Archetypes:** `nom` (default), `stem`, `actuator`
 

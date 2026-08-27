@@ -2,7 +2,7 @@
 
 How to verify the **Barren Earth** simulator (procedural 3D land, water, tides) without relying on “it looks fine.”
 
-**Phase 2.x (life):** organism, chaos, P-M-A Nom, and water-column behaviour are covered by Catch2 unit tests in `evo-lab-tests` — filters `[water]`, `[chaos]`, and `[nom]`. Design and invariants are documented in [DESIGN-NOTES.md](DESIGN-NOTES.md) §2.5, §3.1 (water bands), §4.4.1.
+**Phase 2.x (life):** organism, chaos, **CAMP Nom**, Computer neuron, and water-column behaviour are covered by Catch2 unit tests in `evo-lab-tests` — filters `[water]`, `[chaos]`, `[nom]`, and `[camp][computer]`. Design and invariants are documented in [DESIGN-NOTES.md](DESIGN-NOTES.md) §2.5, §2.7, §2.8, §3.1 (water bands), §4.4.1.
 
 ---
 

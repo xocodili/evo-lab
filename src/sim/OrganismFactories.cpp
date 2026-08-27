@@ -1,18 +1,23 @@
-﻿#include "sim/Organism.hpp"
+#include "sim/Organism.hpp"
 
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronSignal.hpp"
 #include "sim/WorldConstants.hpp"
 
 namespace evolab {
 
 namespace {
 
-void splitStorageThreeWay(std::size_t total, std::size_t& a, std::size_t& b, std::size_t& c) {
-  a = total / 3;
-  b = total / 3;
-  c = total - a - b;
+void splitCampStorage(std::size_t total, std::size_t& hubBytes, std::size_t& perceptorBytes,
+                      std::size_t& mouthBytes, std::size_t& actuatorBytes) {
+  hubBytes = total / 2;
+  const std::size_t peripheral = total - hubBytes;
+  perceptorBytes = peripheral / 3;
+  mouthBytes = peripheral / 3;
+  actuatorBytes = peripheral - perceptorBytes - mouthBytes;
 }
 
 NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
@@ -21,7 +26,20 @@ NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
   axon.dstNodeId = dstId;
   setAllBelieveTrust(axon, kTrustBaseline);
   axon.trustFeed = kTrustMin;
+  axon.etaEnergy = 1.0f;
+  axon.etaSignal = 1.0f;
   return axon;
+}
+
+void initCampComputerRegister(Organism& organism) {
+  organism.computerRegister = {kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               1u,
+                               1u,
+                               1u,
+                               0u};
 }
 
 }  // namespace
@@ -62,12 +80,14 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
   return organism;
 }
 
-Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
-                         std::uint64_t createdAtTick, float boneLength) {
+Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
+                             std::size_t storageBytes, std::uint64_t createdAtTick,
+                             float boneLength) {
   Organism organism;
   organism.id = id;
   organism.createdAtTick = createdAtTick;
-  organism.rootNodeId = 1;
+  organism.rootNodeId = kCampRootNodeId;
+  organism.computerNodeId = kCampComputerId;
 
   SkeletonNode perceptor;
   perceptor.id = 1;
@@ -83,61 +103,56 @@ Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::si
   mouth.worldZ = wz;
   mouth.worldY = wy;
 
+  SkeletonNode computer;
+  computer.id = 3;
+  computer.neuron = NeuronType::Computer;
+  computer.worldX = wx;
+  computer.worldZ = wz;
+  computer.worldY = wy;
+
   SkeletonNode actuator;
-  actuator.id = 3;
+  actuator.id = 4;
   actuator.neuron = NeuronType::Actuator;
   actuator.worldX = wx;
   actuator.worldZ = wz;
   actuator.worldY = wy;
 
+  std::size_t hubBytes = 0;
   std::size_t perceptorBytes = 0;
   std::size_t mouthBytes = 0;
-  std::size_t motorBytes = 0;
-  // Spawn endowment: equal thirds per neuron. kMouthLocalStoreMaxBytes is a runtime
-  // eating/forwarding buffer — do not cap the birth fuel budget (that starved M in ~32 ticks).
-  splitStorageThreeWay(storageBytes, perceptorBytes, mouthBytes, motorBytes);
+  std::size_t actuatorBytes = 0;
+  splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
+  organism.bodyStorage.assign(hubBytes, 0);
   perceptor.store.assign(perceptorBytes, 0);
   mouth.store.assign(mouthBytes, 0);
-  actuator.store.assign(motorBytes, 0);
+  actuator.store.assign(actuatorBytes, 0);
 
   organism.nodes.push_back(perceptor);
   organism.nodes.push_back(mouth);
+  organism.nodes.push_back(computer);
   organism.nodes.push_back(actuator);
 
-  SkeletonLink perceptorToActuator;
-  perceptorToActuator.parentNodeId = 1;
-  perceptorToActuator.childNodeId = 3;
-  perceptorToActuator.restLength = boneLength;
-  perceptorToActuator.jointAngle = kPmaNomActuatorJointAngle;
-  perceptorToActuator.energyEta = 0.0f;
+  auto addCampArm = [&](std::uint32_t childId, float bindAngle) {
+    SkeletonLink link;
+    link.parentNodeId = kCampComputerId;
+    link.childNodeId = childId;
+    link.restLength = boneLength;
+    link.jointAngle = bindAngle;
+    link.energyEta = 0.0f;
+    link.muscleBundle = true;
+    organism.links.push_back(link);
+  };
 
-  SkeletonLink perceptorToMouth;
-  perceptorToMouth.parentNodeId = 1;
-  perceptorToMouth.childNodeId = 2;
-  perceptorToMouth.restLength = boneLength;
-  perceptorToMouth.jointAngle = kPmaNomMouthJointAngle;
-  perceptorToMouth.energyEta = 0.0f;
+  addCampArm(kCampPerceptorId, kCampPerceptorBindAngle);
+  addCampArm(kCampActuatorId, kCampActuatorBindAngle);
+  addCampArm(kCampMouthId, kCampMouthBindAngle);
 
-  SkeletonLink mouthToActuator;
-  mouthToActuator.parentNodeId = 2;
-  mouthToActuator.childNodeId = 3;
-  mouthToActuator.restLength = boneLength;
-  mouthToActuator.jointAngle = kPmaNomMouthJointAngle - kPmaNomActuatorJointAngle;
-  mouthToActuator.energyEta = 0.0f;
-
-  organism.links.push_back(perceptorToActuator);
-  organism.links.push_back(perceptorToMouth);
-  organism.links.push_back(mouthToActuator);
-
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(1, 2));
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(1, 3));
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(2, 3));
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(3, 2));
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(2, 1));
-  organism.neuralAxons.push_back(makeDevelopmentalAxon(3, 1));
+  for (const auto& edge : kCampDevelopmentalAxons) {
+    organism.neuralAxons.push_back(makeDevelopmentalAxon(edge.first, edge.second));
+  }
 
   organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
-
+  initCampComputerRegister(organism);
   return organism;
 }
 
@@ -189,4 +204,3 @@ bool organismLandAdjacent(const BarrenWorld& world, float wx, float wz, float ce
   return terrainHeight >= waterLevel - eps;
 }
 }
-

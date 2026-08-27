@@ -10,6 +10,7 @@
 
 
 
+#include <array>
 #include <cstdint>
 
 #include <random>
@@ -66,6 +67,9 @@ struct SkeletonNode {
   bool focusLocked = false;
   std::uint8_t perceptConfidence = 0;
 
+  // Consecutive ticks basal cost could not be paid from this neuron's fuel pool.
+  std::uint16_t basalArrearsTicks = 0;
+
 };
 
 
@@ -85,6 +89,9 @@ struct SkeletonLink {
   float jointAngle = 0.0f;
 
   float energyEta = 0.88f;
+
+  // When true, joint flex follows the bidirectional believe axon bundle on this bone (evo-lab).
+  bool muscleBundle = false;
 
 };
 
@@ -156,6 +163,13 @@ public:
   bool lastPerceptScanPaid = false;
   std::uint32_t lastPerceptBytesPaid = 0;
 
+  // Computer (C) hub — register template + runtime match/dispatch (CAMP only).
+  std::array<std::uint8_t, kComputerRegisterBytes> computerRegister{};
+  float lastComputerMatchScore = 0.0f;
+  float computerFeedGain = 1.0f;
+  bool lastHubSignalExpelledThisTick = false;
+  std::uint32_t computerNodeId = 0;
+
 
 
   SkeletonNode* findNode(std::uint32_t nodeId);
@@ -209,7 +223,9 @@ public:
   bool hasActuatorNeurons() const;
   bool hasLiveActuatorNeurons() const;
   bool hasLiveFunctionalNeurons() const;
-  bool isPmaNom() const;
+  bool isCampNom() const;
+
+  void runDigestAndComputer(EnergonField& field, std::uint64_t simTick);
 
   void emitPreAdvectSignals(std::uint64_t simTick);
 
@@ -234,8 +250,8 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
 Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
                               std::size_t storageBytes, std::uint64_t createdAtTick);
 
-Organism makeNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
-                         std::uint64_t createdAtTick, float boneLength);
+Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
+                             std::uint64_t createdAtTick, float boneLength);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
                                std::size_t storageBytes, std::uint64_t createdAtTick,

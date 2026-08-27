@@ -28,6 +28,26 @@ std::uint8_t mouthFuelConfidence(const SkeletonNode& mouth) {
   return static_cast<std::uint8_t>(std::lround(fill * static_cast<float>(kNeuronConfidenceMax)));
 }
 
+std::uint8_t hubFuelConfidence(std::size_t hubBytes, std::uint32_t fullBytes) {
+  return fuelStoreToConfidence(hubBytes, fullBytes);
+}
+
+std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType type,
+                                            const SkeletonNode& node) {
+  switch (type) {
+    case NeuronType::Mouth:
+      return mouthFuelConfidence(node);
+    case NeuronType::Perceptor:
+      return node.perceptConfidence;
+    case NeuronType::Actuator:
+      return actuatorActivityConfidence(organism.lastStrokePaid, organism.lastStrokeBytesPaid);
+    case NeuronType::Computer:
+      return hubFuelConfidence(organism.bodyStorage.size());
+    default:
+      return kNeuronConfidenceNeutral;
+  }
+}
+
 std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeBytesPaid) {
   if (!strokePaid || strokeBytesPaid == 0) {
     return 0;
@@ -77,6 +97,8 @@ const char* neuronConfidenceRoleLabel(NeuronType source) {
       return "fuel/satiation";
     case NeuronType::Actuator:
       return "flagella activity";
+    case NeuronType::Computer:
+      return "hub/satiation";
     default:
       return "confidence";
   }

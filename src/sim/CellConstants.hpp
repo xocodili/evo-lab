@@ -8,11 +8,15 @@ namespace evolab {
 inline constexpr std::uint32_t kTicksPerStemCellDay = 60u * 60u * 24u;
 inline constexpr std::uint32_t kStemCellStorageMaxBytes = kTicksPerStemCellDay * 3u;
 inline constexpr std::uint32_t kStemCellBasalCostPerTick = 1;
+// Ticks a neuron may run basal-arrears before death (conveyance/refill happens same frame after viability).
+inline constexpr std::uint32_t kNeuronBasalGraceTicks = 8u;
 
 // Mouth: each byte in a wet energon string yields this many energon units before bite tax.
-inline constexpr std::uint32_t kEnergonUnitsPerByte = 2u;
+// Feedbag equilibrium: 9 gross − 1 mastication tax = 8 net B/chew (matches ~8 B/tick crawl ceiling).
+inline constexpr std::uint32_t kEnergonUnitsPerByte = 9u;
 // Mastication tax — paid from the bitten byte when food is present.
 inline constexpr std::uint32_t kBiteCost = 1u;
+inline constexpr std::uint32_t kBiteNetYieldBytes = kEnergonUnitsPerByte - kBiteCost;
 // Empty-string contact: same tax, paid from organism body storage.
 inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
 inline constexpr std::uint32_t kNeuronStoreMaxBytes = kMouthLocalStoreMaxBytes;
@@ -25,7 +29,7 @@ inline constexpr std::size_t kNeuronConfidenceBinCount =
 inline constexpr std::uint32_t kNeuronConfidenceFullFuelBytes = kTicksPerStemCellDay;
 // Mouth satiation at/above this level inhibits baseline crawl (M→A brake threshold).
 inline constexpr std::uint8_t kMouthInhibitActuatorConfidence = 5u;
-// PMA horror-crawl baseline when hungry and mouth is not signaling satiation.
+// CAMP horror-crawl baseline when hungry and mouth is not signaling satiation.
 inline constexpr float kActuatorBaselineCrawlDrive = 0.35f;
 inline constexpr float kMouthBaselineFeedDrive = 0.35f;
 inline constexpr float kMouthFeedIntentMinBite = 0.08f;
@@ -34,9 +38,22 @@ inline constexpr float kActuatorMotorIntentMinStroke = 0.08f;
 // Perceptor world-focus outbound uses the same encoding (0=avoid … 7=approach).
 inline constexpr std::uint8_t kPerceptorConfidenceMax = kNeuronConfidenceMax;
 inline constexpr std::uint8_t kPerceptorConfidenceNeutral = kNeuronConfidenceNeutral;
-// P-M-A Nom skeleton: equilateral triangle (A forward, M at -60°, closing M-A bone).
-inline constexpr float kPmaNomActuatorJointAngle = 0.0f;
-inline constexpr float kPmaNomMouthJointAngle = -1.0471976f;  // -60° from heading forward
+// CAMP Nom skeleton: Y-star from computer hub — P forward, A/M on ±120° arms (flux cap).
+inline constexpr float kCampNomArmSeparationRad = 2.094395102f;
+inline constexpr float kCampPerceptorBindAngle = 0.0f;
+inline constexpr float kCampActuatorBindAngle = -kCampNomArmSeparationRad;
+inline constexpr float kCampMouthBindAngle = kCampNomArmSeparationRad;
+inline constexpr float kCampNomLinkJointAngle = 0.0f;
+// Axon-bundle musculature: believe-traffic tension → local yaw delta on each bone.
+inline constexpr float kAxonBundleMaxFlexRad = 0.38f;
+inline constexpr float kAxonBundleFlexGain = 0.34f;
+inline constexpr float kAxonBundleFlexStiffness = 0.82f;
+inline constexpr std::size_t kComputerRegisterBytes = 8u;
+inline constexpr std::uint32_t kComputerHubStoreMaxBytes = kStemCellStorageMaxBytes;
+inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay / 4u;
+inline constexpr std::uint8_t kComputerSatiationConfidence = 6u;
+inline constexpr std::uint8_t kComputerSignalExpulsionByte = 1u;
+inline constexpr float kComputerMinDispatchGain = 0.15f;
 inline constexpr std::uint8_t kSignalTagReservedMin = 0xA0u;
 // Perceptor focus cone (radians): total width ≈ 90°.
 inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
@@ -49,7 +66,7 @@ inline constexpr float kPerceptDiurnalRadiusFloor = 0.35f;
 inline constexpr float kPerceptNoiseBearingRad = 0.05f;
 inline constexpr float kPerceptNightChaosGain = 2.5f;
 inline constexpr float kPerceptFalseNegativeNightRate = 0.12f;
-inline constexpr float kOrganismPmaReflexMinValence = 0.15f;
+inline constexpr float kOrganismCampReflexMinValence = 0.15f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.
@@ -65,10 +82,8 @@ inline constexpr float kOrganismFoodSenseRadiusFactor = 3.5f;
 inline constexpr float kOrganismFoodHeadingWeight = 0.7f;
 
 // Actuator (flagellar) stroke — active IMF work on top of basal (1 B/tick).
-// One stroke batch costs kActuatorStrokeCostPerTick body bytes, aligned with
-// kEnergonUnitsPerByte gross yield from food (2 B before mastication tax).
-// Only kActuatorTranslationEta becomes directed motion; the rest is translation
-// entropy (viscous/thermal loss in low-Re flow).
+// Stroke batch (2 B) is the locomotion slice; gross chew (9 B) is the feedbag slice — net 8 ≈ crawl duty.
+// Only kActuatorTranslationEta becomes directed motion; the rest is translation entropy (viscous/thermal loss).
 inline constexpr std::uint32_t kActuatorStrokeCostPerTick = 2u;
 inline constexpr float kActuatorThrustPerStrokeByte = 0.055f;
 inline constexpr float kActuatorTranslationEta = 0.12f;

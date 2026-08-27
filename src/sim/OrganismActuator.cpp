@@ -40,6 +40,9 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
     if (inbound.src.neuron == NeuronType::Mouth) {
       prior.mouthConfidence = std::max(prior.mouthConfidence, rawLevel);
       prior.satiation = std::max(prior.satiation, level);
+    } else if (inbound.src.neuron == NeuronType::Computer) {
+      prior.hubSatiation = std::max(prior.hubSatiation, rawLevel);
+      prior.satiation = std::max(prior.satiation, level);
     } else if (inbound.src.neuron == NeuronType::Perceptor) {
       accumulateApproachFlee(prior.approach, prior.flee, inbound.axon.lastReceived.byte,
                              inbound.weight, gain);
@@ -49,21 +52,26 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
   prior.mouthConfidence = clamp01(prior.mouthConfidence);
   prior.approach = clamp01(prior.approach);
   prior.flee = clamp01(prior.flee);
+  prior.hubSatiation = clamp01(prior.hubSatiation);
   prior.satiation = clamp01(prior.satiation);
   return prior;
 }
 
-MotorIntent computePmaMotorIntent(const ActuatorInteroception& interoception,
+MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
                                   std::uint32_t actuatorFuelBytes) {
   MotorIntent intent;
   const float satiationBrake = confidenceToUnit(kMouthInhibitActuatorConfidence);
+  const float hubBrake = confidenceToUnit(kComputerSatiationConfidence);
   const bool mouthBrakeActive = interoception.mouthConfidence >= satiationBrake;
+  const bool hubBrakeActive = interoception.hubSatiation >= hubBrake;
+  const bool brakeActive = mouthBrakeActive || hubBrakeActive;
+  const float brakeLevel = std::max(interoception.mouthConfidence, interoception.hubSatiation);
 
   float motivation = 0.0f;
-  if (mouthBrakeActive && interoception.approach > kOrganismPmaReflexMinValence) {
+  if (brakeActive && interoception.approach > kOrganismCampReflexMinValence) {
     motivation = 0.0f;
-  } else if (mouthBrakeActive) {
-    motivation = interoception.approach * (1.0f - interoception.mouthConfidence);
+  } else if (brakeActive) {
+    motivation = interoception.approach * (1.0f - brakeLevel);
   } else {
     const float hungerGap = 1.0f - interoception.satiation * 0.5f;
     motivation = std::max(kActuatorBaselineCrawlDrive, interoception.approach) * hungerGap;
@@ -76,7 +84,7 @@ MotorIntent computePmaMotorIntent(const ActuatorInteroception& interoception,
       perceptorGain(interoception.perceptorLocked, interoception.perceptorSalience);
   intent.tumbleRateScale = clamp01(1.0f - interoception.approach * 0.65f +
                                    interoception.flee * 0.45f +
-                                   interoception.mouthConfidence * 0.25f);
+                                   brakeLevel * 0.25f);
 
   const float maxBytes = static_cast<float>(kActuatorStrokeCostPerTick);
   const float energyFactor =
@@ -93,25 +101,24 @@ MotorIntent computePmaMotorIntent(const ActuatorInteroception& interoception,
   }
 
   intent.motorSuppressed = intent.strokeBytes == 0 && actuatorFuelBytes > 0 &&
-                           (mouthBrakeActive ||
-                            (interoception.approach > 0.15f &&
-                             interoception.mouthConfidence > 0.45f));
+                           (brakeActive ||
+                            (interoception.approach > 0.15f && brakeLevel > 0.45f));
 
   return intent;
 }
 
-void applyPmaChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
+void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
                                const MotorIntent& intent) {
   if (!interoception.perceptorLocked) {
     return;
   }
-  if (intent.turnRateScale < kOrganismPmaReflexMinValence) {
+  if (intent.turnRateScale < kOrganismCampReflexMinValence) {
     return;
   }
 
   const bool flee = interoception.flee > interoception.approach;
   const float drive = flee ? interoception.flee : interoception.approach;
-  if (drive < kOrganismPmaReflexMinValence) {
+  if (drive < kOrganismCampReflexMinValence) {
     return;
   }
 

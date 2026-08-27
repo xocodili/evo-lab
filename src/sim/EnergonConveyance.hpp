@@ -1,13 +1,11 @@
 #pragma once
 
-#include <cstdint>
+#include "sim/Energon.hpp"
+#include "sim/Organism.hpp"
 
 namespace evolab {
 
-class EnergonField;
-class Organism;
-
-// PMA axon energon routing: trust/signal-gated feed, η loss per hop, waste-only cloaca at M.
-void conveyPmaEnergon(Organism& organism, EnergonField& field, std::uint64_t simTick);
+// CAMP axon energon routing: trust/signal-gated feed, η loss per hop, M-only field ingress.
+void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t simTick);
 
 }  // namespace evolab

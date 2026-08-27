@@ -30,7 +30,5 @@ void runPerceptorPhase(Organism& organism, const BarrenWorld& world, const Energ
 
 
 
-bool organismHasPmaTopology(const Organism& organism);
-
 }  // namespace evolab
 

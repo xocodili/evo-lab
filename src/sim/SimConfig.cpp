@@ -16,7 +16,7 @@ SeedArchetype parseSeedArchetype(const char* text) {
   for (char& ch : value) {
     ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
   }
-  if (value == "nom" || value == "pma" || value == "pam") {
+  if (value == "nom" || value == "camp") {
     return SeedArchetype::Nom;
   }
   if (value == "stem" || value == "stemcell") {
@@ -31,7 +31,7 @@ SeedArchetype parseSeedArchetype(const char* text) {
 const char* seedArchetypeLabel(SeedArchetype archetype) {
   switch (archetype) {
     case SeedArchetype::Nom:
-      return "P-M-A Nom";
+      return "CAMP Nom";
     case SeedArchetype::StemCell:
       return "StemCell";
     case SeedArchetype::Actuator:

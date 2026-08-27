@@ -225,7 +225,7 @@ void CellPopulation::seedNoms(const BarrenWorld& world, float cellSize, float he
   seedOnWetTerrain(
       world, cellSize, heightScale, count, kChaosSaltNom, true, 100,
       [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
-        Organism organism = makeNomOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng),
+        Organism organism = makeCampNomOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng),
                                             world.tickCount(), nominalBoneLength(cellSize));
         organism.heading = chaosSpawnHeading(rng);
         return organism;
@@ -248,6 +248,9 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   }
   for (Organism& organism : organisms_) {
     organism.feed(energon, cellSize, world.tickCount());
+  }
+  for (Organism& organism : organisms_) {
+    organism.runDigestAndComputer(energon, world.tickCount());
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,
                                     heightScale, halfExtent, world.tickCount()};
@@ -287,8 +290,8 @@ CellPopulationStats CellPopulation::stats() const {
   out.liveCells = static_cast<int>(organisms_.size());
   out.organisms = countOrganisms(organisms_);
   for (const Organism& organism : organisms_) {
-    if (organism.isPmaNom()) {
-      ++out.pmaNomOrganisms;
+    if (organism.isCampNom()) {
+      ++out.campNomOrganisms;
       out.mouthNeurons += organism.mouthCount();
       out.skeletonLinks += static_cast<int>(organism.links.size());
       out.neuralAxons += static_cast<int>(organism.neuralAxons.size());

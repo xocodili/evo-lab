@@ -11,7 +11,7 @@
 TEST_CASE("mouth bite credits fresh bytes without immediate cloaca overflow", "[energon_conveyance]") {
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -31,15 +31,15 @@ TEST_CASE("mouth bite credits fresh bytes without immediate cloaca overflow", "[
 TEST_CASE("conveyance applies eta energy loss on axon hops", "[energon_conveyance]") {
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
-  evolab::SkeletonNode* actuator = organism.findNode(3);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
   REQUIRE(mouth != nullptr);
   REQUIRE(actuator != nullptr);
 
-  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
+  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
   REQUIRE(mToA != nullptr);
   mToA->trustFeed = evolab::kTrustBaseline;
   mToA->etaEnergy = 0.5f;
@@ -51,14 +51,14 @@ TEST_CASE("conveyance applies eta energy loss on axon hops", "[energon_conveyanc
   actuator->store.clear();
 
   const std::size_t actuatorBefore = actuator->store.size();
-  evolab::conveyPmaEnergon(organism, field, 1);
+  evolab::conveyCampEnergon(organism, field, 1);
   REQUIRE(actuator->store.size() > actuatorBefore);
 }
 
 TEST_CASE("returned axon bytes dissipate at mouth without field spam", "[energon_conveyance]") {
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -78,7 +78,7 @@ TEST_CASE("returned axon bytes dissipate at mouth without field spam", "[energon
 
   const std::size_t mouthBefore = mouth->store.size();
   const int blobsBefore = field.activeCount();
-  evolab::conveyPmaEnergon(organism, field, 2);
+  evolab::conveyCampEnergon(organism, field, 2);
   REQUIRE(mouth->store.size() == mouthBefore);
   REQUIRE(field.activeCount() == blobsBefore);
 }

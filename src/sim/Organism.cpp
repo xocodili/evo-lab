@@ -10,7 +10,10 @@
 #include "sim/OrganismMouth.hpp"
 #include "sim/EnergonConveyance.hpp"
 #include "sim/NeuronTrust.hpp"
+#include "sim/OrganismComputer.hpp"
 #include "sim/OrganismPerceptor.hpp"
+#include "sim/CampTopology.hpp"
+#include "sim/NeuronStem.hpp"
 
 #include <algorithm>
 
@@ -105,21 +108,21 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
   lastMouthFeedSuppressed = false;
   lastMouthHadFoodContact = false;
 
-  const FeedIntent* pmaFeedIntent = nullptr;
+  const FeedIntent* campFeedIntent = nullptr;
   FeedIntent feedIntent{};
   MouthInteroception mouthInteroception{};
-  std::uint32_t pmaMouthId = 0;
-  if (isPmaNom()) {
+  std::uint32_t campMouthId = 0;
+  if (isCampNom()) {
     for (SkeletonNode& node : nodes) {
       if (!node.alive || node.neuron != NeuronType::Mouth) {
         continue;
       }
       mouthInteroception = gatherMouthInteroception(*this, node.id, node, simTick);
-      feedIntent = computePmaFeedIntent(mouthInteroception);
+      feedIntent = computeCampFeedIntent(mouthInteroception);
       lastMouthBiteDrive = feedIntent.biteDrive;
       lastMouthFeedSuppressed = feedIntent.feedSuppressed;
-      pmaFeedIntent = &feedIntent;
-      pmaMouthId = node.id;
+      campFeedIntent = &feedIntent;
+      campMouthId = node.id;
       break;
     }
   }
@@ -127,11 +130,11 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
   const float radius = cellSize * kMouthContactRadiusFactor;
   for (SkeletonNode& node : nodes) {
     if (node.alive && node.neuron == NeuronType::Mouth) {
-      organism_detail::tickMouthNode(*this, node, field, radius, simTick, pmaFeedIntent);
+      organism_detail::tickMouthNode(*this, node, field, radius, simTick, campFeedIntent);
     }
   }
 
-  if (isPmaNom() && pmaMouthId != 0) {
+  if (isCampNom() && campMouthId != 0) {
     MouthTrustEvent trustEvent;
     trustEvent.hadFoodContact = lastMouthHadFoodContact;
     trustEvent.ate = false;
@@ -142,8 +145,16 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
       }
     }
     trustEvent.feedSuppressed = lastMouthFeedSuppressed;
-    applyPmaMouthTrustLearning(*this, pmaMouthId, trustEvent, simTick);
+    applyCampMouthTrustLearning(*this, campMouthId, trustEvent, simTick);
   }
+}
+
+void Organism::runDigestAndComputer(EnergonField& field, std::uint64_t simTick) {
+  if (!alive || !isCampNom()) {
+    return;
+  }
+  digestMouthToComputer(*this);
+  tickComputerPhase(*this, field, simTick);
 }
 
 void Organism::perceive(const BarrenWorld& world, const EnergonField& energon, float cellSize,
@@ -160,8 +171,8 @@ void Organism::transferEnergy(EnergonField& field, float cellSize, std::uint64_t
     return;
   }
 
-  if (isPmaNom() && hasNeuralAxons()) {
-    conveyPmaEnergon(*this, field, simTick);
+  if (isCampNom() && hasNeuralAxons()) {
+    conveyCampEnergon(*this, field, simTick);
     return;
   }
 
@@ -287,15 +298,12 @@ bool Organism::hasActuatorNeurons() const {
   return actuatorCount() > 0;
 }
 
-bool Organism::isPmaNom() const {
-  return organismHasPmaTopology(*this);
+bool Organism::isCampNom() const {
+  return organismHasCampTopology(*this);
 }
 
 void Organism::emitPreAdvectSignals(std::uint64_t simTick) {
-  if (!isPmaNom()) {
-    return;
-  }
-  organism_detail::emitMouthConfidenceSignals(*this, simTick);
+  emitCampPreAdvectSignals(*this, simTick);
 }
 
 bool Organism::hasNeuralAxons() const {
@@ -315,6 +323,24 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
     link.restLength = chaosJitterFloat(link.restLength, rng);
     link.jointAngle = chaosJitterFloat(link.jointAngle, rng);
     link.energyEta = chaosJitterFloat(link.energyEta, rng);
+  }
+
+  if (isCampNom()) {
+    for (std::size_t i = 0; i < 7; ++i) {
+      const int jitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
+      const int next = static_cast<int>(computerRegister[i]) + jitter;
+      computerRegister[i] = static_cast<std::uint8_t>(
+          std::clamp(next, 0, static_cast<int>(kNeuronConfidenceMax)));
+    }
+    if (computerRegister[4] == 0) {
+      computerRegister[4] = 1;
+    }
+    if (computerRegister[5] == 0) {
+      computerRegister[5] = 1;
+    }
+    if (computerRegister[6] == 0) {
+      computerRegister[6] = 1;
+    }
   }
 }
 

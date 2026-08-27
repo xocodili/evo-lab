@@ -26,7 +26,6 @@ void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity
                            const EnergonField& energon, float cellSize);
 void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float cellSize,
                           float halfExtent, std::uint64_t simTick);
-void emitMouthConfidenceSignals(Organism& organism, std::uint64_t simTick);
 void runMouthSignalPhase(Organism& organism, EnergonField& field, std::uint64_t simTick);
 
 }  // namespace organism_detail

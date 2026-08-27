@@ -42,4 +42,34 @@ std::size_t neuronStoreAcceptanceRemaining(const SkeletonNode& node) {
   return kNeuronStoreMaxBytes - node.store.size();
 }
 
+void hubStorePush(Organism& organism, std::uint8_t byte) {
+  if (organism.bodyStorage.size() >= kComputerHubStoreMaxBytes) {
+    return;
+  }
+  organism.bodyStorage.push_back(byte);
+}
+
+bool hubStorePopBack(Organism& organism, std::uint8_t& byte) {
+  if (organism.bodyStorage.empty()) {
+    return false;
+  }
+  byte = organism.bodyStorage.back();
+  organism.bodyStorage.pop_back();
+  return true;
+}
+
+std::size_t hubStoreSurplus(const Organism& organism) {
+  if (organism.bodyStorage.size() <= kComputerHubReserveBytes) {
+    return 0;
+  }
+  return organism.bodyStorage.size() - kComputerHubReserveBytes;
+}
+
+std::size_t hubStoreAcceptanceRemaining(const Organism& organism) {
+  if (organism.bodyStorage.size() >= kComputerHubStoreMaxBytes) {
+    return 0;
+  }
+  return kComputerHubStoreMaxBytes - organism.bodyStorage.size();
+}
+
 }  // namespace evolab

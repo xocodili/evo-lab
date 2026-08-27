@@ -4,6 +4,7 @@
 #include "sim/Chaos.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronSignal.hpp"
+#include "sim/OrganismComputer.hpp"
 #include "sim/Organism.hpp"
 #include "sim/OrganismNeuron.hpp"
 
@@ -172,6 +173,27 @@ float perceptorOutcomeForActuatorByte(const PerceptorTrustEvent& event, std::uin
   return -0.5f;
 }
 
+float computerOutcomeForSourceByte(const ComputerTrustEvent& event, std::uint8_t byte,
+                                   std::uint8_t expected) {
+  if (!isNeuronConfidenceByte(byte) || !isNeuronConfidenceByte(expected)) {
+    return 0.0f;
+  }
+  const int score = static_cast<int>(kNeuronConfidenceMax) -
+                    std::abs(static_cast<int>(byte) - static_cast<int>(expected));
+  const float unit =
+      static_cast<float>(score) / static_cast<float>(kNeuronConfidenceMax);
+  if (event.matchScore >= 0.65f) {
+    return unit * 2.0f - 1.0f;
+  }
+  if (event.matchScore <= 0.25f) {
+    return -(unit * 2.0f - 1.0f) * 0.5f;
+  }
+  if (event.expelled && unit > 0.5f) {
+    return 0.5f;
+  }
+  return 0.0f;
+}
+
 }  // namespace
 
 void applyFeedTrustFromTransfer(NeuralAxon& axon, int bytesMoved, std::uint64_t simTick,
@@ -188,7 +210,7 @@ void applyFeedTrustFromTransfer(NeuralAxon& axon, int bytesMoved, std::uint64_t 
   }
 }
 
-void applyPmaMouthTrustLearning(Organism& organism, std::uint32_t mouthId,
+void applyCampMouthTrustLearning(Organism& organism, std::uint32_t mouthId,
                                 const MouthTrustEvent& event, std::uint64_t simTick) {
   for (NeuralAxon& axon : organism.neuralAxons) {
     if (!eligibleInboundAxon(organism, axon, mouthId, simTick)) {
@@ -212,7 +234,7 @@ void applyPmaMouthTrustLearning(Organism& organism, std::uint32_t mouthId,
   }
 }
 
-void applyPmaActuatorTrustLearning(Organism& organism, std::uint32_t actuatorId,
+void applyCampActuatorTrustLearning(Organism& organism, std::uint32_t actuatorId,
                                    const ActuatorInteroception& interoception,
                                    const MotorIntent& intent, float displacement,
                                    std::uint64_t simTick) {
@@ -239,7 +261,7 @@ void applyPmaActuatorTrustLearning(Organism& organism, std::uint32_t actuatorId,
   }
 }
 
-void applyPmaPerceptorTrustLearning(Organism& organism, std::uint32_t perceptorId,
+void applyCampPerceptorTrustLearning(Organism& organism, std::uint32_t perceptorId,
                                     const PerceptorTrustEvent& event, std::uint64_t simTick) {
   for (NeuralAxon& axon : organism.neuralAxons) {
     if (!eligibleInboundAxon(organism, axon, perceptorId, simTick)) {
@@ -257,6 +279,40 @@ void applyPmaPerceptorTrustLearning(Organism& organism, std::uint32_t perceptorI
       outcome = perceptorOutcomeForMouthByte(event, byte);
     } else if (src->neuron == NeuronType::Actuator) {
       outcome = perceptorOutcomeForActuatorByte(event, byte);
+    }
+
+    applyBelieveTrustFromOutcome(axon, byte, outcome, 0.0f);
+  }
+}
+
+void applyCampComputerTrustLearning(Organism& organism, std::uint32_t computerId,
+                                    const ComputerInteroception& interoception,
+                                    const ComputerTrustEvent& event, std::uint64_t simTick) {
+  (void)interoception;
+  for (NeuralAxon& axon : organism.neuralAxons) {
+    if (!eligibleInboundAxon(organism, axon, computerId, simTick)) {
+      continue;
+    }
+
+    const SkeletonNode* src = organism.findNode(axon.srcNodeId);
+    if (src == nullptr || !src->alive) {
+      continue;
+    }
+
+    const std::uint8_t byte = axon.lastReceived.byte;
+    float outcome = 0.0f;
+    switch (src->neuron) {
+      case NeuronType::Perceptor:
+        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[0]);
+        break;
+      case NeuronType::Mouth:
+        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[1]);
+        break;
+      case NeuronType::Actuator:
+        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[2]);
+        break;
+      default:
+        break;
     }
 
     applyBelieveTrustFromOutcome(axon, byte, outcome, 0.0f);

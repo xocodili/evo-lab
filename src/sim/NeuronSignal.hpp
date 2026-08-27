@@ -10,6 +10,7 @@ namespace evolab {
 
 enum class NeuronType : std::uint8_t;
 
+class Organism;
 struct SkeletonNode;
 
 // Universal axon analog byte (0–7) shared by P, M, A (and future C).
@@ -33,6 +34,14 @@ std::uint8_t mouthFuelConfidence(const SkeletonNode& mouth);
 
 // A outbound: 0 = idle flagella, 7 = full stroke (scales with stroke bytes paid).
 std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeBytesPaid);
+
+// C hub outbound: 0 = starving hub, 7 = satiated bodyStorage.
+std::uint8_t hubFuelConfidence(std::size_t hubBytes,
+                               std::uint32_t fullBytes = kComputerHubStoreMaxBytes);
+
+// Outbound confidence for any neuron type at emit time.
+std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType type,
+                                            const SkeletonNode& node);
 
 void writeAxonConfidence(NeuralAxon& axon, std::uint8_t confidence, std::uint64_t simTick);
 

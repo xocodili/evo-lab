@@ -28,6 +28,6 @@ struct FeedIntent {
 MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint32_t mouthId,
                                             const SkeletonNode& mouth, std::uint64_t simTick);
 
-FeedIntent computePmaFeedIntent(const MouthInteroception& interoception);
+FeedIntent computeCampFeedIntent(const MouthInteroception& interoception);
 
 }  // namespace evolab

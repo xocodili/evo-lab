@@ -1,0 +1,217 @@
+# evo-lab — research log (publication-oriented)
+
+**Started:** 2026-08-27  
+**Status:** Active exploratory / engineering research  
+**Working title:** *Distributed metabolic regulation in a minimal aquatic artificial organism (CAMP Nom)*
+
+---
+
+## 1. Research frame
+
+### Core question
+Can a **minimal four-module organism** (Perceive → Metabolize → Compute → Actuate) achieve **viable homeostasis** in a tidal energon field without hand-tuned controllers—such that **evolutionary search** (genotype + trust plasticity) is the primary mechanism for long-horizon survival?
+
+### Hypotheses (testable)
+
+| ID | Hypothesis | Operational metric |
+|----|------------|-------------------|
+| H1 | Decentralized peripheral wallets + central hub reserve create **selective pressure** for conveyance/trust policies that refuel starving modules | Time-to-A-refuel from hub; A death before C death rate |
+| H2 | Satiation brakes (M→A, C→A) sufficient for **open-loop regulation** at generation-0 without learning | Stroke suppression after feed; crawl burn ↓ after satiation |
+| H3 | Multi-mouth morphologies improve **intake bandwidth** vs single deep mouth buffer | Bytes/tick ingested per morphology at equal total M storage |
+| H4 | Star topology (C hub, P/M/A radial) improves **spatial sampling** vs chain topology | Food contacts / fuel-day; P scan hit rate |
+| H5 | Trust plasticity on believe + feed channels converges to **functional axon motifs** under oracle survival | Belief entropy ↓; feed trust ↑ on rewarded edges |
+| H6 | **Upper-bound satiety** (abundant food): regulation suppresses crawl and routes excess via hub signal expulsion | Stroke rate ↓; Signal-origin blob rate ↑; Fragment flood absent |
+| H7 | **Autotrophic break-even:** single-M intake cannot match idle burn at net +1 B/chew; indefinite life requires reserves, env tuning, or multi-M / yield change | At **+8 B net/chew**, feedbag needs ~1 bite/tick for crawl break-even; see DESIGN-NOTES §2.11 |
+
+### Axon bundles (musculature analogy, 2026-08-27)
+
+A skeletal **P↔C** link may correspond to a **bundle** of directed neural axons (e.g. P→C and C→P), not a single edge. Pruning/chaos may break symmetry over evolutionary time. Mechanical flex (future) may co-evolve with bundle density on the same bone — see KINEMATICS phases 5–6.
+
+### Non-goals (explicit)
+- Full-tank quantum simulation (see DESIGN-NOTES §4.6).
+- Hand-authored controllers for crawl/feed.
+- Indefinite population sustainability without environmental tuning (pre-train phase accepts attrition).
+
+---
+
+## 2. System under study
+
+**Organism:** CAMP Nom — developmental P(1), M(2), C(3), A(4); 12 neural axons (all directed pairs); skeleton **Y-star** (C hub, P forward, M/A on ±120° arms).
+
+**Environment:** BarrenWorld tidal shallow sea; sunfall energon; wet placement at spawn.
+
+**Control architecture:** Universal 0–7 confidence bytes; believe-trust + feed-trust; Computer pattern register + dispatch gain; no RL, no backprop.
+
+**Key constants (see `CellConstants.hpp`):** basal 1 B/tick/neuron; mouth cap 32 B; hub reserve ¼ fuel-day; stroke 2 B from A wallet; bite net **+8 B** (`kBiteNetYieldBytes`); basal grace **8 ticks** before neuron death when unpaid.
+
+### Feedbag oracle protocol (benchmark harness)
+
+Upper-bound intake benchmark — **not** default tank behaviour:
+
+| Control | Setting |
+|---------|---------|
+| Food | Wet well at mouth every tick; sunfall spawn **off** |
+| Perceive | **Skipped** (no threat/flee blocking grazing) |
+| `computerFeedGain` | **1.0** in test only (full dispatch) |
+| Axon trust | **100%** feed + believe in test only (`prepareFeedbagOracleAxons`) |
+| Spawn | 2 fuel-days nominal; no hub pre-fill |
+| Day length | `kVisualDayCyclePeriodTicks` = 1800 |
+
+Shared runner: `runFeedbagOracle(cycleDays, worldSeed, energonSeed)` in `test_regulation_satiety.cpp`. Logs daily snapshots via Catch2 `INFO` (fuel, hub, mouth, actuator, bites, strokes, signal expulsions).
+
+---
+
+## 3. Observations (chronological)
+
+### 2026-08-27 — Energon flow review (pre-train pause)
+
+**Setup:** Default seeding `chaosInitialStorage` 1–3 fuel-days; 50% hub / 50% peripheral split; 60 Noms; sunfall 6–14 blobs/tick.
+
+**Findings:**
+- Regulation architecture is **structurally closed-loop** (digest, brakes, conveyance, computer dispatch).
+- Actuator wallet decoupling from hub is **intentional evolutionary pressure** (author): legs thirsty while hub full.
+- Population-level sunfall **<** full-population basal duty cycle → expect **thinning** until intake matches drain.
+- Test coverage: 400-tick intact without feed (short vs fuel-day scale); no long-horizon autotrophy benchmark yet.
+
+**Screenshot (tick ~777, seed 42, day ~22):** HUD reports **0 intact CAMP / 60 degraded**; inspected Nom #13 = single actuator survivor. Consistent with peripheral bankruptcy + neuron death cascade over multi-hour run. **Action item:** add telemetry run logging survival curves before env tuning.
+
+### 2026-08-27 — Kinematics intent
+
+**Current:** `KinematicLocalPose` yawDelta = **0** everywhere → rigid bind pose. Engine supports joint constraints (±π default); no IK; no actuator-driven flex.
+
+**Target morphology:** Flux-capacitor Y — C center, P forward, A/M on 120° arms (see KINEMATICS.md update pending).
+
+**Multi-mouth:** Scale intake **horizontally** (N mouths × cap) not deep single-M buffer; star-mouth factory precedent exists (`makeStarMouthOrganism`).
+
+### 2026-08-27 — Upper-bound satiety regulation test
+
+**Test:** `tests/unit/test_regulation_satiety.cpp` — abundant food well at mouth; hub pre-filled to satiation threshold.
+
+**Expected signatures (H6):**
+- Mouth bites >92% of measurement ticks
+- Actuator stroke ≤15% of ticks; inhibited ≥70%
+- Computer hub expels **Signal**-origin blobs (blue); Fragment (red M-cloaca) stays low
+- CAMP topology intact after 600 ticks
+
+**Ramp companion:** 4000-tick always-eating run from nominal spawn confirms hub monotonic growth toward expulsion regime.
+
+**First run results (2026-08-27):** Upper-bound harness **passes** (`132` tests). Steady-state satiety window (480 ticks, hub pre-filled):
+- `strokesPaid=0`, `actuatorInhibited=480/480` — crawl fully suppressed
+- `signalOut≈447` — computer hub expelling ~1 blue byte/tick (primary cloaca under max satiety)
+- `fragmentOut=0` — no red M-cloaca flood from axon feed
+- `bites≈102`, `feedSuppressedWithFood≈217` — regulation **refuses** excess intake when M+C satiated (not gluttony)
+- `mouth.store≈143` when hub near max — digest backlog above 32 B cap when hub acceptance is saturated (design note for multi-M)
+
+Ramp: `hubPeak≈57k` from `43k` start in 4000 ticks; hub end lower due to basal+expulsion equilibrium — satiation threshold (~222k B) not reached from spawn alone in that horizon.
+
+### 2026-08-27 — Three visual day-night cycles (food well, nominal spawn)
+
+**Test:** `test_regulation_satiety.cpp` — `[regulation][satiety][long]` — `DayCycle(1800)` × 3 = **5400 ticks** (~6.25% of one fuel-day); abundant wet food at mouth; **2 fuel-day** nominal spawn (no hub pre-fill); diurnal sun on energon + perception.
+
+**Results (first run):**
+- **Alive + intact** after 3 cycles — all four CAMP neurons survive
+- **Fuel:** 172 800 → 85 987 B (~50% net drain); `hubMin≈85 748`
+- **Intake:** ~1402 bites / 5400 ticks (~0.26/tick) — not enough to match burn
+- **Crawl:** 460 strokes (~8.5%) — more than pre-satiated short window (0)
+- **Hub signal expulsion:** 0 — never reached satiated steady state; no blue vent regime
+- **Drain rate:** ~16 B/tick net (basal floor ~4–6 B/tick + P costs + strokes + conveyance/entropy)
+
+**Verdict:** **Survives** three day/night cycles in a food well but **does not defy entropy** — reserves monotonically fall. Extrapolation: ~6 visual days to bankruptcy from 2 fuel-day spawn at this drain rate (linear, optimistic). **Not** proof of indefinite life; **not** satiated equilibrium. Contrast with pre-filled hub short test (H6) where regulation + venting dominate.
+
+**Note:** Visual day (1800 ticks) ≠ fuel-day (86400 ticks). Long-horizon autotrophy benchmark at fuel-day scale remains P0 backlog.
+
+### 2026-08-27 — Eight-byte feedbag + 3 visual day oracle
+
+**Constants:** `kEnergonUnitsPerByte = 9`, `kBiteNetYieldBytes = 8`; feedbag grazing (`allowFoodBite` unless threat/flee); dev axons `η=1`, `trustFeed=100%`.
+
+**Test:** `[regulation][satiety][long]` feedbag oracle (no perceive/threat; food well; sunfall off).
+
+| Metric | Before (1 B net) | After (8 B net feedbag) |
+|--------|------------------|-------------------------|
+| Bites / 5400 ticks | ~1264 (~23%) | **5400 (100%)** |
+| Fuel end (2 fuel-day spawn) | 85 987 | **136 973** |
+| Net Δ / tick | −14.4 B | **−6.6 B** |
+| Linear runway from end | ~3.7 visual days | **~11.5 visual days** |
+
+**Life projection (linear, pessimistic):** at −6.6 B/tick from end reserves, **~20 700 ticks ≈ 11.5 visual days ≈ 0.24 fuel-days** until bankruptcy. Much of the 3-day dip is **peripheral spawn buffer draining to 32 B cap** (not steady-state crawl deficit); longer runs should flatten toward hub accumulation.
+
+**Not yet indefinite** at 8 B net in 3-day window — peripheral spawn buffers still draining. Default tank (with threat + partial contact) still harder.
+
+**Design decision (same day):** **Hub basal subsidy rejected** — no auto-pay from C when P/M/A wallets empty. **Basal grace = 8 ticks** before death (viability runs before conveyance; grace absorbs same-tick refuel lag). See DESIGN-NOTES §2.12.
+
+### 2026-08-27 — Nine visual day feedbag oracle (post-cap equilibrium)
+
+**Test:** `[regulation][satiety][long][extended]` — 9 × 1800 = **16 200 ticks**; seeds world=11, energon=17; shared `runFeedbagOracle`.
+
+**Results:**
+
+| Metric | 3-day (prior) | 9-day |
+|--------|---------------|-------|
+| Bites / window | 5400 (100%) | **16 200 (100%)** |
+| Fuel start (2 fuel-day) | 172 800 | 172 800 |
+| Fuel end | 136 973 | **180 049** |
+| Fuel min | — | **116 649** (days 1–3 peripheral buffer drain) |
+| Net Δ / tick | −6.6 B | **+0.45 B** (net accumulation) |
+| firstThird Δ/tick | — | ~−7.1 B (early buffer drain) |
+| lastThird Δ/tick | — | **+4.0 B** (hub accumulating post-cap) |
+| Alive + intact | yes | **yes** |
+
+**Interpretation:** Early window **understates** steady-state — large peripheral spawn allocations drain toward 32 B cap while hub accepts overflow. By days 7–9 the organism is **net positive** (~+4 B/tick in last third), trending toward hub satiation / signal vent rather than bankruptcy. Still an **oracle** (100% contact, no threat); not proof of default-tank indefinite life.
+
+**Life projection at day-9 end:** non-draining over measured window; linear extrapolation from +0.45 B/tick would grow reserves (hub-limited by vent threshold ~222k B).
+
+### 2026-08-27 — Twenty-seven visual day feedbag oracle (cloaca / steady-state health)
+
+**Test:** `[regulation][satiety][long][marathon]` — 27 × 1800 = **48 600 ticks** (~15 s headless); seeds world=11, energon=23.
+
+**Results:**
+
+| Metric | 9-day | 27-day |
+|--------|-------|--------|
+| Bites / window | 16 200 (100%) | **48 600 (100%)** |
+| Fuel end | 180 049 | **283 168** |
+| Fuel min | 116 649 | 116 649 (same early dip) |
+| Net Δ / tick | +0.45 B | **+2.27 B** |
+| Hub peak | — | **259 198 B** (~99.99% of `kComputerHubStoreMaxBytes`) |
+| Hub signal vents (C cloaca) | — | **26 463** total; **12 600** in final 7 days (~1 B/tick) |
+| Field Signal blobs (net) last week | — | **0** (TTL purge = expulsion rate; use `lastHubSignalExpelledThisTick` for truth) |
+| Fragment expulsions (M red cloaca) | — | **0** |
+| Alive + intact | yes | **yes** |
+
+**Cloaca health verdict:** Hub reaches satiation threshold and vents **blue Signal-origin** bytes at ~**1 tick⁻¹** in steady state — classic “digest in, signal out” regularity. **No Fragment flood** (dysregulated M/axon feed spam). Field blob count plateaus once energon TTL balances expulsion; direct hub-vent counter added (`lastHubSignalExpelledThisTick`) for oracle telemetry.
+
+**Interpretation:** 27 visual days under feedbag oracle is **indefinitely viable** at this intake/burn — reserves climb until hub-cap + vent equilibrium, not bankruptcy. Still oracle conditions (no threat, 100% food contact, boosted trust). Default tank remains harder.
+
+---
+
+## 4. Planned experiments (backlog)
+
+| Priority | Experiment | Output |
+|----------|------------|--------|
+| P0 | Headless survival cohort: 1/12/60 Noms × 1–3 fuel-days × sunfall {6,14} | Kaplan-Meier-style alive/intact/degraded curves |
+| P0 | Upper-bound satiety regulation (`test_regulation_satiety.cpp`) | ✅ initial harness |
+| P0 | Flux-cap factory (C-root star) + render regression | Visual + FK tests |
+| P1 | Mouth cap sweep {16, 24, 32} × mouth count {1, 3} | Hub response lag; bytes to first dispatch |
+| P1 | Generation-0 regulation audit: brake engagement rate | % ticks stroke suppressed when M or C satiated |
+| P2 | Trust convergence over 10 fuel-days (single nom, food-rich patch) | Axon trust heatmaps |
+
+---
+
+## 5. Publication checklist (lightweight)
+
+- [ ] Related work: ALife minimal cognition, chemotaxis run-tumble, distributed metabolism
+- [ ] Reproducible seeds + config dump per run
+- [ ] Figure: energon flow schematic (field → M → C → axons → P/A)
+- [ ] Figure: morphology comparison chain vs Y-star
+- [ ] Table: generation-0 parameters + viability floors
+- [ ] Ethics: N/A (in silico)
+
+---
+
+## 6. Venue sketch (informal)
+
+Plausible directions: **ALife conference** (short/long); **ECAL**; workshop track on artificial metabolic networks. PhD qualification: yes *if* formalized around a novel genotype oracle + empirical viability study—not merely implementation.
+
+---
+
+*Append new dated sections below as runs complete.*

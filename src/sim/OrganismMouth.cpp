@@ -41,14 +41,14 @@ MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint3
   return prior;
 }
 
-FeedIntent computePmaFeedIntent(const MouthInteroception& interoception) {
+FeedIntent computeCampFeedIntent(const MouthInteroception& interoception) {
   FeedIntent intent;
   const float storeBrake = confidenceToUnit(kMouthInhibitActuatorConfidence);
   const bool storeFull = interoception.localSatiation >= storeBrake;
   const bool threatFocus =
       interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Threat;
   const bool fleeDominant =
-      interoception.flee > kOrganismPmaReflexMinValence &&
+      interoception.flee > kOrganismCampReflexMinValence &&
       interoception.flee >= interoception.approach;
 
   if (threatFocus || fleeDominant) {
@@ -59,7 +59,7 @@ FeedIntent computePmaFeedIntent(const MouthInteroception& interoception) {
   }
 
   float appetite = 0.0f;
-  if (storeFull && interoception.approach <= kOrganismPmaReflexMinValence) {
+  if (storeFull && interoception.approach <= kOrganismCampReflexMinValence) {
     appetite = 0.0f;
   } else {
     const float hungerGap = 1.0f - interoception.localSatiation * 0.5f;
@@ -69,8 +69,10 @@ FeedIntent computePmaFeedIntent(const MouthInteroception& interoception) {
   }
 
   intent.biteDrive = clamp01(appetite);
-  intent.allowFoodBite = intent.biteDrive >= kMouthFeedIntentMinBite;
-  intent.feedSuppressed = !intent.allowFoodBite;
+  // Feedbag grazing: if food is in contact (checked in tickMouthNode), chew unless reflex
+  // suppresses. Satiation throttles appetite telemetry and crawl — not zero intake.
+  intent.allowFoodBite = true;
+  intent.feedSuppressed = intent.biteDrive < kMouthFeedIntentMinBite;
   return intent;
 }
 

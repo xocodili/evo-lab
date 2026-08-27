@@ -23,7 +23,7 @@ float edgeLength(const KinematicNodePose& a, const KinematicNodePose& b) {
   return std::hypot(b.worldX - a.worldX, b.worldZ - a.worldZ);
 }
 
-std::vector<KinematicBone> pmaNomTriangleBones() {
+std::vector<KinematicBone> nominalTriangleBones() {
   return {
       {1, 3, 1.0f, 0.0f},
       {1, 2, 1.0f, -1.0471976f},
@@ -35,7 +35,7 @@ std::vector<KinematicBone> pmaNomTriangleBones() {
 
 TEST_CASE("kinematic skeleton builds tree and skips closing bone", "[engine][kinematics]") {
   const KinematicSkeleton skeleton =
-      KinematicSkeleton::buildFromBones(pmaNomTriangleBones(), 1);
+      KinematicSkeleton::buildFromBones(nominalTriangleBones(), 1);
   REQUIRE(skeleton.valid());
   REQUIRE(skeleton.jointCount() == 3);
   REQUIRE(skeleton.rootNodeId() == 1);
@@ -55,7 +55,7 @@ TEST_CASE("engine forward kinematics places equilateral triangle", "[engine][kin
   }};
 
   REQUIRE(evolab::engine::kinematics::solveTreeForwardKinematicsFlat(
-      std::span(nodes), std::span<const KinematicBone>(pmaNomTriangleBones()), 1, 0.0f));
+      std::span(nodes), std::span<const KinematicBone>(nominalTriangleBones()), 1, 0.0f));
 
   const float side = edgeLength(nodes[0], nodes[1]);
   REQUIRE(side == Catch::Approx(1.0f).margin(0.05f));

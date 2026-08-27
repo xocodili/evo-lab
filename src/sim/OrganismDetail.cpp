@@ -1,4 +1,4 @@
-﻿#include "sim/OrganismInternal.hpp"
+#include "sim/OrganismInternal.hpp"
 
 #include "engine/kinematics/ForwardKinematics.hpp"
 
@@ -8,6 +8,7 @@
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
 #include "sim/OrganismActuator.hpp"
 #include "sim/OrganismMouth.hpp"
@@ -35,84 +36,12 @@ struct MouthContact {
 };
 
 void consumeBytes(std::vector<std::uint8_t>& storage, std::uint32_t count) {
-  if (count == 0 || storage.empty()) {
-    return;
-  }
-  const std::size_t removeCount = std::min<std::size_t>(storage.size(), count);
-  storage.erase(storage.end() - static_cast<std::ptrdiff_t>(removeCount), storage.end());
-}
-
-void popFrontBytes(std::vector<std::uint8_t>& storage, std::size_t count) {
-  if (count == 0 || storage.empty()) {
-    return;
-  }
-  const std::size_t removeCount = std::min(storage.size(), count);
-  storage.erase(storage.begin(), storage.begin() + static_cast<std::ptrdiff_t>(removeCount));
-}
-
-void mouthSpitByte(const SkeletonNode& node, EnergonField& field, std::uint8_t byte) {
-  EnergonBlob fragment;
-  fragment.data = byte;
-  fragment.remaining = 1;
-  fragment.initialBytes = 1;
-  fragment.origin = EnergonOrigin::Fragment;
-  fragment.x = node.worldX;
-  fragment.z = node.worldZ + kWorldCellSize * kMouthContactRadiusFactor * 0.35f;
-  fragment.y = node.worldY;
-  fragment.grounded = true;
-  fragment.onWet = true;
-  fragment.ttl = field.config().ttlWetSeconds;
-  energonBlobInitPoint(fragment);
-  field.injectBlob(fragment);
+  consumeFuelBack(storage, count);
 }
 
 void releaseBytesAtNode(const SkeletonNode& node, EnergonField& field,
                         std::vector<std::uint8_t>& storage) {
-  for (std::uint8_t byte : storage) {
-    mouthSpitByte(node, field, byte);
-  }
-  storage.clear();
-}
-
-std::vector<std::uint8_t>* neuronFuelPool(Organism& organism, SkeletonNode& node) {
-  if (!node.alive) {
-    return nullptr;
-  }
-  if (node.neuron == NeuronType::Computer) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::Actuator && organism.actuatorCount() == 1 &&
-      !organism.hasMouthNeurons()) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::None && node.id == organism.rootNodeId) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::None) {
-    return nullptr;
-  }
-  return &node.store;
-}
-
-bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
-  std::vector<std::uint8_t>* pool = neuronFuelPool(organism, node);
-  if (pool == nullptr) {
-    return true;
-  }
-  if (pool->size() >= kStemCellBasalCostPerTick) {
-    if (pool == &node.store) {
-      neuronConsumeBack(node, kStemCellBasalCostPerTick);
-    } else {
-      consumeBytes(*pool, kStemCellBasalCostPerTick);
-    }
-    return true;
-  }
-  if (node.neuron == NeuronType::Mouth && !organism.isPmaNom() &&
-      !organism.bodyStorage.empty()) {
-    consumeBytes(organism.bodyStorage, kStemCellBasalCostPerTick);
-    return true;
-  }
-  return false;
+  releaseFuelAtNode(node, field, storage, EnergonOrigin::Fragment, 1.0f);
 }
 
 void removeNeuralAxonsForNode(Organism& organism, std::uint32_t nodeId) {
@@ -141,7 +70,7 @@ void killNeuron(Organism& organism, SkeletonNode& node, EnergonField& field) {
     return;
   }
 
-  if (std::vector<std::uint8_t>* pool = neuronFuelPool(organism, node)) {
+  if (std::vector<std::uint8_t>* pool = evolab::neuronFuelPool(organism, node)) {
     releaseBytesAtNode(node, field, *pool);
   } else if (!node.store.empty()) {
     releaseBytesAtNode(node, field, node.store);
@@ -175,8 +104,14 @@ void tickNeuronViability(Organism& organism, EnergonField& field) {
         organism.nodes.size() > 1) {
       continue;
     }
-    if (!tryPayNeuronBasalCost(organism, node)) {
-      killNeuron(organism, node, field);
+    if (!evolab::tryPayNeuronBasalCost(organism, node)) {
+      if (node.basalArrearsTicks < kNeuronBasalGraceTicks) {
+        ++node.basalArrearsTicks;
+      } else {
+        killNeuron(organism, node, field);
+      }
+    } else {
+      node.basalArrearsTicks = 0;
     }
   }
 
@@ -243,7 +178,7 @@ MouthContact findMouthContact(const EnergonField& field, float wx, float wz, flo
 }
 
 bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
-  if (std::vector<std::uint8_t>* pool = neuronFuelPool(organism, node)) {
+  if (std::vector<std::uint8_t>* pool = evolab::neuronFuelPool(organism, node)) {
     if (pool->size() >= kBiteCost) {
       if (pool == &node.store) {
         neuronConsumeBack(node, kBiteCost);
@@ -253,7 +188,7 @@ bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
       return true;
     }
   }
-  if (!organism.isPmaNom() && !organism.bodyStorage.empty()) {
+  if (!organism.isCampNom() && !organism.bodyStorage.empty()) {
     consumeBytes(organism.bodyStorage, kBiteCost);
     return true;
   }
@@ -287,9 +222,6 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
 
   const auto bite = field.biteAt(contact.blobId, node.worldX, node.worldZ);
   if (!bite.tookByte) {
-    if (!tryPayMouthBiteCost(organism, node)) {
-      killNeuron(organism, node, field);
-    }
     return;
   }
 
@@ -490,7 +422,7 @@ bool payActuatorStrokeCost(Organism& organism, std::uint32_t bytesRequested,
     return false;
   }
 
-  if (organism.isPmaNom()) {
+  if (organism.isCampNom()) {
     SkeletonNode* motor = findActuatorNode(organism);
     if (motor == nullptr || !motor->alive) {
       return false;
@@ -518,51 +450,11 @@ bool payActuatorStrokeCost(Organism& organism, std::uint32_t bytesRequested,
 }
 
 SkeletonNode* findActuatorNode(Organism& organism) {
-  for (SkeletonNode& node : organism.nodes) {
-    if (node.alive && node.neuron == NeuronType::Actuator) {
-      return &node;
-    }
-  }
-  return nullptr;
+  return evolab::findNeuronNode(organism, NeuronType::Actuator);
 }
 
 void translateOrganismXZ(Organism& organism, float dx, float dz) {
   engine::kinematics::translateNodesXZ(std::span(organism.nodes), dx, dz);
-}
-
-void emitActuatorConfidenceSignals(Organism& organism, std::uint64_t simTick) {
-  if (!organism.isPmaNom()) {
-    return;
-  }
-
-  const SkeletonNode* actuator = findFirstNeuronNode(organism, NeuronType::Actuator);
-  if (actuator == nullptr) {
-    return;
-  }
-
-  const std::uint8_t confidence =
-      actuatorActivityConfidence(organism.lastStrokePaid, organism.lastStrokeBytesPaid);
-  organism.lastActuatorOutboundSignal = confidence;
-
-  static constexpr NeuronType kAllowedDst[] = {NeuronType::Mouth, NeuronType::Perceptor};
-  emitOutboundConfidence(organism, actuator->id, confidence, simTick, kAllowedDst,
-                         std::size(kAllowedDst));
-}
-
-void emitMouthConfidenceSignals(Organism& organism, std::uint64_t simTick) {
-  if (!organism.isPmaNom()) {
-    return;
-  }
-
-  static constexpr NeuronType kAllowedDst[] = {NeuronType::Perceptor, NeuronType::Actuator};
-  for (const SkeletonNode& node : organism.nodes) {
-    if (!node.alive || node.neuron != NeuronType::Mouth) {
-      continue;
-    }
-    const std::uint8_t confidence = mouthFuelConfidence(node);
-    emitOutboundConfidence(organism, node.id, confidence, simTick, kAllowedDst,
-                           std::size(kAllowedDst));
-  }
 }
 
 void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float cellSize,
@@ -600,9 +492,9 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 
   MotorIntent motorIntent{};
   ActuatorInteroception interoception{};
-  if (organism.isPmaNom()) {
+  if (organism.isCampNom()) {
     interoception = gatherActuatorInteroception(organism, motorNode->id, simTick);
-    motorIntent = computePmaMotorIntent(
+    motorIntent = computeCampMotorIntent(
         interoception, static_cast<std::uint32_t>(motorNode->store.size()));
     organism.lastActuatorNetDrive = motorIntent.netDrive;
     organism.lastActuatorInhibited = motorIntent.motorSuppressed;
@@ -614,7 +506,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
       organism.lastTumbled = true;
     }
 
-    applyPmaChemotaxisHeading(organism, interoception, motorIntent);
+    applyCampChemotaxisHeading(organism, interoception, motorIntent);
   } else if (chaosBernoulli(kActuatorTumbleRate, rng)) {
     const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
     organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
@@ -622,7 +514,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   }
 
   const std::uint32_t strokeRequest =
-      organism.isPmaNom() ? motorIntent.strokeBytes : kActuatorStrokeCostPerTick;
+      organism.isCampNom() ? motorIntent.strokeBytes : kActuatorStrokeCostPerTick;
   if (organism.lastInWater &&
       payActuatorStrokeCost(organism, strokeRequest, organism.lastStrokeBytesFromBody,
                             organism.lastStrokeBytesFromActuatorStore)) {
@@ -661,25 +553,22 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   }
   clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
 
-  emitActuatorConfidenceSignals(organism, simTick);
+  evolab::emitCampActuatorSignals(organism, simTick);
 
   const float dx = root->worldX - startX;
   const float dz = root->worldZ - startZ;
   organism.lastDisplacement = std::sqrt(dx * dx + dz * dz);
 
-  if (organism.isPmaNom()) {
-    applyPmaActuatorTrustLearning(organism, motorNode->id, interoception, motorIntent,
+  if (organism.isCampNom()) {
+    applyCampActuatorTrustLearning(organism, motorNode->id, interoception, motorIntent,
                                   organism.lastDisplacement, simTick);
   }
 }
 
 void runMouthSignalPhase(Organism& organism, EnergonField& field, std::uint64_t simTick) {
   (void)field;
-  // PMA mouths emit during pre-advect (before A reads M→A satiation); skip duplicate here.
-  if (organism.isPmaNom()) {
-    return;
-  }
-  emitMouthConfidenceSignals(organism, simTick);
+  (void)simTick;
+  // CAMP mouths emit during pre-advect (before A reads M→A satiation).
 }
 
 }  // namespace evolab::organism_detail

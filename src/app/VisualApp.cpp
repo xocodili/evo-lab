@@ -121,7 +121,7 @@ int runVisualApp(const CliArgs& args) {
 
   BarrenWorld world(config.seed, config.resolution, makeTideFromConfig(config));
   trace.step("world");
-  DayCycle dayCycle(1800.0f);
+  DayCycle dayCycle(kVisualDayCyclePeriodTicks);
   EnergonConfig energonConfig;
   energonConfig.spawnRateMax = 14.0f;
   energonConfig.maxBlobs = 2200;
@@ -134,15 +134,15 @@ int runVisualApp(const CliArgs& args) {
 
   const CellPopulationStats seedStats = cells.stats();
   std::cout << "World ready (" << cells.organisms().size() << " organisms: "
-            << seedStats.pmaNomOrganisms << " P-M-A Noms, " << seedStats.stemCells
+            << seedStats.campNomOrganisms << " CAMP Noms, " << seedStats.stemCells
             << " stem, archetype=" << seedArchetypeLabel(config.archetype) << "). Opening window...\n";
-  if (config.archetype == SeedArchetype::Nom && seedStats.pmaNomOrganisms == 0) {
-    std::cerr << "WARNING: --archetype nom but no P-M-A Noms were seeded. "
+  if (config.archetype == SeedArchetype::Nom && seedStats.campNomOrganisms == 0) {
+    std::cerr << "WARNING: --archetype nom but no CAMP Noms were seeded. "
                  "Rebuild evo-lab.exe or check wet spawn sites.\n";
   }
   if (config.archetype == SeedArchetype::StemCell) {
     std::cerr << "NOTE: StemCell dev mode — perceptor/M-P-A wiring is inactive. "
-                 "Use --archetype nom to test the P-M-A Nom.\n";
+                 "Use --archetype nom to test the CAMP Nom.\n";
   }
   std::cout.flush();
 
@@ -343,7 +343,7 @@ int runVisualApp(const CliArgs& args) {
     diag.liveCells = cellStats.liveCells;
     diag.organisms = cellStats.organisms;
     diag.stemCells = cellStats.stemCells;
-    diag.pmaNomOrganisms = cellStats.pmaNomOrganisms;
+    diag.campNomOrganisms = cellStats.campNomOrganisms;
     diag.degradedNomOrganisms = cellStats.degradedNomOrganisms;
     diag.mouthOrganisms = cellStats.mouthOrganisms;
     diag.mouthNeurons = cellStats.mouthNeurons;

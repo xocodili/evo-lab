@@ -16,7 +16,7 @@
 
 #include "sim/Organism.hpp"
 
-#include "sim/OrganismInternal.hpp"
+#include "sim/OrganismComputer.hpp"
 
 #include "sim/NeuronFuel.hpp"
 #include "sim/OrganismNeuron.hpp"
@@ -827,37 +827,11 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
   trustEvent.focusLocked = focus.locked;
   trustEvent.focusKind = focus.kind;
   trustEvent.confidence = confidence;
-  applyPmaPerceptorTrustLearning(organism, perceptor.id, trustEvent, simTick);
+  applyCampPerceptorTrustLearning(organism, perceptor.id, trustEvent, simTick);
 
 }
 
 }  // namespace
-
-bool organismHasPmaTopology(const Organism& organism) {
-
-  if (!organism.hasPerceptorNeurons() || !organism.hasMouthNeurons() ||
-
-      !organism.hasActuatorNeurons()) {
-
-    return false;
-
-  }
-
-  if (organism.perceptorCount() != 1 || organism.mouthCount() != 1 ||
-
-      organism.actuatorCount() != 1 || organism.nodes.size() != 3) {
-
-    return false;
-
-  }
-
-  return organism.findNeuralAxon(1, 2) != nullptr && organism.findNeuralAxon(1, 3) != nullptr &&
-
-         organism.findNeuralAxon(2, 3) != nullptr && organism.findNeuralAxon(3, 2) != nullptr &&
-
-         organism.findNeuralAxon(2, 1) != nullptr && organism.findNeuralAxon(3, 1) != nullptr;
-
-}
 
 void runPerceptorPhase(Organism& organism, const BarrenWorld& world, const EnergonField& energon,
 
@@ -865,7 +839,7 @@ void runPerceptorPhase(Organism& organism, const BarrenWorld& world, const Energ
 
                        std::uint64_t simTick, float sunIntensity) {
 
-  if (!organism.alive || !organismHasPmaTopology(organism)) {
+  if (!organism.alive || !organismHasCampTopology(organism)) {
 
     return;
 

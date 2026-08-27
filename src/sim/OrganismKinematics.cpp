@@ -5,6 +5,7 @@
 #include "engine/kinematics/KinematicLocalPose.hpp"
 #include "engine/kinematics/KinematicSkeleton.hpp"
 #include "sim/BarrenWorld.hpp"
+#include "sim/NeuronMusculature.hpp"
 #include "sim/WaterColumn.hpp"
 
 #include <span>
@@ -14,7 +15,7 @@ namespace evolab {
 
 namespace {
 
-engine::kinematics::KinematicSkeleton buildEngineSkeleton(const Organism& organism) {
+engine::kinematics::KinematicSkeleton buildEngineSkeleton(Organism& organism) {
   std::vector<engine::kinematics::KinematicBone> bones;
   bones.reserve(organism.links.size());
   for (const SkeletonLink& link : organism.links) {
@@ -25,19 +26,25 @@ engine::kinematics::KinematicSkeleton buildEngineSkeleton(const Organism& organi
     bone.jointAngle = link.jointAngle;
     bones.push_back(bone);
   }
-  return engine::kinematics::KinematicSkeleton::buildFromBones(bones, organism.rootNodeId);
+  engine::kinematics::KinematicSkeleton skeleton =
+      engine::kinematics::KinematicSkeleton::buildFromBones(bones, organism.rootNodeId);
+  if (organism.isCampNom()) {
+    applyCampJointFlexLimits(skeleton);
+  }
+  return skeleton;
 }
 
 }  // namespace
 
 void Organism::updateKinematics(const BarrenWorld& world, float cellSize, float heightScale) {
-  const engine::kinematics::KinematicSkeleton skeleton = buildEngineSkeleton(*this);
+  engine::kinematics::KinematicSkeleton skeleton = buildEngineSkeleton(*this);
   if (!skeleton.valid()) {
     return;
   }
 
   engine::kinematics::KinematicLocalPose localPose =
-      engine::kinematics::KinematicLocalPose::zeros(skeleton.jointCount());
+      isCampNom() ? buildCampMusclePose(*this, skeleton)
+                  : engine::kinematics::KinematicLocalPose::zeros(skeleton.jointCount());
 
   auto heightAtXZ = [&](float x, float z) {
     const WaterColumn column = sampleWaterColumn(world, x, z, cellSize, heightScale);

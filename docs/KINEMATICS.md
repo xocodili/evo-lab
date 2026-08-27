@@ -101,4 +101,4 @@ When checking progress, ask:
 ## Related docs
 
 - [DESIGN-NOTES.md](DESIGN-NOTES.md) — organism skeleton vs neural axons, spawn chaos on links
-- `src/sim/CellConstants.hpp` — `kPmaNomActuatorJointAngle`, `kPmaNomMouthJointAngle`
+- `src/sim/CellConstants.hpp` — `kCampNomLinkJointAngle`, Computer hub/register constants

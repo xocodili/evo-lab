@@ -2,6 +2,7 @@
 #include "game/OrganismInspector.hpp"
 #include "game/TerrainMesh.hpp"
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/CellPopulation.hpp"
@@ -127,42 +128,73 @@ bool findWetSiteWithDryAhead(const evolab::BarrenWorld& world, float cellSize, f
 
 }  // namespace
 
-TEST_CASE("nom factory builds P-M-A triangle with axons and split fuel", "[nom]") {
-  evolab::Organism organism = evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.2f);
-  REQUIRE(organism.isPmaNom());
-  REQUIRE(organism.bodyStorage.empty());
-  REQUIRE(organism.nodes.size() == 3);
+TEST_CASE("camp factory builds P-M-C-A chain with axons and split fuel", "[nom]") {
+  evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.2f);
+  REQUIRE(organism.isCampNom());
+  REQUIRE(organism.bodyStorage.size() == 50);
+  REQUIRE(organism.nodes.size() == 4);
   REQUIRE(organism.links.size() == 3);
-  REQUIRE(organism.neuralAxons.size() == 6);
+  REQUIRE(organism.neuralAxons.size() == 12);
   REQUIRE(organism.findNode(1)->neuron == evolab::NeuronType::Perceptor);
   REQUIRE(organism.findNode(2)->neuron == evolab::NeuronType::Mouth);
-  REQUIRE(organism.findNode(3)->neuron == evolab::NeuronType::Actuator);
-  REQUIRE(organism.findNode(1)->store.size() == 33);
-  REQUIRE(organism.findNode(2)->store.size() == 33);
-  REQUIRE(organism.findNode(3)->store.size() == 34);
+  REQUIRE(organism.findNode(3)->neuron == evolab::NeuronType::Computer);
+  REQUIRE(organism.findNode(4)->neuron == evolab::NeuronType::Actuator);
+  REQUIRE(organism.findNode(1)->store.size() == 16);
+  REQUIRE(organism.findNode(2)->store.size() == 16);
+  REQUIRE(organism.findNode(4)->store.size() == 18);
 }
 
-TEST_CASE("nom skeleton forms equilateral triangle after kinematics", "[nom]") {
+TEST_CASE("camp skeleton forms Y-star from computer hub after kinematics", "[nom]") {
   evolab::BarrenWorld world(7, 32);
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   const evolab::SkeletonNode* perceptor = organism.findNode(1);
   const evolab::SkeletonNode* mouth = organism.findNode(2);
-  const evolab::SkeletonNode* actuator = organism.findNode(3);
+  const evolab::SkeletonNode* computer = organism.findNode(3);
+  const evolab::SkeletonNode* actuator = organism.findNode(4);
   REQUIRE(perceptor != nullptr);
   REQUIRE(mouth != nullptr);
+  REQUIRE(computer != nullptr);
   REQUIRE(actuator != nullptr);
+  REQUIRE(organism.rootNodeId == evolab::kCampRootNodeId);
 
   const auto edgeLen = [](const evolab::SkeletonNode& a, const evolab::SkeletonNode& b) {
     return std::hypot(b.worldX - a.worldX, b.worldZ - a.worldZ);
   };
-  const float side = edgeLen(*perceptor, *mouth);
-  REQUIRE(side == Catch::Approx(1.0f).margin(0.05f));
-  REQUIRE(edgeLen(*perceptor, *actuator) == Catch::Approx(side).margin(0.05f));
-  REQUIRE(edgeLen(*mouth, *actuator) == Catch::Approx(side).margin(0.05f));
+  const float arm = edgeLen(*computer, *perceptor);
+  REQUIRE(arm == Catch::Approx(1.0f).margin(0.05f));
+  REQUIRE(edgeLen(*computer, *mouth) == Catch::Approx(arm).margin(0.05f));
+  REQUIRE(edgeLen(*computer, *actuator) == Catch::Approx(arm).margin(0.05f));
+
+  REQUIRE(perceptor->worldZ > computer->worldZ + 0.5f);
+  REQUIRE(actuator->worldX < computer->worldX - 0.3f);
+  REQUIRE(mouth->worldX > computer->worldX + 0.3f);
+}
+
+TEST_CASE("axon bundle flex bends camp arms under actuator stroke", "[nom][musculature]") {
+  evolab::BarrenWorld world(7, 32);
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.heading = 0.0f;
+  organism.lastStrokePaid = false;
+  organism.lastActuatorNetDrive = 0.0f;
+  organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  const evolab::SkeletonNode* actuatorRest = organism.findNode(4);
+  REQUIRE(actuatorRest != nullptr);
+  const float restX = actuatorRest->worldX;
+
+  organism.lastStrokePaid = true;
+  organism.lastActuatorNetDrive = 0.9f;
+  organism.lastStrokeBytesPaid = evolab::kActuatorStrokeCostPerTick;
+  organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  const evolab::SkeletonNode* actuatorFlex = organism.findNode(4);
+  REQUIRE(actuatorFlex != nullptr);
+  REQUIRE(std::abs(actuatorFlex->worldX - restX) > 0.02f);
 }
 
 TEST_CASE("high mouth satiation suppresses actuator stroke via interoception", "[nom]") {
@@ -173,10 +205,10 @@ TEST_CASE("high mouth satiation suppresses actuator stroke via interoception", "
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
-  evolab::NeuralAxon* mouthToActuator = organism.findNeuralAxon(2, 3);
+  evolab::NeuralAxon* mouthToActuator = organism.findNeuralAxon(2, 4);
   REQUIRE(mouthToActuator != nullptr);
   mouthToActuator->lastReceived.valid = true;
   mouthToActuator->lastReceived.byte = evolab::kMouthInhibitActuatorConfidence;
@@ -198,7 +230,7 @@ TEST_CASE("strong P and M together suppress stroke while eating at food", "[nom]
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -209,8 +241,8 @@ TEST_CASE("strong P and M together suppress stroke while eating at food", "[nom]
   perceptor->gazeHeading = organism.heading;
 
   const std::uint64_t tick = world.tickCount();
-  evolab::NeuralAxon* pToA = organism.findNeuralAxon(1, 3);
-  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
+  evolab::NeuralAxon* pToA = organism.findNeuralAxon(1, 4);
+  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
   REQUIRE(pToA != nullptr);
   REQUIRE(mToA != nullptr);
   pToA->lastReceived.valid = true;
@@ -235,7 +267,7 @@ TEST_CASE("strong P with low M allows full actuator stroke", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -244,8 +276,8 @@ TEST_CASE("strong P with low M allows full actuator stroke", "[nom]") {
   perceptor->focusSalience = 0.85f;
 
   const std::uint64_t tick = world.tickCount();
-  evolab::NeuralAxon* pToA = organism.findNeuralAxon(1, 3);
-  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
+  evolab::NeuralAxon* pToA = organism.findNeuralAxon(1, 4);
+  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
   REQUIRE(pToA != nullptr);
   REQUIRE(mToA != nullptr);
   pToA->lastReceived.valid = true;
@@ -272,7 +304,7 @@ TEST_CASE("chemotaxis slews heading toward off-axis food via P interoception", "
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 240, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 240, 0, evolab::kWorldCellSize);
   organism.alive = true;
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -318,7 +350,7 @@ TEST_CASE("mouth emits fuel confidence before advect", "[nom]") {
   REQUIRE(findWetWorldSite(world, evolab::kWorldCellSize, wetX, wetZ));
 
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -326,7 +358,7 @@ TEST_CASE("mouth emits fuel confidence before advect", "[nom]") {
   mouth->ateThisTick = true;
   organism.emitPreAdvectSignals(world.tickCount());
 
-  const evolab::NeuralAxon* axon = organism.findNeuralAxon(2, 3);
+  const evolab::NeuralAxon* axon = organism.findNeuralAxon(2, 4);
   REQUIRE(axon != nullptr);
   REQUIRE(axon->lastReceived.valid);
   REQUIRE(evolab::isNeuronConfidenceByte(axon->lastReceived.byte));
@@ -334,14 +366,14 @@ TEST_CASE("mouth emits fuel confidence before advect", "[nom]") {
   REQUIRE(organism.findNeuralAxon(2, 1)->lastReceived.byte == axon->lastReceived.byte);
 }
 
-TEST_CASE("pma signal phase does not duplicate mouth confidence emit", "[nom]") {
+TEST_CASE("camp signal phase does not duplicate mouth confidence emit", "[nom]") {
   evolab::BarrenWorld world(13, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
   REQUIRE(findWetWorldSite(world, evolab::kWorldCellSize, wetX, wetZ));
 
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -353,25 +385,30 @@ TEST_CASE("pma signal phase does not duplicate mouth confidence emit", "[nom]") 
   const std::uint64_t tick = world.tickCount();
   organism.emitPreAdvectSignals(tick);
 
-  const evolab::NeuralAxon* toActuator = organism.findNeuralAxon(2, 3);
+  const evolab::NeuralAxon* toActuator = organism.findNeuralAxon(2, 4);
+  const evolab::NeuralAxon* toComputer = organism.findNeuralAxon(2, 3);
   const evolab::NeuralAxon* toPerceptor = organism.findNeuralAxon(2, 1);
   REQUIRE(toActuator != nullptr);
   REQUIRE(toPerceptor != nullptr);
+  REQUIRE(toComputer != nullptr);
   REQUIRE(toActuator->lastReceived.valid);
   REQUIRE(toPerceptor->lastReceived.valid);
+  REQUIRE(toComputer->lastReceived.valid);
   REQUIRE(evolab::isNeuronConfidenceByte(toActuator->lastReceived.byte));
   REQUIRE(evolab::isNeuronConfidenceByte(toPerceptor->lastReceived.byte));
   const std::uint8_t expected = evolab::mouthFuelConfidence(*mouth);
   REQUIRE(toActuator->lastReceived.byte == expected);
   REQUIRE(toPerceptor->lastReceived.byte == expected);
+  REQUIRE(toComputer->lastReceived.byte == expected);
 
   evolab::EnergonField energon(1, {});
   organism.signal(energon, tick);
   REQUIRE(toActuator->lastReceived.byte == expected);
   REQUIRE(toPerceptor->lastReceived.byte == expected);
+  REQUIRE(toComputer->lastReceived.byte == expected);
 }
 
-TEST_CASE("nom stroke translates skeleton rigidly", "[nom]") {
+TEST_CASE("nom stroke translates hub and flexes actuator arm", "[nom]") {
   evolab::BarrenWorld world(7, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
@@ -379,29 +416,27 @@ TEST_CASE("nom stroke translates skeleton rigidly", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.heading = 0.0f;
   organism.alive = true;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
-  evolab::SkeletonNode* mouth = organism.findNode(2);
-  evolab::SkeletonNode* actuator = organism.findNode(3);
-  REQUIRE(mouth != nullptr);
+  evolab::SkeletonNode* computer = organism.findNode(3);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
+  REQUIRE(computer != nullptr);
   REQUIRE(actuator != nullptr);
 
-  const float mouthStartX = mouth->worldX;
-  const float mouthStartZ = mouth->worldZ;
+  const float hubStartZ = computer->worldZ;
   const float actuatorStartX = actuator->worldX;
-  const float actuatorStartZ = actuator->worldZ;
-  const float boneBefore = std::hypot(actuatorStartX - mouthStartX, actuatorStartZ - mouthStartZ);
 
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
                       worldHalfExtent(world, evolab::kWorldCellSize));
 
   REQUIRE(organism.lastStrokePaid);
-  const float boneAfter =
-      std::hypot(actuator->worldX - mouth->worldX, actuator->worldZ - mouth->worldZ);
-  REQUIRE(boneBefore == Catch::Approx(boneAfter).margin(1e-3f));
+  REQUIRE(computer->worldZ > hubStartZ);
+  REQUIRE(std::hypot(actuator->worldX - computer->worldX, actuator->worldZ - computer->worldZ) ==
+          Catch::Approx(evolab::kWorldCellSize).margin(0.08f));
+  REQUIRE(std::abs(actuator->worldX - actuatorStartX) > 0.001f);
 }
 
 TEST_CASE("perceptor scan detects food ahead and emits confidence", "[nom]") {
@@ -413,7 +448,7 @@ TEST_CASE("perceptor scan detects food ahead and emits confidence", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -435,7 +470,7 @@ TEST_CASE("perceptor scan detects food ahead and emits confidence", "[nom]") {
   REQUIRE(organism.lastPerceptConfidence >= 5);
   REQUIRE(evolab::isPerceptorConfidenceByte(organism.findNeuralAxon(1, 2)->lastReceived.byte));
   REQUIRE(organism.findNeuralAxon(1, 2)->lastReceived.byte ==
-          organism.findNeuralAxon(1, 3)->lastReceived.byte);
+          organism.findNeuralAxon(1, 4)->lastReceived.byte);
 }
 
 TEST_CASE("perceptor focuses threat with low avoid confidence", "[nom]") {
@@ -450,7 +485,7 @@ TEST_CASE("perceptor focuses threat with low avoid confidence", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -477,7 +512,7 @@ TEST_CASE("mouth refuses food when perceptor signals threat", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -506,7 +541,7 @@ TEST_CASE("mouth bites when perceptor signals food and contact exists", "[nom]")
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
   organism.heading = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -559,20 +594,24 @@ TEST_CASE("starved actuator neuron dies and releases energon", "[nom]") {
 
   evolab::EnergonField energon(1, {});
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, wetX, wetZ, 1.0f, 200, 0, evolab::kWorldCellSize);
-  evolab::SkeletonNode* actuator = organism.findNode(3);
+      evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 200, 0, evolab::kWorldCellSize);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
   REQUIRE(actuator != nullptr);
   actuator->store.clear();
   organism.alive = true;
 
+  for (std::uint32_t i = 0; i < evolab::kNeuronBasalGraceTicks; ++i) {
+    organism.tickNeuronViability(energon);
+    REQUIRE(actuator->alive);
+  }
   organism.tickNeuronViability(energon);
 
   REQUIRE(!actuator->alive);
-  REQUIRE(organism.findNeuralAxon(2, 3) == nullptr);
+  REQUIRE(organism.findNeuralAxon(2, 4) == nullptr);
   REQUIRE(organism.alive);
 }
 
-TEST_CASE("pma nom signal phase does not flood red feed fragments", "[nom]") {
+TEST_CASE("camp nom signal phase does not flood red feed fragments", "[nom]") {
   evolab::BarrenWorld world(42, 64);
   evolab::EnergonField energon(42, {});
   evolab::CellPopulation population;
@@ -599,22 +638,23 @@ TEST_CASE("pma nom signal phase does not flood red feed fragments", "[nom]") {
   REQUIRE(countFragments() < 20);
 }
 
-TEST_CASE("nom spawn gives each neuron a full third of birth fuel", "[nom]") {
+TEST_CASE("camp spawn splits fuel between hub and peripheral wallets", "[nom]") {
   evolab::Organism organism =
-      evolab::makeNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay * 2, 0,
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay * 2, 0,
                               evolab::kWorldCellSize);
   const evolab::SkeletonNode* perceptor = organism.findNode(1);
   const evolab::SkeletonNode* mouth = organism.findNode(2);
-  const evolab::SkeletonNode* actuator = organism.findNode(3);
+  const evolab::SkeletonNode* actuator = organism.findNode(4);
   REQUIRE(perceptor != nullptr);
   REQUIRE(mouth != nullptr);
   REQUIRE(actuator != nullptr);
 
-  const std::size_t expectedThird = (evolab::kTicksPerStemCellDay * 2) / 3;
-  REQUIRE(perceptor->store.size() == expectedThird);
-  REQUIRE(mouth->store.size() == expectedThird);
-  REQUIRE(actuator->store.size() == (evolab::kTicksPerStemCellDay * 2) - expectedThird * 2);
-  REQUIRE(organism.bodyStorage.empty());
+  const std::size_t total = evolab::kTicksPerStemCellDay * 2;
+  REQUIRE(organism.bodyStorage.size() == total / 2);
+  const std::size_t peripheral = total - organism.bodyStorage.size();
+  REQUIRE(perceptor->store.size() == peripheral / 3);
+  REQUIRE(mouth->store.size() == peripheral / 3);
+  REQUIRE(actuator->store.size() == peripheral - (peripheral / 3) * 2);
 }
 
 TEST_CASE("nom survives 400 ticks intact without feeding", "[nom]") {
@@ -634,7 +674,7 @@ TEST_CASE("nom survives 400 ticks intact without feeding", "[nom]") {
   int intact = 0;
   int degraded = 0;
   for (const evolab::Organism& organism : population.organisms()) {
-    if (organism.isPmaNom()) {
+    if (organism.isCampNom()) {
       ++intact;
     } else if (organism.hasPerceptorNeurons()) {
       ++degraded;
@@ -676,9 +716,9 @@ TEST_CASE("nom seeds and renders for visual startup", "[nom]") {
   REQUIRE(population.organisms().size() == 60);
 
   for (const evolab::Organism& organism : population.organisms()) {
-    REQUIRE(organism.isPmaNom());
+    REQUIRE(organism.isCampNom());
     const std::string label = evolab::game::formatOrganismArchitectureLabel(organism, 0);
-    REQUIRE(label.find("P-M-A Nom") != std::string::npos);
+    REQUIRE(label.find("CAMP Nom") != std::string::npos);
   }
 
   const evolab::game::OrganismDrawBatch batch =

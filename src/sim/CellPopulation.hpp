@@ -16,7 +16,7 @@ struct CellPopulationStats {
   int liveCells = 0;
   int organisms = 0;
   int stemCells = 0;
-  int pmaNomOrganisms = 0;
+  int campNomOrganisms = 0;
   int degradedNomOrganisms = 0;
   int mouthOrganisms = 0;
   int mouthNeurons = 0;

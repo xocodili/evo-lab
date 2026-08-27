@@ -158,7 +158,7 @@ TEST_CASE("actuator with one byte cannot wag tail", "[actuator]") {
   REQUIRE(organism.bodyStorage.size() == 1);
 }
 
-TEST_CASE("actuator final two bytes wag then basal death on same tick", "[actuator]") {
+TEST_CASE("actuator final two bytes wag then basal death after grace window", "[actuator]") {
   evolab::BarrenWorld world(29, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
@@ -175,6 +175,14 @@ TEST_CASE("actuator final two bytes wag then basal death on same tick", "[actuat
   REQUIRE(organism.lastStrokePaid);
   REQUIRE(organism.lastStrokeBytesPaid == evolab::kActuatorStrokeCostPerTick);
   REQUIRE(organism.bodyStorage.empty());
+  REQUIRE(organism.alive);
+
+  // First viability above already accrued one basal-arrears tick after the stroke emptied the wallet.
+  for (std::uint32_t i = 1; i < evolab::kNeuronBasalGraceTicks; ++i) {
+    organism.tickNeuronViability(energon);
+    REQUIRE(organism.alive);
+  }
+  organism.tickNeuronViability(energon);
   REQUIRE(!organism.alive);
 }
 
