@@ -446,8 +446,8 @@ Constants: `kWaterBandBenthicMaxDepth`, `kWaterBandShallowMaxDepth`, `kWaterBand
 | Source | When | Typical size | Notes |
 |--------|------|--------------|-------|
 | **Sunfall** | Day phase of cycle | Random 1–8 bytes | Spawns at sky; falls on land and sea; **active only in wet cells** (or rots on land) |
-| **Expulsion** | C satiated | Short 1–3 byte blob | v1: fixed **blue** signal trail; attracts P focus → A approach → mating proximity |
-| **Waste** | C signal expulsion / entropy | 1 byte fragments | Hub satiation blue signal; axon η loss |
+| **Cloaca vent** | C hub (routine / mate / distress) | 1–3 bytes by band | **RGB semantic triplet** — see below; not sunfall |
+| **Corpse release** | Neuron death / kill cascade | All remaining wallet bytes | Uncontrolled — distinct from voluntary cloaca signals |
 | **Decay** | TTL exhausted | — | Uneaten Energon **dissolves** (entropy); prevents memory blow-up |
 
 #### Day/night
@@ -479,24 +479,63 @@ struct EnergonBlob {
 - Each tick: bite `min(mouth_width, blob.remaining)`.
 - Simple organisms (1×M) nibble single bytes off long sunfall strings; complex (multiple M) take larger bites **without** authoring “top/bottom feeder” roles.
 
-#### Signaling (emergent, not front-loaded)
+#### Signaling — RGB cloaca triplet (circumstance + bit cost)
 
-When **C’s energy store ≥ satiation threshold**:
+**Principle:** Signalling is **never free** — it spends the same **bytes** the organism needs to live. The RGB metaphor maps to **metabolic tier**, not paint alone: **Red = most expensive / highest semantic value**, **Green = routine**, **Blue = cheapest alarm**. Receivers must infer intent from colour **and** cost (trail length, byte tag, sender health) — ambiguity is intentional; trust learns outcomes.
 
-1. C expels a **small blue Energon blob** (1–3 bytes, low total energy).
-2. Nearby organisms’ **P** detects it as weak food/signal within focus.
-3. **A** biases movement toward it → **increased mating proximity** for well-fed individuals.
+| Colour | Meaning (sender) | Typical circumstance | Vent cost (design target) | P default bias |
+|--------|------------------|----------------------|---------------------------|----------------|
+| **Blue** | **Distress** — “something is going wrong” | Basal arrears, peripheral bankruptcy, hub below reserve, pre-death stress; optional cheap ping before corpse dump | **1 B** / tick max; short TTL | **Threat** *or* **Food** (impending corpse) — receiver decides; high false-positive cost if you chase every blue |
+| **Green** | **Status quo** — “paying the bills, surviving not thriving” | Metabolically active, eating, venting hub pressure when replete but **not** soliciting mate | **1 B** / tick when hub accepts vent; low salience | Weak / ignore — background conspecific noise |
+| **Red** | **Mate-open** — “cloaca open, soliciting” | Mate-readiness predicate (replete + solvent + clear + age); **only** when explicitly willing to reproduce | **2–3 B** / tick; costly tag byte in `data` | **`Mate`** lock **only if** receiver also mate-ready |
 
-This is intentionally **bee-dance-simple** in v1 (fixed blue pattern). Custom signaling languages deferred—registers and expulsion rules can evolve later.
+**Not the same as death spill:** A dying neuron **already** releases its wallet as energon (corpse feast — uncontrolled, all bytes). **Blue** is a **cheap live alarm** before or beside that: “maybe I die, maybe you eat my corpse, maybe you die the same way.” Scavengers and paranoid Noms both have something to learn from blue trails — evolution decides which interpretation wins.
 
-**Not in v1:** authored waste tiers, “complex must leak for simple to survive,” or forced scavenger niches.
+**Hub vent remapping (deprecates v1 “blue = full = mate lure”):**
+
+```text
+hub replete, not mate-ready     → Green vent (pressure relief, status quo)
+hub replete + mate predicate    → Red vent (solicitation)
+distress predicate              → Blue vent (alarm)
+starving / silent               → no vent (can't afford signal tax)
+```
+
+**Mate-readiness (red sender — “stick your dick in it”):** Fullness is **necessary, not sufficient**:
+
+```text
+hubSatiation   ≥ kComputerSatiationConfidence   // can afford red tax
+mouthSatiation ≥ kMouthInhibitActuatorConfidence // not starving
+A/P solvent    ≥ stroke / scan floors
+threatClear    flee ≤ approach
+ageFloor       survivalTicks ≥ kMateMinAgeTicks
+cooldown       not recently mated
+```
+
+**Receiver red response:** Symmetric mate predicate — don't lock Mate on red unless self could pay **red-tier** cost too (quality filter). Hungry Noms may still **smell** red but shouldn't commit approach without solvency.
+
+**Energon cost ledger (bits model):**
+
+| Tier | Bytes vented | Net after η/TTL waste | Evolutionary meaning |
+|------|--------------|------------------------|----------------------|
+| Blue | 1 | ~1 | Cheap gossip / alarm — spam is affordable, trust should down-weight chronic blue |
+| Green | 1 | ~1 | Basal social noise — hub breathing |
+| Red | 2–3 | 2–3 | Honest costly mate ad — only stable replete lineages sustain chronic red |
+
+**Implementation sketch (Phase 3+):** extend `EnergonOrigin` or tag `data` low byte as `{Distress=0xB?, Baseline=0xG?, Mate=0xR?}`; `tickComputerPhase` chooses band by predicate; `scanFood` / `scanMateTrails` / threat weights split by origin; renderer maps origin→RGB. **Shipped v1** still uses single `Signal` origin on hub full — migrate when mating lands.
+
+**Evolution hook:** Register bytes / trust on P→A learn which blue trails preceded corpse vs bluff; red trails that led to viable offspring raise Mate trust.
+
+**Not in v1:** authored trophic tiers or forced scavenger niches.
 
 #### Visual language (render)
 
 | Element | Look |
 |---------|------|
-| **Sunfall strings** | Bright warm tones (white/yellow); **length ∝ byte count**; thin vertical streaks falling from sky; larger blobs read as “fat” strings |
-| **Signal expulsions** | **Blue** short trails, smaller, fade fast |
+| **Sunfall strings** | Bright warm tones (white/yellow); **length ∝ byte count** |
+| **Green cloaca** | Status-quo vent — low emissive, easy to ignore |
+| **Blue cloaca** | Distress ping — cold/cyan, short TTL |
+| **Red cloaca** | Mate solicitation — siren, costly, rare |
+| **Corpse release** | Death dump (all wallet bytes) — may read “feast red” visually; semantically **uncontrolled**, not mate |
 | **Focus (P)** | Debug overlay: cone/wedge from organism showing scan direction (optional toggle) |
 | **Landfall** | Strings visible on terrain but grey/dim; dissolve quickly if dry |
 | **Wet Energon** | Full saturation; slight emissive glow underwater |
@@ -605,6 +644,41 @@ Similarly `ε_random_mate` (~0.05) for partner choice. ε never zero.
 
 **Optional short trial** `T_eval` for sibling comparison at mating; **lifetime survival/offspring** remains the long-horizon filter. Parent fitness does not transfer—only biases sampling.
 
+#### 4.3.1 Mate focus and downstream approach (shipped path vs Phase 3 gate)
+
+**Status:** Approach chemotaxis toward mates is **wired**; **mating collapse / offspring spawn is not** (Phase 3).
+
+**Design focus:** Mating is **local, self-determining, and metabolism-gated** — no global fitness oracle. Reproduction rewards organisms that (a) survived the tidal oracle long enough, (b) achieved sufficient hub/peripheral fuel, (c) entered the same wet component as a partner. ε-chaos (`kEpsilonRandomMate`) prevents partner lock-in.
+
+**Two discovery channels (v1):**
+
+| Channel | Stimulus | P focus kind | Intent |
+|---------|----------|--------------|--------|
+| **Direct** | Other Nom neurons in focus cone | `PerceptFocusKind::Mate` | Turn toward conspecific bearing |
+| **Indirect (bee-dance)** | *(deprecated)* C hub vent read as food | — | v1 mistake — attracted scavengers to “full” |
+
+**Planned (RGB cloaca, §3.5):** **Red** = costly mate-open; **Green** = routine hub breath; **Blue** = cheap distress / pre-corpse alarm. Corpse = uncontrolled death release (feast) — separate from voluntary blue ping.
+
+**Downstream signal chain (shipped, per tick):**
+
+```text
+P scan (food + organisms + threat blocks)
+  → integrateFocus() — mate weight ≈ 0.75 + hunger×0.15 (less hunger-driven than food)
+  → focusToConfidence() — Mate: neutral + salience×2.2 → 0–7 approach byte
+  → emitPerceptSignals() on P→* axons (believe channel)
+
+A gatherActuatorInteroception()
+  → read P→A (and M→A, C→A) via accumulateApproachFlee()
+  → computeCampMotorIntent() — approach raises motivation; satiation brakes unless approach > threshold
+  → applyCampChemotaxisHeading() — turn toward gazeHeading + focusBearing (flee adds π)
+
+Advect → stroke toward heading → increased proximity if mate focus wins competition
+```
+
+**Phase 3 activation (not shipped):** tick step 11 — `Mate → if wet, proximate, energy thresholds met` — partner choice with `ε_random_mate`, parent-biased genotype collapse (§4.3), spawn offspring on wet tile. Proximity threshold, minimum hub bytes, and intact CAMP predicate TBD at implementation.
+
+**Evolutionary intent:** Trust plasticity on P→A should reinforce approach bytes that preceded successful proximity / mating outcomes once reproduction exists; until then, mate approach is an **open-loop reflex** shaped only by spawn chaos and satiation competition with food/threat.
+
 ### 4.4 Chaos & diversity knobs
 
 **Philosophy:** *Chaos reigns supreme* — small ε at **every initialization and boundary** so no lineage locks shut. Macro-randomness (placement, day bucket, byte bias) provides large dice; **±3% multiplicative jitter** (`kChaosJitterRate = 0.03`) is the thin coat on all baselines.
@@ -674,6 +748,27 @@ F = w1·food_eaten + w2·survival_ticks + w3·offspring_bonus − w4·metabolic_
 ```
 
 Default self-determining mode: **who lives and breeds is the fitness signal.**
+
+### 4.5.1 Epoch boundaries — laptop on/off (planned, not shipped)
+
+**Concept:** One **epoch** = one continuous sim session from launch until the user closes the viewer (Escape / window close). The laptop **off switch** is the true environmental catastrophe; within-epoch tide/starvation is ecology.
+
+**Trigger:** Graceful exit from `VisualApp` (Escape or close). **Do not activate** until Phase 3 genetics worth persisting (genotype + trust motifs + survival telemetry).
+
+**Selection at epoch end:**
+
+| Cohort | Fraction | Selection rule |
+|--------|----------|----------------|
+| **Elite** | Top **18%** | Longest **survival tenure** this epoch (`simTick − createdAtTick` among still-alive organisms; tie-break: higher total fuel, then intact CAMP) |
+| **Brink** | Bottom **18%** | Worst health at exit among alive organisms — lowest `(totalFuel / spawnFuel)` or highest basal arrears / nearest peripheral bankruptcy |
+
+**Persist per specimen (minimal):** world seed, epoch id, cohort tag (`elite` \| `brink`), organism id, survival ticks, fuel snapshot, CAMP intact flag, developmental string / twin-string genotype (Phase 3), axon trust snapshot, computer register bytes.
+
+**Storage sketch:** `epochs/<worldSeed>/<epochIndex>/elite/*.json` + `brink/*.json` + `epoch_meta.json` (tick count, population curve, rain config).
+
+**Reload policy (future):** Next epoch seeds from elite-biased batch + ε-random + optional brink controls (negative benchmark); never auto-resurrect brink without author intent.
+
+**Non-goals for v1 checkpoint:** mid-epoch autosave, full energon field freeze, resume-in-place.
 
 ### 4.6 Seed generation — diversified basics (planned)
 
@@ -871,6 +966,8 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 **2.x CAMP Nom ✓ (current visual default):** Developmental **P → M → C → A** chain — perceptor scans, mouth feeds, computer digests/dispatches, actuator propels. Universal 0–7 confidence bytes on outbound axons. Visual app seeds ~60 Noms (`--archetype nom`).
 
 **2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
+
+**2.x foundations (current):** CAMP metabolism, regulation, population-scaled rain, feedbag oracles — the **RNA/protein of cognition**: buildable substrate, not the finished evolvable organism. **Evolution is for** twin-string inheritance, mating collapse, epoch selection, and trust convergence.
 
 **P2 (next on Nom):** Computer evolution (register inheritance/mutation); temporal chemotaxis gradient (Δsalience); mate on proximity. ~~Hebbian believe trust~~ ✓ (`trustBelieveByConfidence[8]`, `NeuronTrust.cpp`).
 

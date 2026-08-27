@@ -33,6 +33,7 @@ add_library(evolab_sim STATIC
   sim/NeuronSignal.cpp
   sim/NeuronTrust.cpp
   sim/NeuronFuel.cpp
+  sim/CloacaSignal.cpp
   sim/CampTopology.cpp
   sim/NeuronStem.cpp
   sim/NeuronMusculature.cpp

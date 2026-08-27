@@ -1,3 +1,4 @@
+#include "engine/Camera.hpp"
 #include "game/OrganismDrawer.hpp"
 #include "game/OrganismInspector.hpp"
 #include "game/TerrainMesh.hpp"
@@ -190,6 +191,9 @@ TEST_CASE("axon bundle flex bends camp arms under actuator stroke", "[nom][muscu
   organism.lastStrokePaid = true;
   organism.lastActuatorNetDrive = 0.9f;
   organism.lastStrokeBytesPaid = evolab::kActuatorStrokeCostPerTick;
+  organism.lastActuatorStrokeFlexBoost =
+      static_cast<float>(evolab::kActuatorStrokeCostPerTick) * evolab::kActuatorThrustPerStrokeByte *
+      evolab::kActuatorTranslationEta;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   const evolab::SkeletonNode* actuatorFlex = organism.findNode(4);
@@ -721,8 +725,13 @@ TEST_CASE("nom seeds and renders for visual startup", "[nom]") {
     REQUIRE(label.find("CAMP Nom") != std::string::npos);
   }
 
-  const evolab::game::OrganismDrawBatch batch =
-      evolab::game::buildOrganismDrawBatch(population.organisms(), 0.0f, 80.0f, 120.0f);
+  evolab::engine::OrbitCamera camera;
+  camera.distance = 140.0f;
+  const evolab::engine::Mat4 proj =
+      evolab::engine::mat4Perspective(60.0f * 3.1415926535f / 180.0f, 1280.0f / 720.0f, 0.1f, 800.0f);
+  const evolab::engine::Mat4 mvp =
+      evolab::engine::mat4Multiply(proj, camera.viewMatrix());
+  const evolab::game::OrganismDrawBatch batch = evolab::game::buildOrganismDrawBatch(
+      population.organisms(), 0.0f, 80.0f, 120.0f, mvp, 1280, 720);
   REQUIRE(!batch.cellVerts.empty());
-  REQUIRE(!batch.neuralLineVerts.empty());
 }

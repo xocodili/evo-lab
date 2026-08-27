@@ -28,8 +28,19 @@ float inboundAxonDrive(const Organism& organism, const NeuralAxon& axon, std::ui
   return unit * axonTrustScale(axonBelieveTrustForByte(axon, axon.lastReceived.byte));
 }
 
-// Bundle tension: outbound drives on parent vs child plus believe-traffic asymmetry on both axons.
-float axonBundleTension(const Organism& organism, std::uint32_t parentId, std::uint32_t childId) {
+const SkeletonLink* findLinkToChild(const Organism& organism, std::uint32_t childId) {
+  for (const SkeletonLink& link : organism.links) {
+    if (link.childNodeId == childId) {
+      return &link;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
+                            std::uint32_t childId) {
   const SkeletonNode* parent = organism.findNode(parentId);
   const SkeletonNode* child = organism.findNode(childId);
   if (parent == nullptr || child == nullptr || !parent->alive || !child->alive) {
@@ -59,17 +70,6 @@ float axonBundleTension(const Organism& organism, std::uint32_t parentId, std::u
 
   return std::clamp(tension, -1.0f, 1.0f);
 }
-
-const SkeletonLink* findLinkToChild(const Organism& organism, std::uint32_t childId) {
-  for (const SkeletonLink& link : organism.links) {
-    if (link.childNodeId == childId) {
-      return &link;
-    }
-  }
-  return nullptr;
-}
-
-}  // namespace
 
 void applyCampJointFlexLimits(engine::kinematics::KinematicSkeleton& skeleton) {
   for (std::size_t jointIndex = 0; jointIndex < skeleton.jointCount(); ++jointIndex) {
@@ -105,11 +105,76 @@ engine::kinematics::KinematicLocalPose buildCampMusclePose(
       continue;
     }
 
-    const float tension = axonBundleTension(organism, parentJoint.nodeId, joint.nodeId);
-    pose.yawDelta(jointIndex) = tension * kAxonBundleFlexGain;
+    const float tension = campAxonBundleTension(organism, parentJoint.nodeId, joint.nodeId);
+    float yawDelta = tension * kAxonBundleFlexGain;
+    if (organism.lastActuatorStrokeFlexBoost > 0.0f) {
+      if (joint.nodeId == kCampActuatorId) {
+        yawDelta += organism.lastActuatorStrokeFlexBoost * kActuatorStrokeFlexGain;
+      } else if (joint.nodeId == kCampPerceptorId || joint.nodeId == kCampMouthId) {
+        yawDelta -= organism.lastActuatorStrokeFlexBoost * kAxonBundleTrailFlexGain;
+      }
+    }
+    pose.yawDelta(jointIndex) = yawDelta;
   }
 
   return pose;
+}
+
+float campKeelYawTorque(const Organism& organism) {
+  if (!organism.isCampNom()) {
+    return 0.0f;
+  }
+  const SkeletonNode* hub = organism.findNode(kCampRootNodeId);
+  if (hub == nullptr) {
+    return 0.0f;
+  }
+  const float tensionP = campAxonBundleTension(organism, hub->id, kCampPerceptorId);
+  const float tensionM = campAxonBundleTension(organism, hub->id, kCampMouthId);
+  const float tensionA = campAxonBundleTension(organism, hub->id, kCampActuatorId);
+  return (tensionP - tensionM) + (tensionA - (tensionP + tensionM) * 0.5f) * 0.35f;
+}
+
+namespace {
+
+float normalizeHeading(float radians) {
+  constexpr float kTwoPi = 6.2831853f;
+  while (radians > 3.14159265f) {
+    radians -= kTwoPi;
+  }
+  while (radians < -3.14159265f) {
+    radians += kTwoPi;
+  }
+  return radians;
+}
+
+}  // namespace
+
+void applyCampBundleStroke(Organism& organism, SkeletonNode& motor, SkeletonNode& hub,
+                           float mechanicalThrust) {
+  const float armDx = motor.worldX - hub.worldX;
+  const float armDz = motor.worldZ - hub.worldZ;
+  const float armLen = std::hypot(armDx, armDz);
+  float thrustX = std::sin(organism.heading);
+  float thrustZ = std::cos(organism.heading);
+  if (armLen > 1.0e-5f) {
+    const float alongX = armDx / armLen;
+    const float alongZ = armDz / armLen;
+    thrustX = alongX * 0.78f + thrustX * 0.22f;
+    thrustZ = alongZ * 0.78f + thrustZ * 0.22f;
+    const float thrustLen = std::hypot(thrustX, thrustZ);
+    if (thrustLen > 1.0e-5f) {
+      thrustX /= thrustLen;
+      thrustZ /= thrustLen;
+    }
+  }
+
+  const float hubMove = mechanicalThrust * kActuatorHubThrustShare;
+  hub.worldX += thrustX * hubMove;
+  hub.worldZ += thrustZ * hubMove;
+
+  organism.lastActuatorStrokeFlexBoost = mechanicalThrust;
+  const float keelTorque = campKeelYawTorque(organism) * mechanicalThrust * kAxonBundleKeelYawGain;
+  organism.heading = normalizeHeading(organism.heading + keelTorque);
 }
 
 }  // namespace evolab

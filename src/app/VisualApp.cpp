@@ -20,7 +20,7 @@
 #include "sim/CellPopulation.hpp"
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
-#include "sim/EnergonStats.hpp"
+#include "sim/EnergonRain.hpp"
 #include "sim/SimConfig.hpp"
 #include "sim/SimDiagnostics.hpp"
 #include "sim/WorldConstants.hpp"
@@ -123,8 +123,8 @@ int runVisualApp(const CliArgs& args) {
   trace.step("world");
   DayCycle dayCycle(kVisualDayCyclePeriodTicks);
   EnergonConfig energonConfig;
-  energonConfig.spawnRateMax = 14.0f;
-  energonConfig.maxBlobs = 2200;
+  energonConfig.populationScaledRain = true;
+  energonConfig.maxBlobs = std::max(2200, config.nomCount * 80);
   EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
@@ -295,7 +295,8 @@ int runVisualApp(const CliArgs& args) {
       for (int i = 0; i < steps; ++i) {
         world.tick();
         const float sun = dayCycle.sunIntensity(world.tickCount());
-        energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale);
+        const int rainPopulation = static_cast<int>(cells.organisms().size());
+        energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale, rainPopulation);
         cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale, sun);
         if (i + 1 < steps) {
           platform.pumpEvents();

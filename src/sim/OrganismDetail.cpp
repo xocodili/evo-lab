@@ -16,6 +16,7 @@
 #include "sim/OrganismPerceptor.hpp"
 #include "sim/NeuronTrust.hpp"
 #include "sim/NeuronFuel.hpp"
+#include "sim/NeuronMusculature.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/TideAdvection.hpp"
@@ -483,6 +484,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   organism.lastActuatorInhibited = false;
   organism.lastActuatorNetDrive = 0.0f;
   organism.lastActuatorOutboundSignal = 0;
+  organism.lastActuatorStrokeFlexBoost = 0.0f;
   organism.lastInWater =
       world.isWetWorld(motorNode->worldX, motorNode->worldZ, cellSize);
   organism.lastTideDelta = world.waterLevelDelta();
@@ -530,7 +532,11 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 
     const float thrustX = std::sin(organism.heading) * mechanicalThrust;
     const float thrustZ = std::cos(organism.heading) * mechanicalThrust;
-    translateOrganismXZ(organism, thrustX, thrustZ);
+    if (organism.isCampNom()) {
+      applyCampBundleStroke(organism, *motorNode, *root, mechanicalThrust);
+    } else {
+      translateOrganismXZ(organism, thrustX, thrustZ);
+    }
   }
 
   const AdvectionVelocity velocity =

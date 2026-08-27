@@ -58,6 +58,15 @@ bool hubStorePopBack(Organism& organism, std::uint8_t& byte) {
   return true;
 }
 
+bool hubStoreConsumeBack(Organism& organism, std::size_t count) {
+  if (count == 0 || organism.bodyStorage.size() < count) {
+    return false;
+  }
+  organism.bodyStorage.erase(organism.bodyStorage.end() - static_cast<std::ptrdiff_t>(count),
+                             organism.bodyStorage.end());
+  return true;
+}
+
 std::size_t hubStoreSurplus(const Organism& organism) {
   if (organism.bodyStorage.size() <= kComputerHubReserveBytes) {
     return 0;

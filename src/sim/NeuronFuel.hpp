@@ -18,6 +18,7 @@ std::size_t neuronStoreAcceptanceRemaining(const SkeletonNode& node);
 // Computer hub (bodyStorage on CAMP noms).
 void hubStorePush(Organism& organism, std::uint8_t byte);
 bool hubStorePopBack(Organism& organism, std::uint8_t& byte);
+bool hubStoreConsumeBack(Organism& organism, std::size_t count);
 std::size_t hubStoreSurplus(const Organism& organism);
 std::size_t hubStoreAcceptanceRemaining(const Organism& organism);
 

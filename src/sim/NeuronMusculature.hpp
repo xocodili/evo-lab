@@ -12,4 +12,12 @@ engine::kinematics::KinematicLocalPose buildCampMusclePose(const Organism& organ
 
 void applyCampJointFlexLimits(engine::kinematics::KinematicSkeleton& skeleton);
 
+float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
+                            std::uint32_t childId);
+
+float campKeelYawTorque(const Organism& organism);
+
+void applyCampBundleStroke(Organism& organism, SkeletonNode& motor, SkeletonNode& hub,
+                           float mechanicalThrust);
+
 }  // namespace evolab

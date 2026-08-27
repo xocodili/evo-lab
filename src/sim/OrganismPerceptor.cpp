@@ -4,6 +4,7 @@
 
 #include "sim/BarrenWorld.hpp"
 
+#include "sim/CloacaSignal.hpp"
 #include "sim/CellConstants.hpp"
 
 #include "sim/Chaos.hpp"
@@ -16,6 +17,7 @@
 
 #include "sim/Organism.hpp"
 
+#include "sim/NeuronStem.hpp"
 #include "sim/OrganismComputer.hpp"
 
 #include "sim/NeuronFuel.hpp"
@@ -296,11 +298,33 @@ void addNoisyCandidate(std::vector<PerceptCandidate>& out, PerceptFocusKind kind
 
 
 
-void scanFood(const SkeletonNode& perceptor, float gazeHeading, float senseRadius,
+float organismHungerPrior(const Organism& organism) {
 
-              const EnergonField& energon, float sunIntensity, std::mt19937& rng,
+  const SkeletonNode* mouth = findNeuronNode(organism, NeuronType::Mouth);
 
-              std::vector<PerceptCandidate>& out) {
+  if (mouth == nullptr) {
+
+    return 0.5f;
+
+  }
+
+  return 1.0f - confidenceToUnit(mouthFuelConfidence(*mouth));
+
+}
+
+
+
+void scanFieldEnergon(const Organism& self, const SkeletonNode& perceptor, float gazeHeading,
+
+                      float senseRadius, const EnergonField& energon, float sunIntensity,
+
+                      std::uint64_t simTick, std::mt19937& rng,
+
+                      std::vector<PerceptCandidate>& out) {
+
+  const bool selfMateReady = campMateReadyPredicate(self, simTick);
+
+  const float hunger = organismHungerPrior(self);
 
   energon.forEachBlobNear(
 
@@ -342,7 +366,61 @@ void scanFood(const SkeletonNode& perceptor, float gazeHeading, float senseRadiu
 
         }
 
-        addNoisyCandidate(out, PerceptFocusKind::Food, relBearing, range01, sunIntensity, rng);
+        const CloacaBand band = cloacaBandFromBlob(blob);
+
+        if (band != CloacaBand::None) {
+
+          switch (band) {
+
+            case CloacaBand::Distress:
+
+              if (hunger > 0.5f) {
+
+                addNoisyCandidate(out, PerceptFocusKind::Food, relBearing, range01, sunIntensity,
+
+                                  rng);
+
+              } else {
+
+                addNoisyCandidate(out, PerceptFocusKind::Threat, relBearing, range01, sunIntensity,
+
+                                  rng);
+
+              }
+
+              break;
+
+            case CloacaBand::Mate:
+
+              if (selfMateReady) {
+
+                addNoisyCandidate(out, PerceptFocusKind::Mate, relBearing, range01, sunIntensity,
+
+                                  rng);
+
+              }
+
+              break;
+
+            case CloacaBand::Baseline:
+
+              break;
+
+            default:
+
+              break;
+
+          }
+
+          return;
+
+        }
+
+        if (blob.origin == EnergonOrigin::Sunfall || blob.origin == EnergonOrigin::Fragment) {
+
+          addNoisyCandidate(out, PerceptFocusKind::Food, relBearing, range01, sunIntensity, rng);
+
+        }
 
       });
 
@@ -354,7 +432,13 @@ void scanOrganisms(const Organism& self, const SkeletonNode& perceptor, float ga
 
                    float senseRadius, const std::vector<Organism>& population, float sunIntensity,
 
-                   std::mt19937& rng, std::vector<PerceptCandidate>& out) {
+                   std::uint64_t simTick, std::mt19937& rng, std::vector<PerceptCandidate>& out) {
+
+  if (!campMateReadyPredicate(self, simTick)) {
+
+    return;
+
+  }
 
   const float broadRadius = senseRadius * 1.5f;
 
@@ -747,13 +831,13 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
   candidates.reserve(16);
 
-  scanFood(perceptor, perceptor.gazeHeading, effectiveRadius, energon, sunIntensity, rng,
+  scanFieldEnergon(organism, perceptor, perceptor.gazeHeading, effectiveRadius, energon,
 
-           candidates);
+                   sunIntensity, simTick, rng, candidates);
 
   scanOrganisms(organism, perceptor, perceptor.gazeHeading, effectiveRadius, population,
 
-                sunIntensity, rng, candidates);
+                sunIntensity, simTick, rng, candidates);
 
   scanBlocks(world, perceptor, perceptor.gazeHeading, effectiveRadius, cellSize, halfExtent,
 

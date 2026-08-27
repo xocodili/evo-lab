@@ -5,6 +5,7 @@
 #include "sim/Energon.hpp"
 
 #include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/PerceptorFocus.hpp"
 
@@ -168,7 +169,10 @@ public:
   float lastComputerMatchScore = 0.0f;
   float computerFeedGain = 1.0f;
   bool lastHubSignalExpelledThisTick = false;
+  CloacaBand lastCloacaBandExpelled = CloacaBand::None;
   std::uint32_t computerNodeId = 0;
+  // Transient stroke flex injected into buildCampMusclePose (CAMP bundle locomotion).
+  float lastActuatorStrokeFlexBoost = 0.0f;
 
 
 

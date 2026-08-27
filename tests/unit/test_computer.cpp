@@ -1,6 +1,8 @@
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
+#include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
 #include "sim/OrganismComputer.hpp"
 
@@ -65,14 +67,66 @@ TEST_CASE("computer pattern match sets feed gain", "[camp][computer]") {
   REQUIRE(organism.computerFeedGain > 0.9f);
 }
 
-TEST_CASE("satiated computer expels blue signal byte", "[camp][computer]") {
+TEST_CASE("replete computer expels green baseline cloaca byte", "[camp][computer][cloaca]") {
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
   organism.bodyStorage.assign(evolab::kComputerHubStoreMaxBytes, 1);
+  organism.createdAtTick = 0;
 
+  const std::size_t hubBefore = organism.bodyStorage.size();
   const int blobsBefore = field.activeCount();
   evolab::tickComputerPhase(organism, field, 1);
   REQUIRE(field.activeCount() > blobsBefore);
-  REQUIRE(organism.bodyStorage.size() == evolab::kComputerHubStoreMaxBytes - 1);
+  REQUIRE(organism.bodyStorage.size() == hubBefore - evolab::kCloacaVentCostBaseline);
+  REQUIRE(organism.lastCloacaBandExpelled == evolab::CloacaBand::Baseline);
+  REQUIRE(organism.lastHubSignalExpelledThisTick);
+
+  const evolab::EnergonBlob& blob = field.blobs().back();
+  REQUIRE(blob.origin == evolab::EnergonOrigin::Cloaca);
+  REQUIRE(blob.remaining == evolab::kCloacaVentCostBaseline);
+  REQUIRE(evolab::cloacaBandFromBlob(blob) == evolab::CloacaBand::Baseline);
+}
+
+TEST_CASE("mate-ready computer expels red cloaca trail", "[camp][computer][cloaca]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
+  organism.bodyStorage.assign(evolab::kComputerHubStoreMaxBytes, 1);
+  organism.createdAtTick = 0;
+
+  evolab::SkeletonNode* mouth = organism.findNode(2);
+  evolab::SkeletonNode* perceptor = organism.findNode(1);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(perceptor != nullptr);
+  REQUIRE(actuator != nullptr);
+  mouth->store.assign(evolab::kNeuronStoreMaxBytes, 1);
+  perceptor->store.assign(evolab::kPerceptorScanCostPerTick + 4, 1);
+  actuator->store.assign(evolab::kActuatorStrokeCostPerTick + 4, 1);
+
+  const std::size_t hubBefore = organism.bodyStorage.size();
+  evolab::tickComputerPhase(organism, field, evolab::kMateMinAgeTicks + 10);
+  REQUIRE(organism.lastCloacaBandExpelled == evolab::CloacaBand::Mate);
+  REQUIRE(organism.bodyStorage.size() == hubBefore - evolab::kCloacaVentCostMate);
+
+  const evolab::EnergonBlob& blob = field.blobs().back();
+  REQUIRE(blob.origin == evolab::EnergonOrigin::Cloaca);
+  REQUIRE(blob.remaining == evolab::kCloacaVentCostMate);
+  REQUIRE(evolab::cloacaBandFromBlob(blob) == evolab::CloacaBand::Mate);
+}
+
+TEST_CASE("distressed computer expels blue cloaca alarm", "[camp][computer][cloaca]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
+  organism.bodyStorage.assign(evolab::kComputerHubReserveBytes + 5, 1);
+  organism.findNode(1)->basalArrearsTicks = 1;
+
+  evolab::tickComputerPhase(organism, field, 1);
+  REQUIRE(organism.lastCloacaBandExpelled == evolab::CloacaBand::Distress);
+
+  const evolab::EnergonBlob& blob = field.blobs().back();
+  REQUIRE(blob.origin == evolab::EnergonOrigin::Cloaca);
+  REQUIRE(evolab::cloacaBandFromBlob(blob) == evolab::CloacaBand::Distress);
 }

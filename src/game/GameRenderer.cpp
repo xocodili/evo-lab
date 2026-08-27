@@ -3,6 +3,7 @@
 #include "engine/gl/GlContext.hpp"
 #include "game/GameShaders.hpp"
 #include "game/OrganismDrawer.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 
@@ -45,6 +46,28 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
     g = 0.10f;
     b = 0.06f;
     alpha = std::min(1.0f, alpha + 0.35f);
+  } else if (blob.origin == evolab::EnergonOrigin::Cloaca) {
+    switch (evolab::cloacaBandFromBlob(blob)) {
+      case evolab::CloacaBand::Distress:
+        r = 0.15f;
+        g = 0.55f;
+        b = 1.0f;
+        alpha = std::min(1.0f, alpha + 0.25f);
+        break;
+      case evolab::CloacaBand::Baseline:
+        r = 0.20f;
+        g = 0.85f;
+        b = 0.35f;
+        break;
+      case evolab::CloacaBand::Mate:
+        r = 1.0f;
+        g = 0.12f;
+        b = 0.08f;
+        alpha = std::min(1.0f, alpha + 0.40f);
+        break;
+      default:
+        break;
+    }
   } else if (blob.grounded && !blob.onWet) {
     const float grey = 0.35f + 0.15f * byteNorm;
     r = grey;
@@ -333,11 +356,12 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   float eyeZ = 0.0f;
   camera.eyePosition(eyeX, eyeY, eyeZ);
 
-  const OrganismDrawBatch batch = buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ);
+  const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
+  const OrganismDrawBatch batch =
+      buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH);
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.viewport(0, 0, viewportW, viewportH);
-  const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
 
   auto drawLineVerts = [&](const std::vector<OrganismLineVertex>& verts) {
     if (verts.empty()) {

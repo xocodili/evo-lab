@@ -22,7 +22,13 @@ class EnergonSpatialIndex;
 
 
 
-enum class EnergonOrigin : std::uint8_t { Sunfall = 0, Signal = 1, Fragment = 2, Waste = 3 };
+enum class EnergonOrigin : std::uint8_t {
+  Sunfall = 0,
+  Signal = 1,
+  Fragment = 2,
+  Waste = 3,
+  Cloaca = 4
+};
 
 
 
@@ -71,6 +77,8 @@ struct EnergonConfig {
   float fallSpeed = 42.0f;
 
   float spawnRateMax = 6.0f;
+  // When true, sunfall scales as f(liveOrganisms) × entropy each rain cycle; spawnRateMax is a ceiling.
+  bool populationScaledRain = true;
 
   float ttlWetSeconds = 50.0f;
 
@@ -116,7 +124,8 @@ public:
 
   void clear();
 
-  void tick(const BarrenWorld& world, float sunIntensity, float cellSize, float heightScale);
+  void tick(const BarrenWorld& world, float sunIntensity, float cellSize, float heightScale,
+            int liveOrganismCount = -1);
 
 
 
@@ -162,7 +171,8 @@ public:
 
 private:
 
-  void spawnSunfall(const BarrenWorld& world, float sunIntensity, float cellSize);
+  void spawnSunfall(const BarrenWorld& world, float sunIntensity, float cellSize,
+                    int liveOrganismCount);
 
   void updateBlob(EnergonBlob& blob, const BarrenWorld& world, float cellSize, float heightScale);
 

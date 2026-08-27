@@ -1,6 +1,8 @@
 #include "sim/BarrenWorld.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
+#include "sim/EnergonRain.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -14,9 +16,27 @@ TEST_CASE("day cycle sun intensity is zero at night", "[energon]") {
   REQUIRE(night == Catch::Approx(0.0f).margin(1e-3f));
 }
 
+TEST_CASE("rain cycle budget is f(population) times entropy", "[energon]") {
+  const float perNom = evolab::rainCycleFieldBytesPerNom();
+  REQUIRE(perNom ==
+          Catch::Approx(static_cast<float>(evolab::kVisualDayCyclePeriodTicks) *
+                        static_cast<float>(evolab::kCampNomRainCycleBurnPerTick) /
+                        static_cast<float>(evolab::kBiteNetYieldBytes)));
+
+  REQUIRE(evolab::rainCycleFieldBytesForPopulation(0) == Catch::Approx(0.0f));
+  REQUIRE(evolab::rainCycleFieldBytesForPopulation(60) ==
+          Catch::Approx(60.0f * perNom * evolab::kEnergonRainEntropy));
+
+  REQUIRE(evolab::expectedSunfallBlobsPerTick(60, 1.0f) >
+          evolab::expectedSunfallBlobsPerTick(20, 1.0f));
+  REQUIRE(evolab::expectedSunfallBlobsPerTick(10, 0.0f) == Catch::Approx(0.0f));
+}
+
 TEST_CASE("energon spawns during daylight", "[energon]") {
   evolab::BarrenWorld world(42, 64);
-  evolab::EnergonField field(42, {});
+  evolab::EnergonConfig config;
+  config.populationScaledRain = false;
+  evolab::EnergonField field(42, config);
 
   for (int i = 0; i < 200; ++i) {
     world.tick();
@@ -29,6 +49,29 @@ TEST_CASE("energon spawns during daylight", "[energon]") {
     field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   }
   REQUIRE(field.activeCount() > 0);
+}
+
+TEST_CASE("population scaled sunfall increases with live organism count", "[energon]") {
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonConfig config;
+  config.populationScaledRain = true;
+  config.spawnRateMax = 0.0f;
+  config.maxBlobs = 8000;
+  evolab::EnergonField field(42, config);
+
+  for (int i = 0; i < 300; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 0);
+  }
+  const int emptyPopCount = field.activeCount();
+
+  for (int i = 0; i < 300; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 60);
+  }
+  const int fullPopCount = field.activeCount();
+
+  REQUIRE(fullPopCount > emptyPopCount + 50);
 }
 
 TEST_CASE("dry land energon decays faster than wet", "[energon]") {

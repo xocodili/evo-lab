@@ -1,5 +1,6 @@
 #include "sim/OrganismComputer.hpp"
 
+#include "sim/CloacaSignal.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronFuel.hpp"
@@ -94,18 +95,15 @@ void tickComputerPhase(Organism& organism, EnergonField& field, std::uint64_t si
   organism.lastComputerMatchScore =
       matchMax > 0 ? static_cast<float>(matchTotal) / static_cast<float>(matchMax) : 0.0f;
 
-  const float satiation =
-      confidenceToUnit(hubFuelConfidence(organism.bodyStorage.size()));
   organism.lastHubSignalExpelledThisTick = false;
+  organism.lastCloacaBandExpelled = CloacaBand::None;
   bool expelled = false;
-  if (satiation >= confidenceToUnit(kComputerSatiationConfidence) &&
-      !organism.bodyStorage.empty()) {
-    std::uint8_t byte = 0;
-    if (hubStorePopBack(organism, byte)) {
-      expelByteAtNode(*computer, field, kComputerSignalExpulsionByte, EnergonOrigin::Signal,
-                      0.35f);
-      expelled = true;
+  const CloacaBand band = chooseCloacaBand(organism, simTick);
+  if (band != CloacaBand::None) {
+    expelled = expelCloacaVent(organism, field, *computer, band);
+    if (expelled) {
       organism.lastHubSignalExpelledThisTick = true;
+      organism.lastCloacaBandExpelled = band;
     }
   }
 

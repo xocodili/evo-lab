@@ -2,6 +2,7 @@
 
 #include "sim/BarrenWorld.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/EnergonRain.hpp"
 #include "sim/EnergonSpatialIndex.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/TideAdvection.hpp"
@@ -194,7 +195,7 @@ void EnergonField::forEachBlobNear(float x, float z, float radius,
 }
 
 void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
-                                 float cellSize) {
+                                 float cellSize, int liveOrganismCount) {
   if (sunIntensity <= 0.0f || static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
     return;
   }
@@ -208,7 +209,13 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
   std::mt19937_64 rng(mixSeed(seed_, world.tickCount() * 1315423911ULL + blobs_.size() ^
                                          kChaosSaltEnergonSunfall));
 
-  const float expected = config_.spawnRateMax * sunIntensity;
+  float expected = 0.0f;
+  if (config_.populationScaledRain && liveOrganismCount >= 0) {
+    expected = expectedSunfallBlobsPerTick(liveOrganismCount, sunIntensity);
+  } else {
+    expected = config_.spawnRateMax * sunIntensity;
+  }
+
   int spawnCount = static_cast<int>(expected);
   std::bernoulli_distribution frac(expected - static_cast<float>(spawnCount));
   if (frac(rng)) {
@@ -285,8 +292,8 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
 }
 
 void EnergonField::tick(const BarrenWorld& world, float sunIntensity, float cellSize,
-                         float heightScale) {
-  spawnSunfall(world, sunIntensity, cellSize);
+                         float heightScale, int liveOrganismCount) {
+  spawnSunfall(world, sunIntensity, cellSize, liveOrganismCount);
 
   blobs_.erase(
       std::remove_if(blobs_.begin(), blobs_.end(),

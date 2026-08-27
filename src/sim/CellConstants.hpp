@@ -48,6 +48,12 @@ inline constexpr float kCampNomLinkJointAngle = 0.0f;
 inline constexpr float kAxonBundleMaxFlexRad = 0.38f;
 inline constexpr float kAxonBundleFlexGain = 0.34f;
 inline constexpr float kAxonBundleFlexStiffness = 0.82f;
+// Bundle-coupled stroke: hub follows actuator; lateral arms trail; keel torque from asymmetry.
+inline constexpr float kActuatorHubThrustShare = 0.55f;
+inline constexpr float kActuatorStrokeFlexGain = 3.2f;
+inline constexpr float kAxonBundleTrailFlexGain = 1.1f;
+inline constexpr float kAxonBundleDragCoupling = 0.72f;
+inline constexpr float kAxonBundleKeelYawGain = 14.0f;
 inline constexpr std::size_t kComputerRegisterBytes = 8u;
 inline constexpr std::uint32_t kComputerHubStoreMaxBytes = kStemCellStorageMaxBytes;
 inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay / 4u;

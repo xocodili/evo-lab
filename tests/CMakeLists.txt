@@ -23,6 +23,7 @@ add_executable(evo-lab-tests
   unit/test_actuator.cpp
   unit/test_nom.cpp
   unit/test_computer.cpp
+  unit/test_cloaca_perceptor.cpp
   unit/test_neuron_signal.cpp
   unit/test_neuron_trust.cpp
   unit/test_energon_conveyance.cpp

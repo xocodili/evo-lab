@@ -247,7 +247,7 @@ FeedbagOracleResult runFeedbagOracle(int cycleDays, int worldSeed, int energonSe
   result.fuelMin = result.fuelStart;
   result.hubMin = organism.bodyStorage.size();
 
-  int signalCount = countFieldOrigin(energon, evolab::EnergonOrigin::Signal);
+  int signalCount = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
   int fragmentCount = countFieldOrigin(energon, evolab::EnergonOrigin::Fragment);
   int dayStrokes = 0;
   int dayBites = 0;
@@ -288,7 +288,7 @@ FeedbagOracleResult runFeedbagOracle(int cycleDays, int worldSeed, int energonSe
 
     const bool endOfDay = ((tick + 1) % periodTicks) == 0;
     if (endOfDay) {
-      const int newSignalCount = countFieldOrigin(energon, evolab::EnergonOrigin::Signal);
+      const int newSignalCount = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
       const int newFragmentCount = countFieldOrigin(energon, evolab::EnergonOrigin::Fragment);
       result.cumulativeSignalExpulsions += newSignalCount - signalCount;
       result.cumulativeFragmentExpulsions += newFragmentCount - fragmentCount;
@@ -421,7 +421,7 @@ TEST_CASE("upper bound satiety: abundant food regulates crawl and expels hub sig
                     evolab::kTerrainHeightScale, 1.0f, mouth);
 
     if (tick == kWarmupTicks) {
-      signalBeforeMeasure = countFieldOrigin(energon, evolab::EnergonOrigin::Signal);
+      signalBeforeMeasure = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
       fragmentBeforeMeasure = countFieldOrigin(energon, evolab::EnergonOrigin::Fragment);
     }
 
@@ -446,7 +446,7 @@ TEST_CASE("upper bound satiety: abundant food regulates crawl and expels hub sig
   }
 
   window.signalExpulsions =
-      countFieldOrigin(energon, evolab::EnergonOrigin::Signal) - signalBeforeMeasure;
+      countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca) - signalBeforeMeasure;
   window.fragmentExpulsions =
       countFieldOrigin(energon, evolab::EnergonOrigin::Fragment) - fragmentBeforeMeasure;
 
@@ -499,11 +499,11 @@ TEST_CASE("satiety ramp: continuous feeding increases hub toward expulsion thres
     world.tick();
     energon.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
     ensureAbundantFoodAtMouth(energon, *mouth, evolab::kWorldCellSize);
-    const int signalsBefore = countFieldOrigin(energon, evolab::EnergonOrigin::Signal);
+    const int signalsBefore = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
     tickCampNomFull(organism, world, energon, evolab::kWorldCellSize,
                     evolab::kTerrainHeightScale, 1.0f, mouth);
     signalExpulsions +=
-        countFieldOrigin(energon, evolab::EnergonOrigin::Signal) - signalsBefore;
+        countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca) - signalsBefore;
     if (mouth->ateThisTick) {
       ++totalBites;
     }
@@ -556,7 +556,7 @@ TEST_CASE("feedbag oracle: twenty-seven visual days hub vent steady state (cloac
   REQUIRE(result.fuelEnd >= result.fuelMin);
   REQUIRE(result.netDeltaPerTick >= -0.25f);
 
-  // Hub cloaca: blue Signal-origin vent when replete — primary healthy expulsion route.
+  // Hub cloaca: green baseline vent when replete — primary healthy expulsion route.
   REQUIRE(result.cumulativeHubSignalExpulsions > 0);
   REQUIRE(result.hubPeak >= static_cast<std::size_t>(static_cast<float>(evolab::kComputerHubStoreMaxBytes) *
                                                       evolab::confidenceToUnit(evolab::kComputerSatiationConfidence) *
