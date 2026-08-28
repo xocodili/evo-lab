@@ -215,3 +215,29 @@ Plausible directions: **ALife conference** (short/long); **ECAL**; workshop trac
 ---
 
 *Append new dated sections below as runs complete.*
+
+### 2026-08-28 — Evolution closure kickoff
+
+**Mouth diet layer shipped:** postingestive EMA on energon origin/cloaca band; `mouthOutboundConfidence` applies gag reflex when distress-cloaca share ≥ 55% (CTA analogue). P decodes spatial RGB; M confirms ingestion — predictive machinery hook for C trust (RPE) next.
+
+**First design question answered:** baseline `[CAMP]` parthenogenesis ≈ **259k B** reproductive debit + **86k B** parent reserve (median endowment). Reproduction is metabolically expensive relative to idle runway (~29k ticks at 6 B/tick for 172k spawn).
+
+**Next implementation:** R0 field insertion scaffold → R1 parthenogenesis with entropy morphogenesis + variable cost. Full plan: [EVOLUTION.md](EVOLUTION.md).
+
+### 2026-08-28 (b) — HGT vs reproduction, variable child cost, Lorenz training
+
+**Literature verdict:** Horizontal gene transfer / communal code exchange **predates** tight vertical reproduction (Woese Darwinian threshold; Vetsigian *Sci. Rep.* 2018; Fournier & Gogarten 2015). **Revised order:** R0 insertion (mouth-mediated field graft) → R1 parthenogenesis.
+
+**Variable child cost:** Parthenogenesis runs per-locus entropy (default 3%); operators {dup/del/ins} with literature weights. `[CCAMP]` costs more than `[CAMP]`. Grover amplifies **viable** candidates, not insertions specifically.
+
+**Lorenz strange attractors:** Training curriculum explicitly inspired by bounded chaotic orbits — not hill-climbing to a single optimum.
+
+### 2026-08-28 (e) — Partial topology death cascade (rev 2)
+
+**No free-floating axons.** Death leaves **partial topologies**: dangling axons with one uncapped end. Axons subject to death cascade — both-end-dead axon prunes; one-end-live **draws transit basal from downstream cell** (proposed `kAxonTransitBasalCostPerTick`) accelerating collapse when upstream flow stops.
+
+**HGT dock:** entropy at **uncapped end brushes neuron** — not field blob, not live-live bump. Grover `{P,M,C,A}` floor confirmed for eventual birth collapse.
+
+### 2026-08-28 (f) — HGT-INSERTION.md consolidated spec
+
+Authoritative design: [HGT-INSERTION.md](HGT-INSERTION.md) — two-layer HGT (H0 chemical + H1/H2 structural INSERTION), death cascade partial topology, axon transit basal, rejected models, constants, test plan, bibliography.

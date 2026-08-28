@@ -6,6 +6,7 @@
 #include "sim/Energon.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/OrganismHgt.hpp"
 #include "sim/OrganismInternal.hpp"
 #include "sim/OrganismMouth.hpp"
 #include "sim/EnergonConveyance.hpp"
@@ -90,6 +91,10 @@ void Organism::metabolise(const BarrenWorld& world, float cellSize, float height
   }
 
   updateKinematics(world, cellSize, heightScale);
+}
+
+void Organism::tickAxonTransitBasal() {
+  evolab::tickAxonTransitBasal(*this);
 }
 
 void Organism::tickNeuronViability(EnergonField& field) {

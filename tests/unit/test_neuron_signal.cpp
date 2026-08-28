@@ -34,6 +34,26 @@ TEST_CASE("mouth fuel confidence maps store fill to 0-7", "[neuron_signal]") {
   REQUIRE(evolab::mouthFuelConfidence(mouth) == evolab::kNeuronConfidenceMax);
 }
 
+TEST_CASE("mouth outbound caps low on distress-heavy diet despite full store", "[neuron_signal]") {
+  evolab::SkeletonNode mouth;
+  mouth.neuron = evolab::NeuronType::Mouth;
+  mouth.store.resize(evolab::kNeuronConfidenceFullFuelBytes);
+
+  for (int i = 0; i < 24; ++i) {
+    evolab::recordMouthDietBite(mouth, evolab::EnergonOrigin::Cloaca, evolab::CloacaBand::Distress);
+  }
+
+  REQUIRE(evolab::mouthFuelConfidence(mouth) == evolab::kNeuronConfidenceMax);
+  REQUIRE(evolab::mouthOutboundConfidence(mouth) <= 2);
+}
+
+TEST_CASE("mouth outbound matches fuel when no diet history", "[neuron_signal]") {
+  evolab::SkeletonNode mouth;
+  mouth.neuron = evolab::NeuronType::Mouth;
+  mouth.store.resize(evolab::kMouthLocalStoreMaxBytes);
+  REQUIRE(evolab::mouthOutboundConfidence(mouth) == evolab::mouthFuelConfidence(mouth));
+}
+
 TEST_CASE("actuator activity confidence scales with stroke payment", "[neuron_signal]") {
   REQUIRE(evolab::actuatorActivityConfidence(false, 0) == 0);
   REQUIRE(evolab::actuatorActivityConfidence(true, 0) == 0);
@@ -45,7 +65,7 @@ TEST_CASE("neuron confidence role labels describe analog semantics", "[neuron_si
   REQUIRE(std::string(evolab::neuronConfidenceRoleLabel(evolab::NeuronType::Perceptor)) ==
           "approach/avoid");
   REQUIRE(std::string(evolab::neuronConfidenceRoleLabel(evolab::NeuronType::Mouth)) ==
-          "fuel/satiation");
+          "fuel/diet satiation");
   REQUIRE(std::string(evolab::neuronConfidenceRoleLabel(evolab::NeuronType::Actuator)) ==
           "flagella activity");
 }

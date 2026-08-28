@@ -133,8 +133,12 @@ void emitOutboundConfidence(Organism& organism, std::uint32_t srcNodeId, std::ui
     if (axon.srcNodeId != srcNodeId) {
       continue;
     }
-    const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
-    if (dst == nullptr || !dst->alive || !dstNeuronAllowed(dst->neuron, allowedDst, allowedCount)) {
+    const     SkeletonNode* dst = organism.findNode(axon.dstNodeId);
+    if (dst == nullptr || !dst->alive || axon.uncappedNodeId == axon.dstNodeId ||
+        !dstNeuronAllowed(dst->neuron, allowedDst, allowedCount)) {
+      continue;
+    }
+    if (axon.uncappedNodeId == axon.srcNodeId) {
       continue;
     }
     writeAxonConfidence(axon, confidence, simTick);

@@ -1,46 +1,53 @@
 # Evo-Lab
 
-A small **virtual evolutionary laboratory** in a procedural **3D tidal world**. Watch **Noms** — the things that **nom** — swim, drift, and (eventually) evolve in an early-Earth-style shallow sea.
+A **virtual evolutionary laboratory** in a procedural **3D tidal world**. Watch **Noms** — the things that **nom** — swim, starve, die, and begin to **exchange wiring** in an early-Earth-style shallow sea.
 
-This repo is **public work-in-progress**: cute, experimental, and meant to be fun to run and poke at. APIs and behaviour will change.
+Public **work-in-progress**: experimental, fun to run, behaviour and APIs will change. See [docs/MARKETING-COMMS.md](docs/MARKETING-COMMS.md) for visual language and [docs/HGT-INSERTION.md](docs/HGT-INSERTION.md) for the latest evolution mechanics.
+
+![CAMP Nom lifecycle: full topology, partial decomposition, death-feast INSERTION](assets/docs/hgt-camp-nom-lifecycle.png)
 
 ## What are Noms?
 
-**Noms** is the umbrella name for everything in the wet layer that exists mainly to **nom**:
+**Noms** is the umbrella name for wet-layer life that exists mainly to **nom**:
 
 | Kind | What it is |
 |------|------------|
-| **Organisms** | Structured life — **CAMP** chain (Perceptor, Mouth, Computer, Actuator), bones, neural links |
-| **Energon** | Byte-string food — sunfall rain, signal trails, fragments |
+| **Organisms** | Structured life — **CAMP** chain (Perceptor, Mouth, Computer, Actuator), Y-star skeleton, 12 neural axons |
+| **Energon** | Byte-string food — sunfall rain, cloaca trails, corpse fragments |
 
-Energon is still the technical term for the food substrate; **Nom** is the friendly collective when we mean “stuff in the water that eats or gets eaten.”
+**Energon** is the technical food substrate; **Nom** is the friendly collective.
 
 ## Current snapshot (Phase 2.x)
 
-- Procedural heightmap terrain with **global tides** and hydraulic spill/lake rules
-- **Water-column bands** — dry / benthic / shallow / pelagic / open deep
-- **CAMP Nom** — Perceptor scans, Mouth feeds, Computer digests/dispatches hub fuel, Actuator propels; universal 0–7 confidence bytes on all neural axons
-- Dev archetypes via CLI: stem cells, pure actuator
-- Interactive **SDL + OpenGL** viewer (default: ~60 CAMP Noms on wet terrain)
-- **Catch2** unit tests + headless smoke test
+- Procedural heightmap terrain with **global tides**, hydrology, and water-column bands (dry → open deep)
+- **CAMP Nom** — P scans, M feeds (with postingestive diet / gag reflex), C hub digests & dispatches, A propels; universal **0–7 confidence** bytes on neural axons
+- **Horizontal gene transfer (R0)** — death leaves **partial topology** (dangling axons); rare **uncapped-end INSERTION** when another Nom brushes the open stub at a corpse (**death feast**)
+- **Axon transit basal** — idle/dangling wires still drain fuel from survivors
+- Interactive **SDL + OpenGL** viewer (default ~60 CAMP Noms on wet terrain)
+- **Catch2** unit tests (153+) including statistical **death feast** dock calibration
+- Headless smoke test
 
-**Not yet:** mating/genetics, Hebbian trust updates, temporal chemotaxis gradient, Computer neuron.
+**Not yet:** parthenogenesis / vertical reproduction, Grover birth floor, geography curriculum, full genotype string evolution.
 
 ## Design documentation
 
-- **[docs/DESIGN-NOTES.md](docs/DESIGN-NOTES.md)** — architecture, Noms, water bands, trust/chaos, roadmap
-- **[docs/TESTING-PHASE0.md](docs/TESTING-PHASE0.md)** — barren-world verification; Phase 2.x tests use `[water]`, `[chaos]`, `[nom]` filters
+| Doc | Contents |
+|-----|----------|
+| [docs/DESIGN-NOTES.md](docs/DESIGN-NOTES.md) | Architecture, metabolism, trust/chaos |
+| [docs/HGT-INSERTION.md](docs/HGT-INSERTION.md) | HGT + INSERTION spec (R0) |
+| [docs/EVOLUTION.md](docs/EVOLUTION.md) | Rollout plan, literature, parthenogenesis economics |
+| [docs/MARKETING-COMMS.md](docs/MARKETING-COMMS.md) | Public visual language & tone |
+| [docs/KINEMATICS.md](docs/KINEMATICS.md) | Skeleton FK / bundle gaps |
 
 ## Requirements
 
 - **CMake** 3.20+
 - **C++20** compiler
-- Windows build tested with **MinGW** (WinLibs LLVM); other platforms may work with minor CMake tweaks
+- Windows build tested with **MinGW** (WinLibs LLVM)
 
 ## Build
 
 ```powershell
-# Windows example (one-time tool install: Kitware.CMake + BrechtSanders.WinLibs.POSIX.UCRT.LLVM)
 cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target evo-lab evo-lab-tests
 ctest --test-dir build --output-on-failure
@@ -53,46 +60,44 @@ ctest --test-dir build --output-on-failure
 # optional: --seed 42 --resolution 128 --archetype nom --nom-count 60
 ```
 
-Window title reflects the selected archetype (default **CAMP Nom**). Hover a Nom for architecture readout.
+**Archetypes:** `nom` (default CAMP), `stem`, `actuator`
 
-**Archetypes:** `nom` (default), `stem`, `actuator`
+**Controls:** drag = orbit · scroll = zoom · **Space** = pause · **R** = regenerate world
 
-**Controls:** drag = orbit · scroll = zoom · **Space** = pause sim/tide · **R** = regenerate world
+Hover a Nom for live inspector readout (P/M/C/A stores, axon signals, focus).
 
 ## Tests
 
 ```powershell
-.\build\tests\evo-lab-tests.exe "[water]"
-.\build\tests\evo-lab-tests.exe "[chaos]"
+.\build\tests\evo-lab-tests.exe "[hgt]"
+.\build\tests\evo-lab-tests.exe "[death_feast]"   # rub-until-fire INSERTION calibration
 .\build\tests\evo-lab-tests.exe "[nom]"
+.\build\tests\evo-lab-tests.exe "[water]"
 ```
 
-Headless smoke (no GPU required):
+Headless (no GPU):
 
 ```powershell
 .\build\src\evo-lab.exe --headless --frames 120 --seed 42 --exit
 ```
 
-## Contributing
-
-Issues and PRs welcome. This is an early-stage research toy — prefer small, tested changes. Run `ctest` before opening a PR.
-
-Please do **not** commit secrets, API keys, or machine-specific paths.
-
 ## Project layout
 
 | Path | Role |
 |------|------|
-| `src/sim/` | World, tides, hydrology, Noms, energon, organisms |
-| `src/game/` | Terrain mesh, renderer, HUD |
-| `src/app/` | `evo-lab` entry point |
-| `engine/`, `platform/` | Rendering and OS glue |
+| `src/sim/` | World, tides, Noms, energon, HGT, organisms |
+| `src/game/` | Terrain, renderer, HUD, inspector |
+| `assets/docs/` | Public diagrams |
 | `tests/` | Catch2 unit tests |
+
+## Contributing
+
+Issues and PRs welcome. Prefer small, tested changes — run `ctest` before opening a PR. Do not commit secrets or machine-specific paths.
 
 ## License
 
-No `LICENSE` file in the repo yet — treat the code as **all rights reserved** until a license is added. If you want to fork or redistribute, open an issue or contact the maintainer.
+No `LICENSE` file yet — treat code as **all rights reserved** until a license is added. Open an issue before redistributing.
 
-## Stack (planned / partial)
+## Stack
 
-C++ · CMake · SDL2 · OpenGL · Catch2 · (future) Box2D · EnTT · Dear ImGui
+C++ · CMake · SDL2 · OpenGL · Catch2

@@ -6,6 +6,7 @@
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuronSignal.hpp"
+#include "sim/NeuralAxon.hpp"
 #include "sim/CellPopulation.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
@@ -611,7 +612,10 @@ TEST_CASE("starved actuator neuron dies and releases energon", "[nom]") {
   organism.tickNeuronViability(energon);
 
   REQUIRE(!actuator->alive);
-  REQUIRE(organism.findNeuralAxon(2, 4) == nullptr);
+  const evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
+  REQUIRE(mToA != nullptr);
+  REQUIRE(evolab::axonIsDangling(*mToA));
+  REQUIRE(mToA->uncappedNodeId == 4);
   REQUIRE(organism.alive);
 }
 

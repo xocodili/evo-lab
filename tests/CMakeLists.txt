@@ -28,6 +28,7 @@ add_executable(evo-lab-tests
   unit/test_neuron_trust.cpp
   unit/test_energon_conveyance.cpp
   unit/test_regulation_satiety.cpp
+  unit/test_hgt_insertion.cpp
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp
   unit/test_hydrology.cpp

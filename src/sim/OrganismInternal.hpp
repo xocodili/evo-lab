@@ -21,6 +21,7 @@ void creditMouthStore(SkeletonNode& node, EnergonField& field, std::uint8_t byte
                       std::uint32_t units);
 void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float radius,
                    std::uint64_t simTick, const FeedIntent* pmaFeedIntent);
+void killNeuron(Organism& organism, SkeletonNode& node, EnergonField& field);
 void tickNeuronViability(Organism& organism, EnergonField& field);
 void updateOrganismHeading(Organism& organism, const AdvectionVelocity& velocity,
                            const EnergonField& energon, float cellSize);

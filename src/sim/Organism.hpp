@@ -57,6 +57,13 @@ struct SkeletonNode {
 
   bool ateThisTick = false;
 
+  // Rolling diet composition (EMA per bite category) — postingestive confirmation for P→M prediction.
+  float mouthDietSunfallEma = 0.0f;
+  float mouthDietFragmentEma = 0.0f;
+  float mouthDietCloacaDistressEma = 0.0f;
+  float mouthDietCloacaBaselineEma = 0.0f;
+  float mouthDietCloacaMateEma = 0.0f;
+
   std::uint8_t lastEmittedByte = 0;
 
   // Local perceptor focus (valid when neuron == Perceptor).
@@ -203,6 +210,7 @@ public:
   void metabolise(const BarrenWorld& world, float cellSize, float heightScale);
 
   void tickNeuronViability(EnergonField& field);
+  void tickAxonTransitBasal();
 
   void feed(EnergonField& field, float cellSize, std::uint64_t simTick = 0);
 

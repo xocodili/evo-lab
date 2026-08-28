@@ -8,6 +8,10 @@
 
 namespace evolab {
 
+class Organism;
+struct SkeletonNode;
+enum class NeuronType : std::uint8_t;
+
 struct SignalPacket {
   std::uint8_t byte = 0;
   bool valid = false;
@@ -27,8 +31,21 @@ struct NeuralAxon {
   SignalPacket lastReceived;
   std::uint8_t lastSentByte = 0;
 
+  // Partial topology (R0 HGT): open end at dead neuron pose; 0 = fully capped.
+  std::uint32_t uncappedNodeId = 0;
+  float uncappedWorldX = 0.0f;
+  float uncappedWorldZ = 0.0f;
+  std::uint8_t uncappedNeuronTypeRaw = 0;
+  std::uint16_t transitArrearsTicks = 0;
+
   NeuralAxon() { trustBelieveByConfidence.fill(kTrustBaseline); }
 };
+
+bool axonIsDangling(const NeuralAxon& axon);
+bool axonEndpointLive(const Organism& organism, const NeuralAxon& axon, bool isSrc);
+std::uint32_t axonLiveEndNodeId(const Organism& organism, const NeuralAxon& axon);
+void axonUncappedWorldPos(const NeuralAxon& axon, float& wx, float& wz);
+void transitionAxonsOnNeuronDeath(Organism& organism, const SkeletonNode& deadNode);
 
 float axonTrustScale(std::uint16_t trust);
 
@@ -43,6 +60,7 @@ int axonFeedBandwidth(const NeuralAxon& axon);
 bool axonSignalGateOpen(const NeuralAxon& axon);
 
 bool axonMarkedForPruning(const NeuralAxon& axon);
+bool axonMarkedForTransitPrune(const NeuralAxon& axon);
 
 // Developmental baseline (100%) plus ±3% jitter on axon-side parameters only.
 void initializeDevelopmentalAxonTrust(NeuralAxon& axon, std::mt19937& rng);

@@ -271,7 +271,12 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
       for (const NeuralAxon& axon : organism.neuralAxons) {
         const SkeletonNode* src = organism.findNode(axon.srcNodeId);
         const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
-        if (src == nullptr || dst == nullptr) {
+        const bool srcDangling = axon.uncappedNodeId == axon.srcNodeId;
+        const bool dstDangling = axon.uncappedNodeId == axon.dstNodeId;
+        if (!srcDangling && src == nullptr) {
+          continue;
+        }
+        if (!dstDangling && dst == nullptr) {
           continue;
         }
         float sx = 0.0f;
@@ -280,8 +285,20 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
         float dx = 0.0f;
         float dy = 0.0f;
         float dz = 0.0f;
-        visualPos(*src, sx, sy, sz);
-        visualPos(*dst, dx, dy, dz);
+        if (srcDangling) {
+          sx = axon.uncappedWorldX;
+          sz = axon.uncappedWorldZ;
+          sy = (src != nullptr ? src->worldY : 0.0f) + 0.06f;
+        } else {
+          visualPos(*src, sx, sy, sz);
+        }
+        if (dstDangling) {
+          dx = axon.uncappedWorldX;
+          dz = axon.uncappedWorldZ;
+          dy = (dst != nullptr ? dst->worldY : 0.0f) + 0.06f;
+        } else {
+          visualPos(*dst, dx, dy, dz);
+        }
         const float worldPerPx = worldUnitsPerPixel(mvp, viewportW, viewportH, sx, sy, sz);
         const float halfWidth = (kNeuralAxonWidthPx * 0.5f) * worldPerPx;
         const float segDx = dx - sx;

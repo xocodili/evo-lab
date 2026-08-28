@@ -5,6 +5,7 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuralAxon.hpp"
@@ -34,6 +35,8 @@ enum class MouthContactKind : std::uint8_t { None = 0, Food, EmptyString };
 struct MouthContact {
   MouthContactKind kind = MouthContactKind::None;
   std::uint32_t blobId = 0;
+  EnergonOrigin origin = EnergonOrigin::Sunfall;
+  CloacaBand cloacaBand = CloacaBand::None;
 };
 
 void consumeBytes(std::vector<std::uint8_t>& storage, std::uint32_t count) {
@@ -77,7 +80,7 @@ void killNeuron(Organism& organism, SkeletonNode& node, EnergonField& field) {
     releaseBytesAtNode(node, field, node.store);
   }
 
-  removeNeuralAxonsForNode(organism, node.id);
+  transitionAxonsOnNeuronDeath(organism, node);
   node.alive = false;
   node.neuron = NeuronType::None;
   node.ateThisTick = false;
@@ -164,6 +167,8 @@ MouthContact findMouthContact(const EnergonField& field, float wx, float wz, flo
         bestDistSq = distSq;
         best.kind = MouthContactKind::Food;
         best.blobId = blob.id;
+        best.origin = blob.origin;
+        best.cloacaBand = cloacaBandFromBlob(blob);
         foundFood = true;
       }
       return;
@@ -225,6 +230,8 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
   if (!bite.tookByte) {
     return;
   }
+
+  recordMouthDietBite(node, contact.origin, contact.cloacaBand);
 
   const std::uint32_t gross = kEnergonUnitsPerByte;
   const std::uint32_t net = gross > kBiteCost ? gross - kBiteCost : 0u;

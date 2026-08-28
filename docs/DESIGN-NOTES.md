@@ -79,7 +79,7 @@ String `PMCA` must map to runnable phenotype. Recommended v1:
 2. Wire `neuron[i] → neuron[i+1]` (signal + energy channels).
 3. Attach P to world sensors (focus); M to ingest; A to locomotion; C to storage/expel.
 
-**Viability predicate (minimum):** contains ≥1 P, ≥1 M, ≥1 C; length within bounds; development succeeds; axon targets reference valid instantiated nodes (when axons active). Inviable → stillbirth (partial energy return to parents optional).
+**Viability predicate (minimum):** contains ≥1 P, ≥1 M, ≥1 C, **≥1 A**; length within bounds; development succeeds; axon targets reference valid instantiated nodes (when axons active). Inviable → stillbirth. **Grover/QIEA floor:** same check — ensures no collapsed child lacks a module type (EVOLUTION.md §4.4, §10.5). Duplicated loci (`[CCAMP]`) pass; `[AMP]` fails.
 
 These rules are **operational floors**—candidates must pass them *before* entering the tank (seed batch) or *after* mating collapse (offspring). Ecology (tide, energon, starvation, stranding) is the **long oracle** applied only to collapsed individuals.
 
@@ -604,6 +604,25 @@ Isolation is **dynamic**: low tide → refugia; high tide → gene flow. Mate **
 ---
 
 ## 4. Evolution & Genetics
+
+See **[HGT-INSERTION.md](HGT-INSERTION.md)** for full evidence-based R0 spec and **[EVOLUTION.md](EVOLUTION.md)** for rollout, parthenogenesis, geography. Brief pointer:
+
+- Partial topology death cascade; uncapped-end INSERTION; axon transit basal
+- HGT before parthenogenesis (pre-LUCA literature)
+- Grover `{P,M,C,A}` floor at birth (eventual)
+
+### 4.0 Parthenogenesis energon budget (proposed)
+
+First reproductive closure is **asexual split** with **variable cost** (see [EVOLUTION.md §4](EVOLUTION.md)). Baseline `[CAMP]` anchor:
+
+| Line item | Bytes |
+|-----------|-------|
+| Offspring endowment (median) | 172,800 (2 fuel-days) |
+| Construction overhead (baseline) | 86,400 |
+| **Baseline debit** | **~259k B** |
+| Parent reserve after | ≥ 86,400 |
+
+**Duplication raises cost:** `[CCAMP]` child ≈ 1.25× baseline. Gates: age ≥ 600 ticks + solvency for **drawn** child bill. Training curriculum inspired by **Lorenz strange attractors** (EVOLUTION.md §2.3). **R0 insertion (HGT) precedes R1 parthenogenesis** per pre-LUCA literature.
 
 ### 4.1 Classical GA (baseline)
 

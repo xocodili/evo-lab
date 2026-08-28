@@ -121,7 +121,7 @@ void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick) {
     if (!node.alive || node.neuron != NeuronType::Mouth) {
       continue;
     }
-    emitOutboundConfidence(organism, node.id, mouthFuelConfidence(node), simTick,
+    emitOutboundConfidence(organism, node.id, mouthOutboundConfidence(node), simTick,
                            kMouthAllowedDst, std::size(kMouthAllowedDst));
   }
 

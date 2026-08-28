@@ -4,6 +4,7 @@
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/NeuronTick.hpp"
+#include "sim/OrganismHgt.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WaterColumn.hpp"
@@ -266,10 +267,14 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   for (Organism& organism : organisms_) {
     organism.tickNeuronViability(energon);
   }
+  for (Organism& organism : organisms_) {
+    organism.tickAxonTransitBasal();
+  }
   energon.purgeDepletedBlobs();
   for (Organism& organism : organisms_) {
     organism.transferEnergy(energon, cellSize, world.tickCount());
   }
+  tickHgtDockPass(organisms_, cellSize, world.tickCount());
   for (Organism& organism : organisms_) {
     organism.signal(energon, world.tickCount());
   }

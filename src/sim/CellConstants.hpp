@@ -33,6 +33,10 @@ inline constexpr std::uint8_t kMouthInhibitActuatorConfidence = 5u;
 inline constexpr float kActuatorBaselineCrawlDrive = 0.35f;
 inline constexpr float kMouthBaselineFeedDrive = 0.35f;
 inline constexpr float kMouthFeedIntentMinBite = 0.08f;
+// Mouth diet EMA: postingestive palatability / gag reflex (CTA analogue — see EVOLUTION.md §1.3).
+inline constexpr float kMouthDietEmaAlpha = 0.18f;
+inline constexpr float kMouthDietGagDistressThreshold = 0.55f;
+inline constexpr float kMouthDietPalatableSunfallThreshold = 0.45f;
 // Minimum integrated motor drive (× max stroke bytes) before paying fuel.
 inline constexpr float kActuatorMotorIntentMinStroke = 0.08f;
 // Perceptor world-focus outbound uses the same encoding (0=avoid … 7=approach).
@@ -74,6 +78,11 @@ inline constexpr float kPerceptNightChaosGain = 2.5f;
 inline constexpr float kPerceptFalseNegativeNightRate = 0.12f;
 inline constexpr float kOrganismCampReflexMinValence = 0.15f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
+// R0 HGT: idle/dangling axon line maintenance debited from downstream dst (or live cap if dst dead).
+inline constexpr std::uint32_t kAxonTransitBasalCostPerTick = 1u;
+// Uncapped-end INSERTION: brush radius and dock entropy (see docs/HGT-INSERTION.md).
+inline constexpr float kAxonDockRadiusFactor = 0.5f;
+inline constexpr std::uint32_t kHgtInsertionCostBytes = 4u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.
 inline constexpr float kMouthContactRadiusFactor = 0.65f;

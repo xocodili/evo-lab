@@ -82,7 +82,8 @@ int collectOutboundRoutes(Organism& organism, const SkeletonNode& src, std::uint
                           OutboundRoute* routes) {
   int routeCount = 0;
   for (NeuralAxon& axon : organism.neuralAxons) {
-    if (axon.srcNodeId != src.id || routeCount >= kMaxOutboundRoutes) {
+    if (axon.srcNodeId != src.id || routeCount >= kMaxOutboundRoutes ||
+        axon.uncappedNodeId == axon.srcNodeId) {
       continue;
     }
     SkeletonNode* dst = organism.findNode(axon.dstNodeId);

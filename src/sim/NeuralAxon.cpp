@@ -1,7 +1,9 @@
 #include "sim/NeuralAxon.hpp"
 
+#include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/NeuronSignal.hpp"
+#include "sim/Organism.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -76,7 +78,67 @@ bool axonSignalGateOpen(const NeuralAxon& axon) {
 }
 
 bool axonMarkedForPruning(const NeuralAxon& axon) {
-  return axonBelieveChannelDead(axon) && axon.trustFeed == 0;
+  return (axonBelieveChannelDead(axon) && axon.trustFeed == 0) ||
+         axonMarkedForTransitPrune(axon);
+}
+
+bool axonMarkedForTransitPrune(const NeuralAxon& axon) {
+  return axon.transitArrearsTicks >= kNeuronBasalGraceTicks;
+}
+
+bool axonIsDangling(const NeuralAxon& axon) {
+  return axon.uncappedNodeId != 0;
+}
+
+bool axonEndpointLive(const Organism& organism, const NeuralAxon& axon, bool isSrc) {
+  const std::uint32_t nodeId = isSrc ? axon.srcNodeId : axon.dstNodeId;
+  if (axon.uncappedNodeId == nodeId) {
+    return false;
+  }
+  const SkeletonNode* node = organism.findNode(nodeId);
+  return node != nullptr && node->alive;
+}
+
+std::uint32_t axonLiveEndNodeId(const Organism& organism, const NeuralAxon& axon) {
+  if (axonEndpointLive(organism, axon, true)) {
+    return axon.srcNodeId;
+  }
+  if (axonEndpointLive(organism, axon, false)) {
+    return axon.dstNodeId;
+  }
+  return 0;
+}
+
+void axonUncappedWorldPos(const NeuralAxon& axon, float& wx, float& wz) {
+  wx = axon.uncappedWorldX;
+  wz = axon.uncappedWorldZ;
+}
+
+void transitionAxonsOnNeuronDeath(Organism& organism, const SkeletonNode& deadNode) {
+  for (auto it = organism.neuralAxons.begin(); it != organism.neuralAxons.end();) {
+    NeuralAxon& axon = *it;
+    const bool touchesDead =
+        axon.srcNodeId == deadNode.id || axon.dstNodeId == deadNode.id;
+    if (!touchesDead) {
+      ++it;
+      continue;
+    }
+
+    const std::uint32_t otherId =
+        axon.srcNodeId == deadNode.id ? axon.dstNodeId : axon.srcNodeId;
+    const SkeletonNode* other = organism.findNode(otherId);
+    if (other == nullptr || !other->alive || axon.uncappedNodeId != 0) {
+      it = organism.neuralAxons.erase(it);
+      continue;
+    }
+
+    axon.uncappedNodeId = deadNode.id;
+    axon.uncappedWorldX = deadNode.worldX;
+    axon.uncappedWorldZ = deadNode.worldZ;
+    axon.uncappedNeuronTypeRaw = static_cast<std::uint8_t>(deadNode.neuron);
+    axon.transitArrearsTicks = 0;
+    ++it;
+  }
 }
 
 void initializeDevelopmentalAxonTrust(NeuralAxon& axon, std::mt19937& rng) {

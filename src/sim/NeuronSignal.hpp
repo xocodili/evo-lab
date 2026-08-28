@@ -1,6 +1,8 @@
 #pragma once
 
 #include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
+#include "sim/Energon.hpp"
 #include "sim/NeuralAxon.hpp"
 
 #include <cstddef>
@@ -31,6 +33,12 @@ std::uint8_t fuelStoreToConfidence(std::size_t storeBytes,
 
 // M outbound: 0 = starving, 7 = full / providing fuel.
 std::uint8_t mouthFuelConfidence(const SkeletonNode& mouth);
+
+// Update mouth diet EMA after a successful bite (origin + cloaca band when applicable).
+void recordMouthDietBite(SkeletonNode& mouth, EnergonOrigin origin, CloacaBand cloacaBand);
+
+// M→* outbound: fuel/satiation modulated by postingestive diet (gag reflex on distress cloaca).
+std::uint8_t mouthOutboundConfidence(const SkeletonNode& mouth);
 
 // A outbound: 0 = idle flagella, 7 = full stroke (scales with stroke bytes paid).
 std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeBytesPaid);
