@@ -6,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <string>
 
 TEST_CASE("neuron confidence byte range is shared by all neuron types", "[neuron_signal]") {
@@ -24,13 +25,17 @@ TEST_CASE("mouth fuel confidence maps store fill to 0-7", "[neuron_signal]") {
   mouth.store.clear();
   REQUIRE(evolab::mouthFuelConfidence(mouth) == 0);
 
-  mouth.store.resize(evolab::kMouthLocalStoreMaxBytes);
+  mouth.store.resize(evolab::kMouthLocalStoreMaxBytes / 2);
+  mouth.mouthChewFill = static_cast<std::uint32_t>(evolab::kMouthLocalStoreMaxBytes / 2);
   REQUIRE(evolab::mouthFuelConfidence(mouth) == 4);
 
-  mouth.store.resize(evolab::kNeuronConfidenceFullFuelBytes / 4);
-  REQUIRE(evolab::mouthFuelConfidence(mouth) >= 5);
+  mouth.mouthChewFill = static_cast<std::uint32_t>(std::lround(
+      static_cast<float>(evolab::kMouthLocalStoreMaxBytes) *
+      static_cast<float>(evolab::kMouthInhibitActuatorConfidence) /
+      static_cast<float>(evolab::kNeuronConfidenceMax)));
+  REQUIRE(evolab::mouthFuelConfidence(mouth) >= evolab::kMouthInhibitActuatorConfidence);
 
-  mouth.store.resize(evolab::kNeuronConfidenceFullFuelBytes);
+  mouth.mouthChewFill = evolab::kMouthLocalStoreMaxBytes;
   REQUIRE(evolab::mouthFuelConfidence(mouth) == evolab::kNeuronConfidenceMax);
 }
 
@@ -41,6 +46,7 @@ TEST_CASE("mouth outbound caps low on distress-heavy diet despite full store", "
 
   for (int i = 0; i < 24; ++i) {
     evolab::recordMouthDietBite(mouth, evolab::EnergonOrigin::Cloaca, evolab::CloacaBand::Distress);
+    evolab::creditMouthChew(mouth, evolab::kMouthLocalStoreMaxBytes);
   }
 
   REQUIRE(evolab::mouthFuelConfidence(mouth) == evolab::kNeuronConfidenceMax);
@@ -51,6 +57,7 @@ TEST_CASE("mouth outbound matches fuel when no diet history", "[neuron_signal]")
   evolab::SkeletonNode mouth;
   mouth.neuron = evolab::NeuronType::Mouth;
   mouth.store.resize(evolab::kMouthLocalStoreMaxBytes);
+  mouth.mouthChewFill = evolab::kMouthLocalStoreMaxBytes;
   REQUIRE(evolab::mouthOutboundConfidence(mouth) == evolab::mouthFuelConfidence(mouth));
 }
 

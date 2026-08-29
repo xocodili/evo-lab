@@ -79,24 +79,35 @@ bool tryPayInsertionCost(Organism& organism, SkeletonNode& node) {
   return tryPayBytesFromNode(organism, node, kHgtInsertionCostBytes);
 }
 
-void completeInternalDock(Organism& organism, NeuralAxon& axon, std::uint32_t dockNodeId) {
+bool completeInternalDock(Organism& organism, NeuralAxon& axon, std::uint32_t dockNodeId) {
   if (axon.uncappedNodeId == axon.srcNodeId) {
     axon.srcNodeId = dockNodeId;
   } else if (axon.uncappedNodeId == axon.dstNodeId) {
     axon.dstNodeId = dockNodeId;
+  } else {
+    return false;
   }
   axon.uncappedNodeId = 0;
   axon.uncappedNeuronTypeRaw = 0;
   axon.transitArrearsTicks = 0;
+  return true;
 }
 
-const SkeletonNode* findNeuronOfType(const Organism& organism, NeuronType type) {
+const SkeletonNode* findClosestNeuronOfType(const Organism& organism, NeuronType type, float refX,
+                                            float refZ) {
+  const SkeletonNode* closest = nullptr;
+  float closestDistSq = 0.0f;
   for (const SkeletonNode& node : organism.nodes) {
-    if (node.alive && node.neuron == type) {
-      return &node;
+    if (!node.alive || node.neuron != type) {
+      continue;
+    }
+    const float distSq = distSqXZ(refX, refZ, node.worldX, node.worldZ);
+    if (closest == nullptr || distSq < closestDistSq) {
+      closest = &node;
+      closestDistSq = distSq;
     }
   }
-  return nullptr;
+  return closest;
 }
 
 NeuralAxon cloneAxonMotif(const NeuralAxon& stub, std::uint32_t newSrc, std::uint32_t newDst) {
@@ -112,8 +123,16 @@ NeuralAxon cloneAxonMotif(const NeuralAxon& stub, std::uint32_t newSrc, std::uin
   return edge;
 }
 
+void retireForeignDonorStub(NeuralAxon& stub) {
+  stub.uncappedNodeId = 0;
+  stub.uncappedNeuronTypeRaw = 0;
+  stub.transitArrearsTicks = kNeuronBasalGraceTicks;
+  setAllBelieveTrust(stub, 0);
+  stub.trustFeed = 0;
+}
+
 bool completeForeignDock(Organism& donor, NeuralAxon& stub, Organism& recipient,
-                         std::uint32_t dockNodeId) {
+                         std::uint32_t dockNodeId, float uncappedX, float uncappedZ) {
   const std::uint32_t liveEndId = axonLiveEndNodeId(donor, stub);
   const SkeletonNode* liveEnd = donor.findNode(liveEndId);
   SkeletonNode* dockNode = recipient.findNode(dockNodeId);
@@ -122,7 +141,8 @@ bool completeForeignDock(Organism& donor, NeuralAxon& stub, Organism& recipient,
   }
 
   const NeuronType liveType = liveEnd->neuron;
-  const SkeletonNode* recipientLive = findNeuronOfType(recipient, liveType);
+  const SkeletonNode* recipientLive =
+      findClosestNeuronOfType(recipient, liveType, uncappedX, uncappedZ);
   if (recipientLive == nullptr) {
     return false;
   }
@@ -140,9 +160,7 @@ bool completeForeignDock(Organism& donor, NeuralAxon& stub, Organism& recipient,
   }
 
   recipient.neuralAxons.push_back(cloneAxonMotif(stub, newSrc, newDst));
-  stub.transitArrearsTicks = kNeuronBasalGraceTicks;
-  setAllBelieveTrust(stub, 0);
-  stub.trustFeed = 0;
+  retireForeignDonorStub(stub);
   return true;
 }
 
@@ -153,18 +171,17 @@ float effectiveDockRate(const HgtDockPassOptions& options) {
   return kAxonDockRate;
 }
 
-bool attemptUncappedDock(Organism& owner, NeuralAxon& axon, Organism& recipient,
-                          SkeletonNode& dockTarget, std::uint64_t simTick, float dockRate) {
+struct DockCandidate {
+  Organism* recipient = nullptr;
+  SkeletonNode* node = nullptr;
+  float distSq = 0.0f;
+};
+
+bool tryUncappedDock(Organism& owner, NeuralAxon& axon, Organism& recipient,
+                     SkeletonNode& dockTarget, float uncappedX, float uncappedZ) {
   const std::uint32_t liveEndId = axonLiveEndNodeId(owner, axon);
   if (liveEndId == 0 ||
       !compatibleDockTarget(axon, recipient, dockTarget, liveEndId)) {
-    return false;
-  }
-
-  std::mt19937 rng = chaosSpawnRng(simTick, static_cast<std::uint64_t>(owner.id) ^
-                                                static_cast<std::uint64_t>(dockTarget.id) ^
-                                                kChaosSaltHgtDock);
-  if (!chaosBernoulli(dockRate, rng)) {
     return false;
   }
 
@@ -179,11 +196,15 @@ bool attemptUncappedDock(Organism& owner, NeuralAxon& axon, Organism& recipient,
     if (!tryPayInsertionCost(owner, dockTarget)) {
       return false;
     }
-    completeInternalDock(owner, axon, dockTarget.id);
-    return true;
+    return completeInternalDock(owner, axon, dockTarget.id);
   }
 
-  return completeForeignDock(owner, axon, recipient, dockTarget.id);
+  return completeForeignDock(owner, axon, recipient, dockTarget.id, uncappedX, uncappedZ);
+}
+
+std::uint64_t axonDockSalt(const NeuralAxon& axon) {
+  return (static_cast<std::uint64_t>(axon.srcNodeId) << 32) |
+         static_cast<std::uint64_t>(axon.dstNodeId);
 }
 
 }  // namespace
@@ -228,10 +249,16 @@ void tickHgtDockPass(std::vector<Organism>& population, float cellSize, std::uin
         continue;
       }
 
+      const std::uint32_t liveEndId = axonLiveEndNodeId(owner, axon);
+      if (liveEndId == 0) {
+        continue;
+      }
+
       float uncappedX = 0.0f;
       float uncappedZ = 0.0f;
-      axonUncappedWorldPos(axon, uncappedX, uncappedZ);
+      axonUncappedWorldPos(owner, axon, uncappedX, uncappedZ);
 
+      DockCandidate best;
       for (Organism& recipient : population) {
         if (!recipient.alive) {
           continue;
@@ -241,18 +268,33 @@ void tickHgtDockPass(std::vector<Organism>& population, float cellSize, std::uin
           if (!node.alive || node.neuron == NeuronType::None) {
             continue;
           }
-          if (distSqXZ(uncappedX, uncappedZ, node.worldX, node.worldZ) > dockRadiusSq) {
+          if (!compatibleDockTarget(axon, recipient, node, liveEndId)) {
             continue;
           }
-          if (attemptUncappedDock(owner, axon, recipient, node, simTick, dockRate)) {
-            break;
+          const float distSq = distSqXZ(uncappedX, uncappedZ, node.worldX, node.worldZ);
+          if (distSq > dockRadiusSq) {
+            continue;
+          }
+          if (best.recipient == nullptr || distSq < best.distSq) {
+            best.recipient = &recipient;
+            best.node = &node;
+            best.distSq = distSq;
           }
         }
-
-        if (!axonIsDangling(axon)) {
-          break;
-        }
       }
+
+      if (best.recipient == nullptr || best.node == nullptr) {
+        continue;
+      }
+
+      std::mt19937 rng =
+          chaosSpawnRng(simTick, static_cast<std::uint64_t>(owner.id) ^ axonDockSalt(axon) ^
+                                    kChaosSaltHgtDock);
+      if (!chaosBernoulli(dockRate, rng)) {
+        continue;
+      }
+
+      tryUncappedDock(owner, axon, *best.recipient, *best.node, uncappedX, uncappedZ);
     }
   }
 }

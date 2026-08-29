@@ -29,6 +29,10 @@ add_executable(evo-lab-tests
   unit/test_energon_conveyance.cpp
   unit/test_regulation_satiety.cpp
   unit/test_hgt_insertion.cpp
+  unit/test_parthenogenesis.cpp
+  unit/test_debug_session.cpp
+  unit/test_cornucopia_chemotaxis.cpp
+  unit/test_nursery_mutant.cpp
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp
   unit/test_hydrology.cpp
@@ -47,4 +51,9 @@ catch_discover_tests(evo-lab-tests DISCOVERY_MODE PRE_TEST)
 add_test(
   NAME smoke_headless
   COMMAND evo-lab --headless --frames 120 --seed 42 --exit
+)
+
+add_test(
+  NAME smoke_headless_debug_session
+  COMMAND evo-lab --headless --debug 250 --frames 400 --seed 42 --exit
 )

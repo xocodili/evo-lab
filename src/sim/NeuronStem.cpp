@@ -2,11 +2,15 @@
 
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/Chaos.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/OrganismNeuron.hpp"
 #include "sim/WorldConstants.hpp"
+
+#include <algorithm>
+#include <random>
 
 namespace evolab {
 
@@ -74,6 +78,10 @@ bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
     }
     return true;
   }
+  if (organism.feedbagOracle && !organism.bodyStorage.empty()) {
+    consumeFuelBack(organism.bodyStorage, kStemCellBasalCostPerTick);
+    return true;
+  }
   if (node.neuron == NeuronType::Mouth && !organism.isCampNom() &&
       !organism.bodyStorage.empty()) {
     consumeFuelBack(organism.bodyStorage, kStemCellBasalCostPerTick);
@@ -94,7 +102,7 @@ void expelByteAtNode(const SkeletonNode& node, EnergonField& field, std::uint8_t
   fragment.y = node.worldY;
   fragment.grounded = true;
   fragment.onWet = true;
-  fragment.ttl = field.config().ttlWetSeconds * ttlScale;
+  energonAssignGroundedTtl(fragment, field.config(), true, ttlScale);
   energonBlobInitPoint(fragment);
   field.injectBlob(fragment);
 }
@@ -104,14 +112,37 @@ void releaseFuelAtNode(const SkeletonNode& node, EnergonField& field,
                        float ttlScale) {
   const float zOffset =
       origin == EnergonOrigin::Fragment ? kMouthContactRadiusFactor * 0.35f : 0.0f;
-  for (std::uint8_t byte : storage) {
-    expelByteAtNode(node, field, byte, origin, ttlScale, zOffset);
+  std::mt19937 rng(static_cast<std::uint32_t>(node.id * 2246822519u ^
+                                              static_cast<std::uint32_t>(storage.size())));
+
+  while (!storage.empty()) {
+    const int chunk = std::min(static_cast<int>(storage.size()), kEnergonMaxBytesPerBlob);
+    EnergonBlob blob;
+    blob.data = energonPackRawBytes(storage.data(), chunk);
+    blob.remaining = static_cast<std::uint16_t>(chunk);
+    blob.initialBytes = static_cast<std::uint8_t>(chunk);
+    blob.origin = origin;
+    blob.x = node.worldX;
+    blob.z = node.worldZ + kWorldCellSize * zOffset;
+    blob.y = node.worldY;
+    blob.grounded = true;
+    blob.onWet = true;
+    energonAssignGroundedTtl(blob, field.config(), true, ttlScale);
+
+    if (chunk > 1) {
+      std::uniform_real_distribution<float> headingDist(0.0f, kTwoPi);
+      energonBlobLayoutSegment(blob, kWorldCellSize, headingDist(rng));
+    } else {
+      energonBlobInitPoint(blob);
+    }
+
+    field.injectBlob(blob);
+    storage.erase(storage.begin(), storage.begin() + chunk);
   }
-  storage.clear();
 }
 
 void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick) {
-  if (!organism.isCampNom()) {
+  if (!organismUsesCampNeuronPhases(organism)) {
     return;
   }
 
@@ -137,7 +168,7 @@ void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick) {
 }
 
 void emitCampActuatorSignals(Organism& organism, std::uint64_t simTick) {
-  if (!organism.isCampNom()) {
+  if (!organismUsesCampNeuronPhases(organism)) {
     return;
   }
 

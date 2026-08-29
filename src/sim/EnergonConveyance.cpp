@@ -1,5 +1,6 @@
 #include "sim/EnergonConveyance.hpp"
 
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronFuel.hpp"
@@ -40,17 +41,17 @@ std::uint8_t routeSignalByte(const Organism& organism, const SkeletonNode& src) 
   }
 }
 
-float computerDispatchWeight(const Organism& organism, NeuronType dstType) {
+float computerDispatchWeight(const SkeletonNode& computer, NeuronType dstType) {
   std::uint8_t slot = 1;
   switch (dstType) {
     case NeuronType::Perceptor:
-      slot = organism.computerRegister[4];
+      slot = computer.computerRegister[4];
       break;
     case NeuronType::Mouth:
-      slot = organism.computerRegister[5];
+      slot = computer.computerRegister[5];
       break;
     case NeuronType::Actuator:
-      slot = organism.computerRegister[6];
+      slot = computer.computerRegister[6];
       break;
     default:
       return 0.0f;
@@ -73,7 +74,7 @@ float feedRouteWeight(const Organism& organism, const NeuralAxon& axon, const Sk
   const float believe = inboundAxonTrustWeight(axon, signalByte);
   float feed = axonTrustScale(axon.trustFeed) * axon.etaEnergy;
   if (src.neuron == NeuronType::Computer) {
-    feed *= organism.computerFeedGain * computerDispatchWeight(organism, dst.neuron);
+    feed *= src.computerFeedGain * computerDispatchWeight(src, dst.neuron);
   }
   return believe * feed * static_cast<float>(bandwidth);
 }
@@ -320,24 +321,26 @@ bool organismHasConveySurplus(const Organism& organism) {
 
 void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t simTick) {
   (void)field;
-  if (!organism.isCampNom() || !organismHasConveySurplus(organism)) {
+  if (!organismUsesCampNeuronPhases(organism) || !organismHasConveySurplus(organism)) {
     return;
   }
 
-  SkeletonNode* conveyNodes[] = {findNeuron(organism, NeuronType::Mouth),
-                                 findNeuron(organism, NeuronType::Computer),
-                                 findNeuron(organism, NeuronType::Perceptor),
-                                 findNeuron(organism, NeuronType::Actuator)};
-
   for (int pass = 0; pass < 2; ++pass) {
-    for (SkeletonNode* node : conveyNodes) {
-      if (node == nullptr) {
+    for (SkeletonNode& node : organism.nodes) {
+      if (!node.alive) {
         continue;
       }
-      if (node->neuron == NeuronType::Computer) {
-        conveyFromComputerHub(organism, *node, simTick);
-      } else {
-        conveyFromNode(organism, *node, simTick);
+      switch (node.neuron) {
+        case NeuronType::Computer:
+          conveyFromComputerHub(organism, node, simTick);
+          break;
+        case NeuronType::Mouth:
+        case NeuronType::Perceptor:
+        case NeuronType::Actuator:
+          conveyFromNode(organism, node, simTick);
+          break;
+        default:
+          break;
       }
     }
   }

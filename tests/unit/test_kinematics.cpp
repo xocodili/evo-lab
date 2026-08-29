@@ -1,4 +1,5 @@
 #include "engine/kinematics/ForwardKinematics.hpp"
+#include "engine/kinematics/ArticulatedDynamics.hpp"
 #include "engine/kinematics/JointConstraint.hpp"
 #include "engine/kinematics/KinematicLocalPose.hpp"
 #include "engine/kinematics/KinematicSkeleton.hpp"
@@ -144,6 +145,65 @@ TEST_CASE("engine translateNodesXZ moves every node equally", "[engine][kinemati
   REQUIRE(nodes[0].worldZ == Catch::Approx(0.75f));
   REQUIRE(nodes[1].worldX == Catch::Approx(4.5f));
   REQUIRE(nodes[1].worldZ == Catch::Approx(-2.25f));
+}
+
+TEST_CASE("articulated body integrates root velocity from impulse at child", "[engine][kinematics][dynamics]") {
+  const std::vector<KinematicBone> bones = {{1, 2, 1.0f, 0.0f}};
+  const KinematicSkeleton skeleton = KinematicSkeleton::buildFromBones(bones, 1);
+  std::array<KinematicNodePose, 2> nodes = {{
+      {1, 0.0f, 0.0f, 0.0f},
+      {2, 0.0f, 0.0f, 1.0f},
+  }};
+
+  evolab::engine::kinematics::ArticulatedBodyState state =
+      evolab::engine::kinematics::ArticulatedBodyState::zeros(skeleton.jointCount());
+  evolab::engine::kinematics::ExternalImpulse impulse;
+  impulse.nodeId = 2;
+  impulse.impulseX = 0.0f;
+  impulse.impulseZ = 0.05f;
+
+  evolab::engine::kinematics::ArticulatedStepParams params;
+  params.linearDrag = 0.0f;
+  params.invMass = 1.0f;
+  params.invInertia = 0.5f;
+
+  float heading = 0.0f;
+  REQUIRE(evolab::engine::kinematics::stepArticulatedBody(
+      skeleton, state, heading, std::span(nodes), std::span<const evolab::engine::kinematics::MuscleCommand>{},
+      std::span<const evolab::engine::kinematics::ExternalImpulse>(&impulse, 1), params,
+      [](float, float) { return 0.0f; }));
+
+  REQUIRE(nodes[0].worldZ == Catch::Approx(0.05f).margin(1e-4f));
+  REQUIRE(state.rootVelZ == Catch::Approx(0.05f).margin(1e-4f));
+}
+
+TEST_CASE("muscle PD bends joint toward target yaw delta", "[engine][kinematics][dynamics]") {
+  const std::vector<KinematicBone> bones = {{1, 2, 1.0f, 0.0f}};
+  KinematicSkeleton skeleton = KinematicSkeleton::buildFromBones(bones, 1);
+  std::array<KinematicNodePose, 2> nodes = {{
+      {1, 0.0f, 0.0f, 0.0f},
+      {2, 0.0f, 0.0f, 0.0f},
+  }};
+
+  evolab::engine::kinematics::ArticulatedBodyState state =
+      evolab::engine::kinematics::ArticulatedBodyState::zeros(skeleton.jointCount());
+  evolab::engine::kinematics::MuscleCommand muscle;
+  muscle.jointIndex = 1;
+  muscle.targetYawDelta = 0.35f;
+  muscle.stiffness = 0.45f;
+  muscle.damping = 0.1f;
+
+  float heading = 0.0f;
+  for (int tick = 0; tick < 40; ++tick) {
+    REQUIRE(evolab::engine::kinematics::stepArticulatedBody(
+        skeleton, state, heading, std::span(nodes),
+        std::span<const evolab::engine::kinematics::MuscleCommand>(&muscle, 1),
+        std::span<const evolab::engine::kinematics::ExternalImpulse>{},
+        evolab::engine::kinematics::ArticulatedStepParams{}, [](float, float) { return 0.0f; }));
+  }
+
+  REQUIRE(state.jointYawDelta[1] == Catch::Approx(0.35f).margin(0.08f));
+  REQUIRE(nodes[1].worldX == Catch::Approx(std::sin(0.35f)).margin(0.12f));
 }
 
 TEST_CASE("engine forward kinematics uses height callback per node", "[engine][kinematics]") {

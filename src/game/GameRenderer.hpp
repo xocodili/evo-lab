@@ -32,7 +32,7 @@ public:
   void drawEnergon(const std::vector<EnergonBlob>& blobs, const engine::OrbitCamera& camera,
                    int viewportW, int viewportH);
   void drawOrganisms(const std::vector<Organism>& organisms, const engine::OrbitCamera& camera,
-                     int viewportW, int viewportH);
+                     int viewportW, int viewportH, std::uint64_t simTick = 0);
 
 private:
   engine::Mat4 viewProjMatrix(const engine::OrbitCamera& camera, int viewportW, int viewportH) const;

@@ -1,4 +1,5 @@
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Energon.hpp"
@@ -33,10 +34,18 @@ bool findOpenWaterSite(const evolab::BarrenWorld& world, float cellSize, float h
       if (!world.isWetWorld(x, z, cellSize)) {
         continue;
       }
+      evolab::Organism probe =
+          evolab::makeCampNomOrganism(999, x, z, 1.0f, 120, 0, cellSize);
+      probe.heading = heading;
+      probe.updateKinematics(world, cellSize, evolab::kTerrainHeightScale);
+      const evolab::SkeletonNode* perceptor = probe.findNode(evolab::kCampPerceptorId);
+      if (perceptor == nullptr) {
+        continue;
+      }
       bool clear = true;
       for (float fraction : samples) {
-        const float probeX = x + fx * senseRadius * fraction;
-        const float probeZ = z + fz * senseRadius * fraction;
+        const float probeX = perceptor->worldX + fx * senseRadius * fraction;
+        const float probeZ = perceptor->worldZ + fz * senseRadius * fraction;
         float clampedX = probeX;
         float clampedZ = probeZ;
         evolab::clampWorldPosition(clampedX, clampedZ, half, cellSize * 0.25f);
@@ -108,7 +117,7 @@ void primeMateReady(evolab::Organism& organism, std::uint64_t simTick) {
 }  // namespace
 
 TEST_CASE("perceptor locks mate on red cloaca when mate-ready", "[cloaca][perceptor]") {
-  evolab::BarrenWorld world(7, 32);
+  evolab::BarrenWorld world(31, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
@@ -132,7 +141,7 @@ TEST_CASE("perceptor locks mate on red cloaca when mate-ready", "[cloaca][percep
 }
 
 TEST_CASE("perceptor ignores red cloaca when not mate-ready", "[cloaca][perceptor]") {
-  evolab::BarrenWorld world(7, 32);
+  evolab::BarrenWorld world(31, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
@@ -154,7 +163,7 @@ TEST_CASE("perceptor ignores red cloaca when not mate-ready", "[cloaca][percepto
 }
 
 TEST_CASE("perceptor reads blue cloaca as food when hungry", "[cloaca][perceptor]") {
-  evolab::BarrenWorld world(7, 32);
+  evolab::BarrenWorld world(31, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
@@ -185,7 +194,7 @@ TEST_CASE("perceptor reads blue cloaca as food when hungry", "[cloaca][perceptor
 }
 
 TEST_CASE("perceptor ignores green baseline cloaca trails", "[cloaca][perceptor]") {
-  evolab::BarrenWorld world(7, 32);
+  evolab::BarrenWorld world(31, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;

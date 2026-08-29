@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <random>
 
 namespace evolab {
@@ -46,6 +47,65 @@ std::uint64_t randomData(std::mt19937_64& rng, std::uint8_t byteCount) {
 
 }  // namespace
 
+int energonEvictionScore(const EnergonBlob& blob) {
+  int originRank = 0;
+  switch (blob.origin) {
+    case EnergonOrigin::Sunfall:
+      originRank = 0;
+      break;
+    case EnergonOrigin::Waste:
+      originRank = 1;
+      break;
+    case EnergonOrigin::Fragment:
+      originRank = 2;
+      break;
+    case EnergonOrigin::Signal:
+      originRank = 3;
+      break;
+    case EnergonOrigin::Cloaca:
+      originRank = 4;
+      break;
+  }
+  return originRank * 1'000'000 + static_cast<int>(blob.ttl * 1'000.0f);
+}
+
+bool EnergonField::evictOneBlob() {
+  if (blobs_.empty()) {
+    return false;
+  }
+
+  std::size_t evictIndex = 0;
+  int bestScore = energonEvictionScore(blobs_.front());
+  if (blobs_.front().cornucopia) {
+    bestScore = std::numeric_limits<int>::max();
+  }
+  for (std::size_t i = 1; i < blobs_.size(); ++i) {
+    if (blobs_[i].cornucopia) {
+      continue;
+    }
+    const int score = energonEvictionScore(blobs_[i]);
+    if (score < bestScore) {
+      bestScore = score;
+      evictIndex = i;
+    }
+  }
+
+  if (blobs_[evictIndex].cornucopia) {
+    return false;
+  }
+
+  blobs_.erase(blobs_.begin() + static_cast<std::ptrdiff_t>(evictIndex));
+  return true;
+}
+
+void EnergonField::trimToCap() {
+  while (static_cast<int>(blobs_.size()) > config_.maxBlobs) {
+    if (!evictOneBlob()) {
+      break;
+    }
+  }
+}
+
 EnergonField::EnergonField(std::uint64_t seed, EnergonConfig config)
     : config_(config), seed_(seed), spatialIndex_(std::make_unique<EnergonSpatialIndex>()) {}
 
@@ -62,9 +122,10 @@ void EnergonField::clear() {
 }
 
 void EnergonField::injectBlob(EnergonBlob blob) {
-  if (blob.origin == EnergonOrigin::Fragment &&
-      static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
-    return;
+  while (static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
+    if (!evictOneBlob()) {
+      return;
+    }
   }
   if (blob.id == 0) {
     blob.id = nextId_++;
@@ -129,6 +190,17 @@ EnergonBiteResult EnergonField::biteAt(std::uint32_t blobId, float mouthX, float
       continue;
     }
     if (blob.remaining == 0 || !blob.onWet || !blob.grounded) {
+      return result;
+    }
+
+    if (blob.cornucopia) {
+      float t = 0.0f;
+      energonPointSegmentDistanceSq(mouthX, mouthZ, blob, t);
+      const int index = energonByteIndexAtProjection(blob, t);
+      const int biteIndex =
+          std::clamp(index, 0, static_cast<int>(blob.remaining) - 1);
+      result.byte = energonByteAt(blob, biteIndex);
+      result.tookByte = true;
       return result;
     }
 
@@ -238,7 +310,7 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
     std::uniform_real_distribution<float> skySpread(0.0f, 12.0f);
     blob.y = chaosJitterFloat(config_.skyY + skySpread(rng), rng);
     blob.vy = -chaosJitterFloat(config_.fallSpeed, rng);
-    blob.ttl = config_.ttlWetSeconds;
+    blob.ttl = kEnergonAirborneTtlSeconds;
     blob.grounded = false;
     blob.onWet = false;
     blobs_.push_back(blob);
@@ -263,7 +335,7 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
       blob.vy = 0.0f;
       blob.grounded = true;
       blob.onWet = column.wet;
-      blob.ttl = column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds;
+      energonAssignGroundedTtl(blob, config_, column.wet);
       std::mt19937_64 rng(mixSeed(seed_, blob.id * 2654435761ULL));
       std::uniform_real_distribution<float> headingDist(0.0f, kTwoPi);
       energonBlobLayoutSegment(blob, cellSize, chaosJitterHeading(headingDist(rng), rng));
@@ -285,9 +357,27 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
 
     const float decayPerTick =
         (column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
-    if (decayPerTick > 0.0f) {
+    if (blob.cornucopia) {
+      blob.ttl = energonWetTtlSeconds(blob, config_);
+    } else if (decayPerTick > 0.0f) {
       blob.ttl -= 1.0f / decayPerTick;
     }
+  }
+}
+
+void EnergonField::anchorCornucopiaBlob(float x, float z, float y) {
+  for (EnergonBlob& blob : blobs_) {
+    if (!blob.cornucopia || blob.remaining == 0) {
+      continue;
+    }
+    blob.x = x;
+    blob.z = z;
+    blob.y = y;
+    blob.headX = x;
+    blob.headZ = z;
+    blob.tailX = x;
+    blob.tailZ = z;
+    return;
   }
 }
 
@@ -299,9 +389,13 @@ void EnergonField::tick(const BarrenWorld& world, float sunIntensity, float cell
       std::remove_if(blobs_.begin(), blobs_.end(),
                      [&](EnergonBlob& blob) {
                        updateBlob(blob, world, cellSize, heightScale);
+                       if (blob.cornucopia) {
+                         return blob.remaining == 0;
+                       }
                        return blob.ttl <= 0.0f || blob.remaining == 0;
                      }),
       blobs_.end());
+  trimToCap();
 }
 
 }  // namespace evolab

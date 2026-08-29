@@ -34,6 +34,10 @@ std::uint8_t fuelStoreToConfidence(std::size_t storeBytes,
 // M outbound: 0 = starving, 7 = full / providing fuel.
 std::uint8_t mouthFuelConfidence(const SkeletonNode& mouth);
 
+void reconcileMouthChewFill(SkeletonNode& mouth);
+
+void creditMouthChew(SkeletonNode& mouth, std::uint32_t netBytes);
+
 // Update mouth diet EMA after a successful bite (origin + cloaca band when applicable).
 void recordMouthDietBite(SkeletonNode& mouth, EnergonOrigin origin, CloacaBand cloacaBand);
 

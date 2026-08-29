@@ -1,4 +1,5 @@
 #include "app/CliArgs.hpp"
+#include "app/SmokeTest.hpp"
 #include "app/VisualApp.hpp"
 
 #include <iostream>
@@ -18,6 +19,9 @@ int main(int argc, char** argv) {
     }
 
     if (args.headless) {
+      if (args.debugIntervalMs > 0) {
+        return evolab::runHeadlessDebugSession(args);
+      }
       return evolab::runHeadlessSmoke(args);
     }
 

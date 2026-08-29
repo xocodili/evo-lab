@@ -18,6 +18,15 @@ ComputerInteroception gatherComputerInteroception(const Organism& organism,
                                                   std::uint32_t computerId,
                                                   std::uint64_t simTick);
 
+// Spatial P valence vs postingestive M valence in [-1, 1] (positive = M confirms P).
+float campComputerCtaPredictionError(const ComputerInteroception& interoception);
+
+void initComputerNodeRegister(SkeletonNode& computer);
+void guardComputerNodeRegister(SkeletonNode& computer);
+
+// Fuse per-C match/gain onto organism telemetry (max gain, like actuator inbound fuse).
+void syncOrganismComputerTelemetry(Organism& organism);
+
 // After feed: move mouth buffer surplus into the C hub store (digest).
 void digestMouthToComputer(Organism& organism);
 

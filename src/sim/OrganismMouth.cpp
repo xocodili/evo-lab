@@ -1,5 +1,6 @@
 #include "sim/OrganismMouth.hpp"
 
+#include "sim/CampNeuronGating.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronSignal.hpp"
@@ -15,36 +16,31 @@ MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint3
   MouthInteroception prior;
   prior.localSatiation = confidenceToUnit(mouthFuelConfidence(mouth));
 
-  const PerceptorMirror perceptor = readPerceptorMirror(organism);
-  prior.perceptorLocked = perceptor.locked;
-  prior.perceptorSalience = perceptor.salience;
-  prior.focusKind = perceptor.focusKind;
-
-  const float gain = perceptorGain(perceptor.locked, perceptor.salience);
+  const AggregatedPerceptSignals percept =
+      aggregatePerceptorInboundSignals(organism, mouthId, simTick, true);
+  prior.approach = percept.approach;
+  prior.flee = percept.flee;
+  prior.perceptorLocked = percept.perceptorLocked;
+  prior.perceptorSalience = percept.perceptorSalience;
+  prior.focusKind = percept.focusKind;
 
   forEachInboundAxon(organism, mouthId, simTick, true, [&](const InboundAxon& inbound) {
     if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
       return;
     }
     const float rawLevel = confidenceToUnit(inbound.axon.lastReceived.byte);
-    if (inbound.src.neuron == NeuronType::Perceptor) {
-      accumulateApproachFlee(prior.approach, prior.flee, inbound.axon.lastReceived.byte,
-                             inbound.weight, gain);
-    } else if (inbound.src.neuron == NeuronType::Actuator) {
+    if (inbound.src.neuron == NeuronType::Actuator) {
       prior.actuatorActivity = std::max(prior.actuatorActivity, rawLevel * inbound.weight);
     }
   });
 
-  prior.approach = clamp01(prior.approach);
-  prior.flee = clamp01(prior.flee);
   prior.actuatorActivity = clamp01(prior.actuatorActivity);
   return prior;
 }
 
-FeedIntent computeCampFeedIntent(const MouthInteroception& interoception) {
+FeedIntent computeCampFeedIntent(const MouthInteroception& interoception, bool& mouthChewPaused) {
   FeedIntent intent;
-  const float storeBrake = confidenceToUnit(kMouthInhibitActuatorConfidence);
-  const bool storeFull = interoception.localSatiation >= storeBrake;
+
   const bool threatFocus =
       interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Threat;
   const bool fleeDominant =
@@ -58,21 +54,35 @@ FeedIntent computeCampFeedIntent(const MouthInteroception& interoception) {
     return intent;
   }
 
-  float appetite = 0.0f;
-  if (storeFull && interoception.approach <= kOrganismCampReflexMinValence) {
-    appetite = 0.0f;
-  } else {
-    const float hungerGap = 1.0f - interoception.localSatiation * 0.5f;
-    appetite = std::max(kMouthBaselineFeedDrive, interoception.approach) * hungerGap;
-    appetite *= 1.0f - interoception.flee * 0.9f;
-    appetite *= 1.0f - interoception.actuatorActivity * 0.15f;
+  updateMouthChewPause(mouthChewPaused, interoception.localSatiation);
+
+  const float hunger = campHungerFromMouthUnit(interoception.localSatiation);
+  float go = 0.0f;
+  if (interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food &&
+      interoception.approach > kOrganismCampReflexMinValence) {
+    go = hunger * interoception.approach;
+  } else if (!interoception.perceptorLocked ||
+             interoception.focusKind != PerceptFocusKind::Food) {
+    go = hunger * kMouthBaselineFeedDrive;
   }
 
-  intent.biteDrive = clamp01(appetite);
-  // Feedbag grazing: if food is in contact (checked in tickMouthNode), chew unless reflex
-  // suppresses. Satiation throttles appetite telemetry and crawl — not zero intake.
-  intent.allowFoodBite = true;
-  intent.feedSuppressed = intent.biteDrive < kMouthFeedIntentMinBite;
+  const float chewNoGo =
+      mouthChewPaused ? interoception.localSatiation : campMouthChewNoGo(interoception.localSatiation);
+  const float fleeNoGo = campFeedFleeNoGo(interoception.flee);
+  const float activityNoGo = campActuatorActivityNoGo(interoception.actuatorActivity);
+
+  intent.biteDrive = clamp01(go - chewNoGo - fleeNoGo - activityNoGo);
+
+  const bool foodGuided =
+      interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food;
+  const float foodApproach = foodGuided ? interoception.approach : 0.0f;
+  if (campMouthChewRefuseActive(mouthChewPaused, foodGuided, foodApproach)) {
+    intent.allowFoodBite = false;
+    intent.feedSuppressed = true;
+  } else {
+    intent.allowFoodBite = true;
+    intent.feedSuppressed = intent.biteDrive < kMouthFeedIntentMinBite;
+  }
   return intent;
 }
 

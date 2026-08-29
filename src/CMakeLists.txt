@@ -45,7 +45,11 @@ add_library(evolab_sim STATIC
   sim/NeuralAxon.cpp
   sim/Chaos.cpp
   sim/OrganismHgt.cpp
+  sim/OrganismParthenogenesis.cpp
+  sim/OrganismFeedbagOracle.cpp
   sim/CellPopulation.cpp
+  sim/SessionDebugLog.cpp
+  sim/CampTraceLog.cpp
   sim/TideAdvection.cpp
   sim/Hydrology.cpp
   sim/WaterColumn.cpp

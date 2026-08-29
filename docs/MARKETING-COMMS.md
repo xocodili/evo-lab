@@ -34,7 +34,7 @@ Style: **1950s science brochure / mid-century modern print** — flat vector, ha
 
 | Element | Meaning |
 |---------|---------|
-| Y-star with central **C HUB** | CAMP Nom “flux-capacitor” topology |
+| Y-star with central **C HUB** | CAMP camper “flux-capacitor” topology |
 | **P SENSE** (eye) | Perceptor |
 | **M MOUTH** | Ingestion / feedbag |
 | **A MOTOR** (flagella) | Actuator / crawl |
@@ -52,15 +52,15 @@ Future assets should reuse this grammar before inventing new icons.
 
 | Term | Say | Avoid |
 |------|-----|-------|
-| Nom | Friendly collective for wet-layer life | “Agent”, “creature blob” |
-| CAMP Nom | Standard four-module archetype | “Default organism” |
+| camper | Friendly collective for wet-layer life (organisms in the wet layer) | “Agent”, “creature blob” |
+| CAMP camper | Standard four-module archetype | “Default organism” |
 | Energon | Food substrate (bytes in the field) | “Energy points” |
 | Death feast | Scavenging at corpse + structural dock | “Combat loot” |
 | INSERTION | Horizontal acquisition of an axon edge | “Mutation”, “breeding” |
 | Partial topology | Broken wiring after module death | “Damage state” |
 | Flux-capacitor hub | C-centred Y-star (informal, fun) | Over-use in technical docs |
 
-Technical docs: [HGT-INSERTION.md](HGT-INSERTION.md), [EVOLUTION.md](EVOLUTION.md).
+Technical docs: [HGT-INSERTION.md](HGT-INSERTION.md), [PARTHENOGENESIS.md](PARTHENOGENESIS.md), [EVOLUTION.md](EVOLUTION.md).
 
 ---
 

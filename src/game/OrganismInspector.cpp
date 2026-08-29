@@ -1,6 +1,7 @@
 #include "game/OrganismInspector.hpp"
 
 #include "sim/CellConstants.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/OrganismNeuron.hpp"
@@ -116,10 +117,11 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
     return buffer;
   }
 
-  if (organism.isCampNom()) {
+  if (organismHasCampNeuronFloor(organism)) {
     const SkeletonNode* perceptorNode = findPerceptorNode(organism);
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
+    const std::string genotype = campGenotypeLabel(organism);
     const NeuralAxon* pToM = organism.findNeuralAxon(1, 2);
     const NeuralAxon* pToA = organism.findNeuralAxon(1, 4);
     const NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
@@ -156,8 +158,8 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
     }
     std::snprintf(buffer, sizeof(buffer),
                   "Nom #%u\n"
-                  "Type: CAMP Nom\n"
-                  "Nodes: 4  Links: %zu  Axons: %zu\n"
+                  "Type: CAMP %s%s%s\n"
+                  "Nodes: %zu  Links: %zu  Axons: %zu\n"
                   "Heading: %.0f deg  senseR: %.2f cells\n"
                   "Energon (tick %llu):\n"
                   "  P [sense]:  %zu B  %s  scan: %s (%u B)\n"
@@ -171,7 +173,10 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   "  M->P: %s  A->P: %s  M->A: %s  A->M: %s\n"
                   "  stroke: %s (%u B)  drive: %.0f%%  inhibit: %s\n"
                   "Land-adjacent: %s  %s",
-                  organism.id, organism.links.size(), organism.neuralAxons.size(),
+                  organism.id, genotype.c_str(),
+                  organism.isCampNom() ? "" : " freak",
+                  organism.feedbagOracle ? " (feedbag reproduction oracle)" : "",
+                  organism.nodes.size(), organism.links.size(), organism.neuralAxons.size(),
                   organism.heading * 180.0f / 3.14159265f, organism.senseRadiusFactor,
                   static_cast<unsigned long long>(simTick != 0 ? simTick : organism.createdAtTick),
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
@@ -296,18 +301,20 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
 
 std::string formatOrganismHoverSummary(const Organism& organism) {
   char buffer[160];
-  if (organism.isCampNom()) {
+  if (organismHasCampNeuronFloor(organism)) {
     const SkeletonNode* perceptorNode = findPerceptorNode(organism);
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
+    const std::string genotype = campGenotypeLabel(organism);
     char senseSummary[16] = "—";
     if (organism.lastPerceptScanPaid) {
       std::snprintf(senseSummary, sizeof(senseSummary), "%u/7",
                     static_cast<unsigned>(organism.lastPerceptConfidence));
     }
     std::snprintf(buffer, sizeof(buffer),
-                  "Hover: Nom #%u CAMP P %zu M %zu C %zu A %zu sense %s",
-                  organism.id,
+                  "Hover: Nom #%u %s%s%s P %zu M %zu C %zu A %zu sense %s",
+                  organism.id, genotype.c_str(), organism.isCampNom() ? "" : " freak",
+                  organism.feedbagOracle ? " [feedbag oracle]" : "",
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   mouthNode != nullptr ? mouthNode->store.size() : 0,
                   organism.bodyStorage.size(),

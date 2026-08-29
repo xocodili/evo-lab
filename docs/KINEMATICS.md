@@ -2,7 +2,8 @@
 
 **Location:** `engine/include/engine/kinematics/`  
 **Sim adapter:** `src/sim/OrganismKinematics.cpp` (water-column Y only)  
-**Status doc:** use this file when asking “are we on track for kinematics?”
+**Status doc:** use this file when asking “are we on track for kinematics?”  
+**Physics & muscle design:** [KINEMATICS-PHYSICS-DESIGN.md](KINEMATICS-PHYSICS-DESIGN.md) — engine vs sim vs emergent layers
 
 ---
 
@@ -98,20 +99,20 @@ When checking progress, ask:
 
 ---
 
-## Axonal bundle kinematic gaps (CAMP Nom)
+## Axonal bundle kinematic gaps (CAMP camper)
 
-**Current (phases 1–3 + partial stroke):** `NeuronMusculature.cpp` drives **posture only** — bundle tension → `KinematicLocalPose::yawDelta` → FK flex. A paid stroke nudges hub XZ (~55% of mechanical thrust along hub→actuator), injects a one-tick flex boost on the A arm, and applies a small keel yaw torque from P/M/A asymmetry. **No impulse solver** couples actuator thrust to hub reaction or bundle elasticity.
+**Current (phases 1–3 + E1/E2 dynamics):** `NeuronMusculature.cpp` drives bundle tension → muscle PD → integrated joint flex. Stroke queues **impulse at A** (actuator node); tide enters as root velocity; `stepArticulatedBody` integrates translation + bend. No full contact solver yet.
 
 | Gap | Today | Needed for keel / flagellum fidelity |
 |-----|--------|--------------------------------------|
-| **Locomotion coupling** | Hub partial translate + heading thrust; FK overwrites per-node advect each tick | Actuator-local impulse, hub reaction mass, optional drag — thrust should propagate along the bundle tree, not bypass FK |
+| **Locomotion coupling** | Impulse at A + muscle PD; tide vs stroke via root velocity | Contact, drag tuning, optional sustained pose holds |
 | **Bundle as force path** | Tension is a visual/posture scalar (`campAxonBundleTension`) | Force/torque along muscle-bundle edges; stiff vs flex links; stroke energy split between translation and bend |
 | **Heading vs body axis** | `organism.heading` steers chemotaxis/tumble; stroke flex is cosmetic to translation | Optional body-axis heading from hub→A geometry; IK (phase 4) so A aims before stroke |
 | **Effector analog (phase 5)** | Discrete 0/1/2-byte stroke per tick | Continuous or phased joint targets from P/M/C/A confidence — rhythmic stroke cycle (phase 6) |
 | **Tide / advect consistency** | Root advect + fan delta to siblings after stroke | Per-node or post-FK advect so bundles do not “shear” relative to solved pose |
 | **Closing render edges** | M–A triangle base in `links` but not FK tree | Decide: FK edge, constraint-only, or pure render — affects keel triangle stability |
 
-**Implementation touchpoints:** `applyCampBundleStroke`, `buildCampMusclePose`, `OrganismDetail::tickActuatorOrganism`, `OrganismKinematics.cpp` (water-column Y). Phases **4–6** in the rollout table below are the planned closure for mouth reach, analog effectors, and swim rhythm.
+**Implementation touchpoints:** `queueCampStrokeImpulse`, `buildMuscleCommands`, `stepArticulatedBody`, `OrganismKinematics.cpp`, `OrganismDetail::tickActuatorOrganism`. Phases **4–6** in the rollout table below are the planned closure for mouth reach, analog effectors, and swim rhythm.
 
 ---
 

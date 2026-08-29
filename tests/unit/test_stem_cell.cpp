@@ -58,7 +58,7 @@ TEST_CASE("stem cell constants define shared neuron analog signal range", "[stem
 
 TEST_CASE("stem cell storage constants match sixty hertz day length", "[stemcell]") {
   REQUIRE(evolab::kTicksPerStemCellDay == 86400u);
-  REQUIRE(evolab::kStemCellStorageMaxBytes == 259200u);
+  REQUIRE(evolab::kStemCellStorageMaxBytes == evolab::kTicksPerStemCellDay * 4u);
   REQUIRE(evolab::kStemCellBasalCostPerTick == 1u);
 }
 

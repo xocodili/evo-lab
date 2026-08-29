@@ -154,7 +154,7 @@ bool expelCloacaVent(Organism& organism, EnergonField& field, SkeletonNode& comp
   blob.y = computer.worldY;
   blob.grounded = true;
   blob.onWet = true;
-  blob.ttl = field.config().ttlWetSeconds * 0.35f;
+  energonAssignGroundedTtl(blob, field.config(), true);
   energonBlobInitPoint(blob);
   field.injectBlob(blob);
   return true;

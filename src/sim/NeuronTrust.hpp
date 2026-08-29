@@ -1,9 +1,11 @@
 #pragma once
 
+#include "sim/CellConstants.hpp"
 #include "sim/OrganismActuator.hpp"
 #include "sim/OrganismMouth.hpp"
 #include "sim/PerceptorFocus.hpp"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -30,6 +32,7 @@ struct PerceptorTrustEvent {
 
 struct ComputerTrustEvent {
   float matchScore = 0.0f;
+  float predictionError = 0.0f;
   bool expelled = false;
 };
 
@@ -50,7 +53,9 @@ void applyCampPerceptorTrustLearning(Organism& organism, std::uint32_t perceptor
 // Post-digest: reward-modulated updates on inbound P→C, M→C, and A→C axons.
 void applyCampComputerTrustLearning(Organism& organism, std::uint32_t computerId,
                                     const ComputerInteroception& interoception,
-                                    const ComputerTrustEvent& event, std::uint64_t simTick);
+                                    const ComputerTrustEvent& event, std::uint64_t simTick,
+                                    const std::array<std::uint8_t, kComputerRegisterBytes>&
+                                        computerRegister);
 
 // Post-transfer: feed-channel plasticity when an axon successfully delivered bytes.
 void applyFeedTrustFromTransfer(NeuralAxon& axon, int bytesMoved, std::uint64_t simTick,

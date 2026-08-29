@@ -1,5 +1,6 @@
 #include "sim/OrganismComputer.hpp"
 
+#include "sim/CampNeuronGating.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
@@ -22,6 +23,60 @@ int confidenceMatchScore(std::uint8_t observed, std::uint8_t expected) {
   }
   return static_cast<int>(kNeuronConfidenceMax) -
          std::abs(static_cast<int>(observed) - static_cast<int>(expected));
+}
+
+float computeComputerMatchScore(const ComputerInteroception& interoception,
+                                const std::array<std::uint8_t, kComputerRegisterBytes>& reg) {
+  const int matchTotal =
+      confidenceMatchScore(interoception.fromPerceptor, reg[0]) +
+      confidenceMatchScore(interoception.fromMouth, reg[1]) +
+      confidenceMatchScore(interoception.fromActuator, reg[2]);
+  const int matchMax = static_cast<int>(kNeuronConfidenceMax) * 3;
+  return matchMax > 0 ? static_cast<float>(matchTotal) / static_cast<float>(matchMax) : 0.0f;
+}
+
+float computeComputerFeedGain(const Organism& organism, float matchScore, float ctaPe) {
+  const float hubUnit = confidenceToUnit(hubFuelConfidence(organism.bodyStorage.size()));
+  const float matchGo = matchScore;
+  const float reserveNoGo =
+      organism.bodyStorage.size() <= kComputerHubReserveBytes ? (1.0f - matchGo) : 0.0f;
+  const float repleteNoGo = campHubRepleteNoGo(hubUnit);
+  const float ctaNoGo = clamp01(std::abs(ctaPe) * kComputerCtaDisagreementGain);
+  const float dispatchDrive = clamp01(matchGo - reserveNoGo - repleteNoGo * 0.35f - ctaNoGo);
+  return std::clamp(std::max(dispatchDrive, kComputerMinDispatchGain * matchGo),
+                     kComputerMinDispatchGain, 1.0f);
+}
+
+void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& field,
+                     std::uint64_t simTick, bool allowCloacaExpulsion) {
+  const ComputerInteroception interoception =
+      gatherComputerInteroception(organism, computer.id, simTick);
+
+  computer.lastComputerMatchScore = computeComputerMatchScore(interoception, computer.computerRegister);
+  const float ctaPe = campComputerCtaPredictionError(interoception);
+  computer.lastComputerPredictionError = ctaPe;
+  computer.computerFeedGain =
+      computeComputerFeedGain(organism, computer.lastComputerMatchScore, ctaPe);
+
+  if (allowCloacaExpulsion) {
+    organism.lastHubSignalExpelledThisTick = false;
+    organism.lastCloacaBandExpelled = CloacaBand::None;
+    const CloacaBand band = chooseCloacaBand(organism, simTick);
+    if (band != CloacaBand::None) {
+      const bool expelled = expelCloacaVent(organism, field, computer, band);
+      if (expelled) {
+        organism.lastHubSignalExpelledThisTick = true;
+        organism.lastCloacaBandExpelled = band;
+      }
+    }
+  }
+
+  ComputerTrustEvent trustEvent;
+  trustEvent.matchScore = computer.lastComputerMatchScore;
+  trustEvent.predictionError = ctaPe;
+  trustEvent.expelled = organism.lastHubSignalExpelledThisTick;
+  applyCampComputerTrustLearning(organism, computer.id, interoception, trustEvent, simTick,
+                                   computer.computerRegister);
 }
 
 }  // namespace
@@ -54,66 +109,112 @@ ComputerInteroception gatherComputerInteroception(const Organism& organism,
   return prior;
 }
 
-void digestMouthToComputer(Organism& organism) {
-  if (!organismHasCampTopology(organism)) {
-    return;
+float campComputerCtaPredictionError(const ComputerInteroception& interoception) {
+  const float expected = perceptorValenceFromConfidence(interoception.fromPerceptor);
+  const float outcome = perceptorValenceFromConfidence(interoception.fromMouth);
+  return std::clamp(outcome - expected, -1.0f, 1.0f);
+}
+
+void initComputerNodeRegister(SkeletonNode& computer) {
+  computer.computerRegister = {kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               kNeuronConfidenceNeutral,
+                               1u,
+                               1u,
+                               1u,
+                               0u};
+  computer.lastComputerMatchScore = 0.0f;
+  computer.lastComputerPredictionError = 0.0f;
+  computer.computerFeedGain = 1.0f;
+}
+
+void guardComputerNodeRegister(SkeletonNode& computer) {
+  if (computer.computerRegister[4] == 0) {
+    computer.computerRegister[4] = 1;
   }
-  SkeletonNode* mouth = organism.findNode(kCampMouthId);
-  if (mouth == nullptr || !mouth->alive) {
+  if (computer.computerRegister[5] == 0) {
+    computer.computerRegister[5] = 1;
+  }
+  if (computer.computerRegister[6] == 0) {
+    computer.computerRegister[6] = 1;
+  }
+}
+
+void syncOrganismComputerTelemetry(Organism& organism) {
+  float maxMatch = 0.0f;
+  float maxGain = 0.0f;
+  float peFromDominant = 0.0f;
+  bool anyComputer = false;
+
+  for (const SkeletonNode& node : organism.nodes) {
+    if (!node.alive || node.neuron != NeuronType::Computer) {
+      continue;
+    }
+    anyComputer = true;
+    maxMatch = std::max(maxMatch, node.lastComputerMatchScore);
+    if (node.computerFeedGain >= maxGain) {
+      maxGain = node.computerFeedGain;
+      peFromDominant = node.lastComputerPredictionError;
+    }
+  }
+
+  if (!anyComputer) {
+    organism.lastComputerMatchScore = 0.0f;
+    organism.lastComputerPredictionError = 0.0f;
+    organism.computerFeedGain = 1.0f;
     return;
   }
 
-  const std::size_t mouthSurplus =
-      mouth->store.size() > kNeuronStoreMaxBytes ? mouth->store.size() - kNeuronStoreMaxBytes : 0;
-  const std::size_t moveCount = std::min(mouthSurplus, hubStoreAcceptanceRemaining(organism));
-  for (std::size_t i = 0; i < moveCount; ++i) {
-    std::uint8_t byte = 0;
-    if (!neuronPopBackForConvey(*mouth, byte)) {
-      break;
+  organism.lastComputerMatchScore = maxMatch;
+  organism.computerFeedGain = maxGain;
+  organism.lastComputerPredictionError = peFromDominant;
+}
+
+void digestMouthToComputer(Organism& organism) {
+  if (!organismUsesCampNeuronPhases(organism)) {
+    return;
+  }
+  if (findNeuronNode(organism, NeuronType::Computer) == nullptr) {
+    return;
+  }
+
+  for (SkeletonNode& mouth : organism.nodes) {
+    if (!mouth.alive || mouth.neuron != NeuronType::Mouth) {
+      continue;
     }
-    hubStorePush(organism, byte);
+
+    const std::size_t mouthSurplus =
+        mouth.store.size() > kNeuronStoreMaxBytes ? mouth.store.size() - kNeuronStoreMaxBytes : 0;
+    const std::size_t moveCount = std::min(mouthSurplus, hubStoreAcceptanceRemaining(organism));
+    for (std::size_t i = 0; i < moveCount; ++i) {
+      std::uint8_t byte = 0;
+      if (!neuronPopBackForConvey(mouth, byte)) {
+        break;
+      }
+      hubStorePush(organism, byte);
+    }
+    reconcileMouthChewFill(mouth);
   }
 }
 
 void tickComputerPhase(Organism& organism, EnergonField& field, std::uint64_t simTick) {
-  if (!organismHasCampTopology(organism)) {
-    return;
-  }
-  SkeletonNode* computer = findNeuronNode(organism, NeuronType::Computer);
-  if (computer == nullptr) {
+  if (!organismUsesCampNeuronPhases(organism)) {
     return;
   }
 
-  const ComputerInteroception interoception =
-      gatherComputerInteroception(organism, computer->id, simTick);
-
-  int matchTotal =
-      confidenceMatchScore(interoception.fromPerceptor, organism.computerRegister[0]) +
-      confidenceMatchScore(interoception.fromMouth, organism.computerRegister[1]) +
-      confidenceMatchScore(interoception.fromActuator, organism.computerRegister[2]);
-  const int matchMax = static_cast<int>(kNeuronConfidenceMax) * 3;
-  organism.lastComputerMatchScore =
-      matchMax > 0 ? static_cast<float>(matchTotal) / static_cast<float>(matchMax) : 0.0f;
-
-  organism.lastHubSignalExpelledThisTick = false;
-  organism.lastCloacaBandExpelled = CloacaBand::None;
-  bool expelled = false;
-  const CloacaBand band = chooseCloacaBand(organism, simTick);
-  if (band != CloacaBand::None) {
-    expelled = expelCloacaVent(organism, field, *computer, band);
-    if (expelled) {
-      organism.lastHubSignalExpelledThisTick = true;
-      organism.lastCloacaBandExpelled = band;
+  bool cloacaPending = true;
+  for (SkeletonNode& node : organism.nodes) {
+    if (!node.alive || node.neuron != NeuronType::Computer) {
+      continue;
+    }
+    tickOneComputer(organism, node, field, simTick, cloacaPending);
+    if (organism.lastHubSignalExpelledThisTick) {
+      cloacaPending = false;
     }
   }
 
-  organism.computerFeedGain =
-      std::clamp(organism.lastComputerMatchScore, kComputerMinDispatchGain, 1.0f);
-
-  ComputerTrustEvent trustEvent;
-  trustEvent.matchScore = organism.lastComputerMatchScore;
-  trustEvent.expelled = expelled;
-  applyCampComputerTrustLearning(organism, computer->id, interoception, trustEvent, simTick);
+  syncOrganismComputerTelemetry(organism);
 }
 
 }  // namespace evolab

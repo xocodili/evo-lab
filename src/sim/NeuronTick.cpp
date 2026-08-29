@@ -1,3 +1,4 @@
+#include "sim/CampTopology.hpp"
 #include "sim/NeuronTick.hpp"
 
 #include "sim/BarrenWorld.hpp"
@@ -36,9 +37,10 @@ void finalizeAdvectPose(Organism& organism, const OrganismTickContext& ctx) {
     return;
   }
   clampWorldPosition(root->worldX, root->worldZ, ctx.halfExtent, ctx.cellSize * 0.25f);
-  organism.updateKinematics(ctx.world, ctx.cellSize, ctx.heightScale);
+  organism.syncKinematicsPose(ctx.world, ctx.cellSize, ctx.heightScale);
   organism.landAdjacent =
       organismLandAdjacent(ctx.world, root->worldX, root->worldZ, ctx.cellSize);
+  organism_detail::finalizeCampActuatorProprioception(organism, ctx.simTick);
 }
 
 }  // namespace
@@ -47,7 +49,7 @@ void runOrganismPreAdvectHooks(Organism& organism, const OrganismTickContext& ct
   if (!organism.alive) {
     return;
   }
-  if (organism.isCampNom()) {
+  if (organismUsesCampNeuronPhases(organism)) {
     organism.emitPreAdvectSignals(ctx.simTick);
   }
   // Perceptor (P) pre-advect hooks register here.
@@ -71,7 +73,9 @@ void runOrganismAdvect(Organism& organism, const OrganismTickContext& ctx) {
                                             ctx.simTick);
       break;
     case LocomotionMode::PassiveDrift:
-      advectPassiveDrift(organism, ctx, velocity);
+      if (!organism.disableTideAdvection) {
+        advectPassiveDrift(organism, ctx, velocity);
+      }
       break;
   }
 

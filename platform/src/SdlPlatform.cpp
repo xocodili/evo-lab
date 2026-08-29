@@ -137,12 +137,7 @@ void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
     handleEvent(event, input, mouseLeftHeld);
   }
 
-  int mx = 0;
-  int my = 0;
-  SDL_GetMouseState(&mx, &my);
-  input.mouseX = mx;
-  input.mouseY = my;
-
+  SDL_PumpEvents();
   const Uint8* keys = SDL_GetKeyboardState(nullptr);
   if (keys != nullptr) {
     if (keys[SDL_SCANCODE_W]) {
@@ -158,6 +153,12 @@ void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
       input.moveRight -= 1.0f;
     }
   }
+
+  int mx = 0;
+  int my = 0;
+  SDL_GetMouseState(&mx, &my);
+  input.mouseX = mx;
+  input.mouseY = my;
 }
 
 void SdlPlatform::swap() {

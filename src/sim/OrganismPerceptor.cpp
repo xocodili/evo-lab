@@ -1,3 +1,4 @@
+#include "sim/CampTopology.hpp"
 #include "sim/OrganismPerceptor.hpp"
 
 
@@ -272,7 +273,9 @@ void addNoisyCandidate(std::vector<PerceptCandidate>& out, PerceptFocusKind kind
 
   const float noisyRange = clamp01(range01 + noise(rng) * 0.08f);
 
-  const float salience = (1.0f - noisyRange) * baseSalienceForKind(kind);
+  const float rangeFactor =
+      std::max(kPerceptorRangeSalienceFloor, 1.0f - noisyRange * 0.75f);
+  const float salience = rangeFactor * baseSalienceForKind(kind);
 
   if (salience <= 1.0e-4f) {
 
@@ -585,75 +588,96 @@ InteroceptionPrior gatherInteroception(const Organism& organism, std::uint32_t p
 
 
 
-float candidateCompetitionWeight(const PerceptCandidate& candidate,
+struct PriorFocus {
+  PerceptFocusKind kind = PerceptFocusKind::None;
+  bool locked = false;
+};
 
-                                 const InteroceptionPrior& prior, std::mt19937& rng) {
-
-  float weight = candidate.salience;
-
+float perceptCandidateGoNoGoScore(const PerceptCandidate& candidate, const InteroceptionPrior& prior,
+                                  float jitter) {
+  const float smear = 1.0f - prior.movementSmear * 0.25f;
+  const float salience = candidate.salience * jitter * smear;
   switch (candidate.kind) {
-
-    case PerceptFocusKind::Food:
-
-      weight *= 0.45f + prior.hunger * 0.85f;
-
-      weight *= 1.0f - prior.satiation * 0.55f;
-
-      break;
-
-    case PerceptFocusKind::Mate:
-
-      weight *= 0.75f + prior.hunger * 0.15f;
-
-      break;
-
+    case PerceptFocusKind::Food: {
+      const float go = salience * (0.45f + prior.hunger * 0.85f);
+      const float nogo = salience * prior.satiation * 0.55f;
+      return go - nogo;
+    }
     case PerceptFocusKind::Threat:
-
-      weight *= 1.05f + prior.satiation * 0.1f;
-
-      break;
-
+      return salience * (1.05f + prior.satiation * 0.1f);
+    case PerceptFocusKind::Mate:
+      return salience * (0.75f + prior.hunger * 0.15f);
     default:
-
       return 0.0f;
-
   }
+}
 
-  weight *= 1.0f - prior.movementSmear * 0.25f;
+float bestFoodGoNoGoScore(const std::vector<PerceptCandidate>& candidates,
+                          const InteroceptionPrior& prior) {
+  float best = 0.0f;
+  for (const PerceptCandidate& candidate : candidates) {
+    if (candidate.kind != PerceptFocusKind::Food) {
+      continue;
+    }
+    best = std::max(best, perceptCandidateGoNoGoScore(candidate, prior, 1.0f));
+  }
+  return best;
+}
 
-  weight *= chaosJitterFloat(1.0f, rng);
-
-  return weight;
-
+LocalFocus focusFromCandidate(const PerceptCandidate& candidate) {
+  LocalFocus focus;
+  focus.kind = candidate.kind;
+  focus.relBearing = candidate.relBearing;
+  focus.range01 = candidate.range01;
+  focus.salience = candidate.salience;
+  focus.locked = true;
+  return focus;
 }
 
 
 
 LocalFocus integrateFocus(const std::vector<PerceptCandidate>& candidates,
 
-                          const InteroceptionPrior& prior, std::mt19937& rng) {
+                          const InteroceptionPrior& prior, PriorFocus priorFocus,
+
+                          std::mt19937& rng) {
 
   LocalFocus focus;
 
-  float bestWeight = 0.0f;
+  float bestScore = 0.0f;
+
+  LocalFocus bestCandidate;
+
+  bool hasBest = false;
+
+  float kindScores[4] = {};
+
+  LocalFocus kindFocus[4];
+
+
 
   for (const PerceptCandidate& candidate : candidates) {
 
-    const float weight = candidateCompetitionWeight(candidate, prior, rng);
+    const float score =
+        perceptCandidateGoNoGoScore(candidate, prior, chaosJitterFloat(1.0f, rng));
 
-    if (weight > bestWeight) {
+    const int kindIdx = static_cast<int>(candidate.kind);
 
-      bestWeight = weight;
+    if (kindIdx >= 1 && kindIdx <= 3 && score >= kindScores[kindIdx]) {
 
-      focus.kind = candidate.kind;
+      kindScores[kindIdx] = score;
 
-      focus.relBearing = candidate.relBearing;
+      kindFocus[kindIdx] = focusFromCandidate(candidate);
 
-      focus.range01 = candidate.range01;
+    }
 
-      focus.salience = candidate.salience;
+    if (score > bestScore) {
 
-      focus.locked = true;
+      bestScore = score;
+
+      bestCandidate = focusFromCandidate(candidate);
+
+      hasBest = true;
 
     }
 
@@ -661,25 +685,35 @@ LocalFocus integrateFocus(const std::vector<PerceptCandidate>& candidates,
 
 
 
-  if (!focus.locked) {
+  const float acquireThreshold = kPerceptorFocusLockThreshold + prior.movementSmear * 0.05f;
 
-    return focus;
+  const float releaseThreshold = kPerceptorFocusReleaseThreshold;
+
+
+
+  if (priorFocus.locked && priorFocus.kind != PerceptFocusKind::None) {
+
+    const int holdIdx = static_cast<int>(priorFocus.kind);
+
+    if (kindScores[holdIdx] >= releaseThreshold) {
+
+      return kindFocus[holdIdx];
+
+    }
+
+  }
+
+
+
+  if (hasBest && bestScore >= acquireThreshold) {
+
+    return bestCandidate;
 
   }
 
 
 
-  const float lockThreshold = 0.08f + prior.movementSmear * 0.05f;
-
-  if (bestWeight < lockThreshold) {
-
-    focus.locked = false;
-
-    focus.kind = PerceptFocusKind::None;
-
-    focus.salience = bestWeight;
-
-  }
+  focus.salience = bestScore;
 
   return focus;
 
@@ -687,9 +721,17 @@ LocalFocus integrateFocus(const std::vector<PerceptCandidate>& candidates,
 
 
 
-std::uint8_t focusToConfidence(const LocalFocus& focus, const InteroceptionPrior& prior,
+void applyFoodTemporalGradient(float& base, float deltaSalience, bool deltaValid,
+                               bool foodChannelActive) {
+  if (!deltaValid || !foodChannelActive) {
+    return;
+  }
+  base += deltaSalience * kPerceptTemporalGradientGain;
+}
 
-                               std::mt19937& rng) {
+std::uint8_t focusToConfidence(const LocalFocus& focus, const InteroceptionPrior& prior,
+                               float foodSalienceDelta, bool foodSalienceDeltaValid,
+                               bool foodChannelActive, std::mt19937& rng) {
 
   constexpr float kNeutral = static_cast<float>(kNeuronConfidenceNeutral);
 
@@ -706,6 +748,9 @@ std::uint8_t focusToConfidence(const LocalFocus& focus, const InteroceptionPrior
         base = kNeutral + focus.salience * 3.0f * (0.35f + prior.hunger * 0.65f);
 
         base -= prior.satiation * 1.2f;
+
+        applyFoodTemporalGradient(base, foodSalienceDelta, foodSalienceDeltaValid,
+                                  foodChannelActive);
 
         break;
 
@@ -730,6 +775,9 @@ std::uint8_t focusToConfidence(const LocalFocus& focus, const InteroceptionPrior
   } else if (prior.hunger > 0.35f && prior.satiation < 0.2f) {
 
     base = kNeutral + prior.hunger * 0.6f;
+
+    applyFoodTemporalGradient(base, foodSalienceDelta, foodSalienceDeltaValid,
+                              foodChannelActive);
 
   }
 
@@ -795,6 +843,8 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
                          float sunIntensity) {
 
+  const PriorFocus priorFocus{perceptor.focusKind, perceptor.focusLocked};
+
   resetPerceptorNode(perceptor);
 
 
@@ -839,9 +889,10 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
                 sunIntensity, simTick, rng, candidates);
 
-  scanBlocks(world, perceptor, perceptor.gazeHeading, effectiveRadius, cellSize, halfExtent,
-
-             sunIntensity, rng, candidates);
+  if (!organism.disableTerrainThreatScan) {
+    scanBlocks(world, perceptor, perceptor.gazeHeading, effectiveRadius, cellSize, halfExtent,
+               sunIntensity, rng, candidates);
+  }
 
 
 
@@ -871,9 +922,21 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
   const InteroceptionPrior prior = gatherInteroception(organism, perceptor.id);
 
-  const LocalFocus focus = integrateFocus(candidates, prior, rng);
+  const float bestFoodScore = bestFoodGoNoGoScore(candidates, prior);
+  const bool foodChannelActive =
+      bestFoodScore > 0.0f || perceptor.perceptPriorFoodSalienceValid;
+  float foodSalienceDelta = 0.0f;
+  bool foodSalienceDeltaValid = false;
+  if (perceptor.perceptPriorFoodSalienceValid) {
+    foodSalienceDelta = bestFoodScore - perceptor.perceptPriorFoodSalience;
+    foodSalienceDeltaValid = true;
+  }
 
-  const std::uint8_t confidence = focusToConfidence(focus, prior, rng);
+  const LocalFocus focus = integrateFocus(candidates, prior, priorFocus, rng);
+
+  const std::uint8_t confidence =
+      focusToConfidence(focus, prior, foodSalienceDelta, foodSalienceDeltaValid,
+                        foodChannelActive, rng);
 
 
 
@@ -913,6 +976,9 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
   trustEvent.confidence = confidence;
   applyCampPerceptorTrustLearning(organism, perceptor.id, trustEvent, simTick);
 
+  perceptor.perceptPriorFoodSalience = bestFoodScore;
+  perceptor.perceptPriorFoodSalienceValid = true;
+
 }
 
 }  // namespace
@@ -923,7 +989,7 @@ void runPerceptorPhase(Organism& organism, const BarrenWorld& world, const Energ
 
                        std::uint64_t simTick, float sunIntensity) {
 
-  if (!organism.alive || !organismHasCampTopology(organism)) {
+  if (!organism.alive || !organismUsesCampNeuronPhases(organism)) {
 
     return;
 

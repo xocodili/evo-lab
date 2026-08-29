@@ -287,8 +287,12 @@ void applyCampPerceptorTrustLearning(Organism& organism, std::uint32_t perceptor
 
 void applyCampComputerTrustLearning(Organism& organism, std::uint32_t computerId,
                                     const ComputerInteroception& interoception,
-                                    const ComputerTrustEvent& event, std::uint64_t simTick) {
-  (void)interoception;
+                                    const ComputerTrustEvent& event, std::uint64_t simTick,
+                                    const std::array<std::uint8_t, kComputerRegisterBytes>&
+                                        computerRegister) {
+  const float expected = perceptorValenceFromConfidence(interoception.fromPerceptor);
+  const float outcome = perceptorValenceFromConfidence(interoception.fromMouth);
+
   for (NeuralAxon& axon : organism.neuralAxons) {
     if (!eligibleInboundAxon(organism, axon, computerId, simTick)) {
       continue;
@@ -300,22 +304,21 @@ void applyCampComputerTrustLearning(Organism& organism, std::uint32_t computerId
     }
 
     const std::uint8_t byte = axon.lastReceived.byte;
-    float outcome = 0.0f;
     switch (src->neuron) {
       case NeuronType::Perceptor:
-        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[0]);
-        break;
       case NeuronType::Mouth:
-        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[1]);
+        // CTA / RPE: postingestive M valence vs spatial P prediction on believe channel.
+        applyBelieveTrustFromOutcome(axon, byte, outcome, expected);
         break;
-      case NeuronType::Actuator:
-        outcome = computerOutcomeForSourceByte(event, byte, organism.computerRegister[2]);
+      case NeuronType::Actuator: {
+        const float registerOutcome =
+            computerOutcomeForSourceByte(event, byte, computerRegister[2]);
+        applyBelieveTrustFromOutcome(axon, byte, registerOutcome, 0.0f);
         break;
+      }
       default:
         break;
     }
-
-    applyBelieveTrustFromOutcome(axon, byte, outcome, 0.0f);
   }
 }
 

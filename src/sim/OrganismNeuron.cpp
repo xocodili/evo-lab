@@ -1,6 +1,7 @@
 #include "sim/OrganismNeuron.hpp"
 
 #include "engine/kinematics/Math.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/NeuronSignal.hpp"
 
 #include <algorithm>
@@ -40,16 +41,70 @@ const SkeletonNode* findFirstNeuronNode(const Organism& organism, NeuronType typ
   return nullptr;
 }
 
-PerceptorMirror readPerceptorMirror(const Organism& organism) {
-  PerceptorMirror mirror;
-  if (const SkeletonNode* perceptor = findFirstNeuronNode(organism, NeuronType::Perceptor)) {
-    mirror.locked = perceptor->focusLocked;
-    mirror.salience = perceptor->focusSalience;
-    mirror.focusKind = perceptor->focusKind;
-    mirror.focusBearing = perceptor->focusBearing;
-    mirror.gazeHeading = perceptor->gazeHeading;
+AggregatedPerceptSignals aggregatePerceptorInboundSignals(const Organism& organism,
+                                                          std::uint32_t dstNodeId,
+                                                          std::uint64_t simTick,
+                                                          bool requireAlignedTick) {
+  AggregatedPerceptSignals signals;
+  float bestScore = 0.0f;
+  float winnerValence = 0.0f;
+  std::uint8_t winnerByte = kNeuronConfidenceNeutral;
+  const SkeletonNode* bestSrc = nullptr;
+
+  forEachInboundAxon(organism, dstNodeId, simTick, requireAlignedTick,
+                     [&](const InboundAxon& inbound) {
+                       if (inbound.src.neuron != NeuronType::Perceptor) {
+                         return;
+                       }
+                       if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
+                         return;
+                       }
+
+                       const float valence =
+                           perceptorValenceFromConfidence(inbound.axon.lastReceived.byte);
+                       const float score = std::abs(valence) * inbound.weight;
+                       if (score > bestScore) {
+                         bestScore = score;
+                         winnerValence = valence;
+                         winnerByte = inbound.axon.lastReceived.byte;
+                         bestSrc = &inbound.src;
+                       }
+                     });
+
+  const int byteDeviation =
+      std::abs(static_cast<int>(winnerByte) - static_cast<int>(kNeuronConfidenceNeutral));
+  signals.perceptorSalience = clamp01(bestScore);
+  signals.perceptorLocked =
+      byteDeviation >= 2 && bestScore >= kOrganismCampReflexMinValence;
+  if (signals.perceptorLocked) {
+    if (winnerValence < 0.0f) {
+      signals.focusKind = PerceptFocusKind::Threat;
+    } else if (winnerValence > 0.0f) {
+      signals.focusKind = PerceptFocusKind::Food;
+    }
   }
-  return mirror;
+  if (bestSrc != nullptr) {
+    signals.focusBearing = bestSrc->focusBearing;
+    signals.gazeHeading = bestSrc->gazeHeading;
+  }
+
+  const float gain = perceptorGain(signals.perceptorLocked, signals.perceptorSalience);
+  forEachInboundAxon(organism, dstNodeId, simTick, requireAlignedTick,
+                     [&](const InboundAxon& inbound) {
+                       if (inbound.src.neuron != NeuronType::Perceptor) {
+                         return;
+                       }
+                       if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
+                         return;
+                       }
+                       accumulateApproachFlee(signals.approach, signals.flee,
+                                              inbound.axon.lastReceived.byte, inbound.weight,
+                                              gain);
+                     });
+
+  signals.approach = clamp01(signals.approach);
+  signals.flee = clamp01(signals.flee);
+  return signals;
 }
 
 float perceptorGain(bool locked, float salience) {

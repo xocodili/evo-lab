@@ -21,6 +21,7 @@
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonRain.hpp"
+#include "sim/SessionDebugLog.hpp"
 #include "sim/SimConfig.hpp"
 #include "sim/SimDiagnostics.hpp"
 #include "sim/WorldConstants.hpp"
@@ -29,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <random>
 #include <thread>
 
@@ -130,6 +132,8 @@ int runVisualApp(const CliArgs& args) {
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
   trace.step("mesh");
   seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
+  cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
+                                         world.tickCount());
   trace.step("seed");
 
   const CellPopulationStats seedStats = cells.stats();
@@ -220,6 +224,19 @@ int runVisualApp(const CliArgs& args) {
   engine::FixedTimestepClock simClock(config.fixedSimHz);
   auto lastTime = std::chrono::steady_clock::now();
 
+  std::unique_ptr<SessionDebugLog> debugLogPtr;
+  if (args.debugIntervalMs > 0) {
+    debugLogPtr = std::make_unique<SessionDebugLog>();
+    if (debugLogPtr->open(platform.basePath(), args.debugIntervalMs, config.seed,
+                          seedArchetypeLabel(config.archetype))) {
+      std::cout << "Debug session log: " << sessionDebugLogPath(platform.basePath()) << " every "
+                << args.debugIntervalMs << "ms\n";
+    } else {
+      std::cerr << "WARNING: could not open debug session log\n";
+      debugLogPtr.reset();
+    }
+  }
+
   std::cout << "Phase 2.x — " << seedArchetypeLabel(config.archetype) << " Noms\n";
   std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, Esc=quit\n";
   std::cout << "Hover a Nom to inspect architecture.\n";
@@ -260,6 +277,8 @@ int runVisualApp(const CliArgs& args) {
       SimConfig regenConfig = config;
       regenConfig.seed = visualSeed;
       seedPopulation(cells, regenConfig, world, kWorldCellSize, kTerrainHeightScale);
+      cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
+                                             world.tickCount());
       std::cout << "Regenerated world seed=" << visualSeed << '\n';
       std::cout.flush();
     }
@@ -279,8 +298,11 @@ int runVisualApp(const CliArgs& args) {
     }
 
     const auto now = std::chrono::steady_clock::now();
-    const float dt = std::chrono::duration<float>(now - lastTime).count();
+    float dt = std::chrono::duration<float>(now - lastTime).count();
     lastTime = now;
+    if (dt <= 0.0f) {
+      dt = 1.0f / config.fixedSimHz;
+    }
     if (input.moveForward != 0.0f || input.moveRight != 0.0f) {
       const float panSpeed = 52.0f;
       camera.pan(input.moveRight * panSpeed * dt, input.moveForward * panSpeed * dt);
@@ -298,6 +320,9 @@ int runVisualApp(const CliArgs& args) {
         const int rainPopulation = static_cast<int>(cells.organisms().size());
         energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale, rainPopulation);
         cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale, sun);
+        if (debugLogPtr) {
+          debugLogPtr->onSimTick(world.tickCount(), world, energon, cells, sun);
+        }
         if (i + 1 < steps) {
           platform.pumpEvents();
         }
@@ -361,7 +386,7 @@ int runVisualApp(const CliArgs& args) {
 
     if (frameIndex >= 1) {
       renderer.drawEnergon(energon.blobs(), camera, viewW, viewH);
-      renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH);
+      renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH, world.tickCount());
 
       const std::uint32_t hoveredId =
           game::pickOrganismAtScreen(cells.organisms(), camera, viewW, viewH, pickMouseX, pickMouseY);
@@ -389,6 +414,14 @@ int runVisualApp(const CliArgs& args) {
     if (frameIndex == 1) {
       trace.step("frame1");
     }
+  }
+
+  if (debugLogPtr) {
+    const SessionDebugSummary summary = debugLogPtr->finalize();
+    std::cout << "Debug session summary: max_pop=" << summary.maxPopulation
+              << " births=" << summary.birthsDetected
+              << " first_birth_tick=" << summary.firstBirthTick
+              << " first_child_id=" << summary.firstChildId << '\n';
   }
 
   if (uiReady) {

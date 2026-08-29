@@ -236,6 +236,7 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
   const std::uint32_t gross = kEnergonUnitsPerByte;
   const std::uint32_t net = gross > kBiteCost ? gross - kBiteCost : 0u;
   creditMouthStore(node, field, bite.byte, net);
+  creditMouthChew(node, net);
   node.ateThisTick = true;
 }
 
@@ -479,6 +480,11 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 
   const float startX = root->worldX;
   const float startZ = root->worldZ;
+  if (organism.isCampNom()) {
+    organism.campAdvectStartX = startX;
+    organism.campAdvectStartZ = startZ;
+    organism.campActuatorProprio.pending = false;
+  }
 
   organism.lastStrokePaid = false;
   organism.lastTumbled = false;
@@ -490,6 +496,8 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   organism.lastStrokeBytesFromActuatorStore = 0;
   organism.lastActuatorInhibited = false;
   organism.lastActuatorNetDrive = 0.0f;
+  organism.lastActuatorInteroception = {};
+  organism.lastMotorIntent = {};
   organism.lastActuatorOutboundSignal = 0;
   organism.lastActuatorStrokeFlexBoost = 0.0f;
   organism.lastInWater =
@@ -505,18 +513,26 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     interoception = gatherActuatorInteroception(organism, motorNode->id, simTick);
     motorIntent = computeCampMotorIntent(
         interoception, static_cast<std::uint32_t>(motorNode->store.size()));
+    organism.lastActuatorInteroception = interoception;
+    organism.lastMotorIntent = motorIntent;
     organism.lastActuatorNetDrive = motorIntent.netDrive;
     organism.lastActuatorInhibited = motorIntent.motorSuppressed;
 
-    const float effectiveTumbleRate = kActuatorTumbleRate * motorIntent.tumbleRateScale;
-    if (chaosBernoulli(effectiveTumbleRate, rng)) {
-      const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
-      organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
-      organism.lastTumbled = true;
-    }
+    if (!organism.disableNurseryLocomotion) {
+      applyCampChemotaxisHeading(organism, interoception, motorIntent);
 
-    applyCampChemotaxisHeading(organism, interoception, motorIntent);
-  } else if (chaosBernoulli(kActuatorTumbleRate, rng)) {
+      const bool foodTracking =
+          interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food &&
+          interoception.approach > kOrganismCampReflexMinValence &&
+          std::abs(interoception.focusBearing) <= kOrganismCampFoodTumbleBearingRad;
+      const float effectiveTumbleRate = kActuatorTumbleRate * motorIntent.tumbleRateScale;
+      if (!foodTracking && chaosBernoulli(effectiveTumbleRate, rng)) {
+        const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
+        organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
+        organism.lastTumbled = true;
+      }
+    }
+  } else if (!organism.disableNurseryLocomotion && chaosBernoulli(kActuatorTumbleRate, rng)) {
     const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
     organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
     organism.lastTumbled = true;
@@ -524,7 +540,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 
   const std::uint32_t strokeRequest =
       organism.isCampNom() ? motorIntent.strokeBytes : kActuatorStrokeCostPerTick;
-  if (organism.lastInWater &&
+  if (!organism.disableNurseryLocomotion && organism.lastInWater &&
       payActuatorStrokeCost(organism, strokeRequest, organism.lastStrokeBytesFromBody,
                             organism.lastStrokeBytesFromActuatorStore)) {
     const float strokeBytes = static_cast<float>(strokeRequest);
@@ -540,42 +556,82 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     const float thrustX = std::sin(organism.heading) * mechanicalThrust;
     const float thrustZ = std::cos(organism.heading) * mechanicalThrust;
     if (organism.isCampNom()) {
-      applyCampBundleStroke(organism, *motorNode, *root, mechanicalThrust);
+      float thrustHeading = organism.heading;
+      if (interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Threat &&
+          interoception.flee > interoception.approach) {
+        thrustHeading = normalizeAngle(interoception.gazeHeading + interoception.focusBearing +
+                                       3.14159265f);
+      }
+      queueCampStrokeImpulse(organism, mechanicalThrust, thrustHeading);
+      organism.campActuatorProprio.pending = true;
+      organism.campActuatorProprio.startX = startX;
+      organism.campActuatorProprio.startZ = startZ;
+      organism.campActuatorProprio.actuatorId = motorNode->id;
+      organism.campActuatorProprio.interoception = interoception;
+      organism.campActuatorProprio.motorIntent = motorIntent;
     } else {
       translateOrganismXZ(organism, thrustX, thrustZ);
     }
   }
 
   const AdvectionVelocity velocity =
-      shoreAdvection(world, root->worldX, root->worldZ, cellSize, halfExtent);
-  if (organism.lastInWater) {
-    const float tideStartX = root->worldX;
-    const float tideStartZ = root->worldZ;
-    applyShoreAdvection(root->worldX, root->worldZ, velocity, halfExtent, cellSize * 0.25f);
-    const float tideDx = root->worldX - tideStartX;
-    const float tideDz = root->worldZ - tideStartZ;
-    if (tideDx != 0.0f || tideDz != 0.0f) {
+      organism.disableTideAdvection
+          ? AdvectionVelocity{}
+          : shoreAdvection(world, root->worldX, root->worldZ, cellSize, halfExtent);
+  if (organism.lastInWater && !organism.disableTideAdvection) {
+    float tideTargetX = root->worldX;
+    float tideTargetZ = root->worldZ;
+    applyShoreAdvection(tideTargetX, tideTargetZ, velocity, halfExtent, cellSize * 0.25f);
+    organism.lastTideVelX = tideTargetX - root->worldX;
+    organism.lastTideVelZ = tideTargetZ - root->worldZ;
+    if (!organism.isCampNom()) {
+      root->worldX = tideTargetX;
+      root->worldZ = tideTargetZ;
       for (SkeletonNode& node : organism.nodes) {
         if (&node == root) {
           continue;
         }
-        node.worldX += tideDx;
-        node.worldZ += tideDz;
+        node.worldX += organism.lastTideVelX;
+        node.worldZ += organism.lastTideVelZ;
       }
     }
+  } else {
+    organism.lastTideVelX = 0.0f;
+    organism.lastTideVelZ = 0.0f;
   }
   clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
 
   evolab::emitCampActuatorSignals(organism, simTick);
 
-  const float dx = root->worldX - startX;
-  const float dz = root->worldZ - startZ;
+  if (!organism.isCampNom()) {
+    const float dx = root->worldX - startX;
+    const float dz = root->worldZ - startZ;
+    organism.lastDisplacement = std::sqrt(dx * dx + dz * dz);
+  }
+}
+
+void finalizeCampActuatorProprioception(Organism& organism, std::uint64_t simTick) {
+  if (!organism.isCampNom() || !organism.alive) {
+    return;
+  }
+  SkeletonNode* root = organism.findNode(organism.rootNodeId);
+  if (root == nullptr) {
+    return;
+  }
+
+  const float dx = root->worldX - organism.campAdvectStartX;
+  const float dz = root->worldZ - organism.campAdvectStartZ;
   organism.lastDisplacement = std::sqrt(dx * dx + dz * dz);
 
-  if (organism.isCampNom()) {
-    applyCampActuatorTrustLearning(organism, motorNode->id, interoception, motorIntent,
-                                  organism.lastDisplacement, simTick);
+  if (!organism.campActuatorProprio.pending) {
+    return;
   }
+
+  applyCampActuatorTrustLearning(organism, organism.campActuatorProprio.actuatorId,
+                                 organism.campActuatorProprio.interoception,
+                                 organism.campActuatorProprio.motorIntent,
+                                 organism.lastDisplacement, simTick);
+  organism.campActuatorProprio.pending = false;
 }
 
 void runMouthSignalPhase(Organism& organism, EnergonField& field, std::uint64_t simTick) {

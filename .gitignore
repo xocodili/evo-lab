@@ -2,6 +2,8 @@
 
 build/
 out/
+video-frames/
 .vs/
 .vscode/
 compile_commands.json
+.video_frames

@@ -66,6 +66,9 @@ struct EnergonBlob {
 
   bool onWet = false;
 
+  // Benchmark / oracle food: infinite bytes, no TTL decay (see test_cornucopia_chemotaxis).
+  bool cornucopia = false;
+
 };
 
 
@@ -167,6 +170,9 @@ public:
 
                        const std::function<void(const EnergonBlob&)>& fn) const;
 
+  // Nursery / oracle: keep the eternal cornucopia blob glued to a world anchor (e.g. mouth).
+  void anchorCornucopiaBlob(float x, float z, float y);
+
 
 
 private:
@@ -175,6 +181,10 @@ private:
                     int liveOrganismCount);
 
   void updateBlob(EnergonBlob& blob, const BarrenWorld& world, float cellSize, float heightScale);
+
+  bool evictOneBlob();
+
+  void trimToCap();
 
 
 

@@ -1,7 +1,9 @@
-﻿#include "game/OrganismDrawer.hpp"
+#include "game/OrganismDrawer.hpp"
 
 #include "sim/CellConstants.hpp"
 #include "sim/CampTopology.hpp"
+#include "sim/Chaos.hpp"
+#include "sim/NeuralAxon.hpp"
 #include "sim/Organism.hpp"
 
 #include <algorithm>
@@ -198,13 +200,26 @@ float campBindAngleForNode(const SkeletonNode& node) {
   }
 }
 
+bool campNomVisuallyIntact(const Organism& organism) {
+  if (!organism.isCampNom()) {
+    return false;
+  }
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.neuron != NeuronType::None && !node.alive) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void campVisualNodePosition(const Organism& organism, const SkeletonNode& node,
                             const SkeletonNode& hub, float worldPerPx, float& outX, float& outY,
                             float& outZ) {
   outX = node.worldX;
   outY = node.worldY;
   outZ = node.worldZ;
-  if (!organism.isCampNom() || node.neuron == NeuronType::Computer || node.neuron == NeuronType::None) {
+  if (!organism.isCampNom() || !campNomVisuallyIntact(organism) ||
+      node.neuron == NeuronType::Computer || node.neuron == NeuronType::None) {
     return;
   }
   const float armWorld = kNeuralAxonMaxLengthPx * worldPerPx;
@@ -214,13 +229,107 @@ void campVisualNodePosition(const Organism& organism, const SkeletonNode& node,
   outZ = hub.worldZ + std::cos(worldYaw) * armWorld;
 }
 
+void appendBirthFirework(std::vector<CellVertex>& verts, float eyeX, float eyeY, float eyeZ,
+                         float hubX, float hubY, float hubZ, float birthHeading,
+                         float worldPerPx, float parentAlpha, std::uint64_t simTick,
+                         std::uint64_t celebrationStartTick, int viewportW, int viewportH) {
+  if (celebrationStartTick == 0 || simTick < celebrationStartTick) {
+    return;
+  }
+
+  const std::uint64_t elapsed = simTick - celebrationStartTick;
+  if (elapsed >= kParthenogenesisCelebrationTicks) {
+    return;
+  }
+
+  const float maxTicks = static_cast<float>(kParthenogenesisCelebrationTicks);
+  const float age = static_cast<float>(elapsed) / maxTicks;
+  const float fade = std::max(0.08f, 1.0f - age * age);
+  const float burstAlpha = std::min(1.0f, parentAlpha * fade + 0.35f);
+
+  const float minScreenPx = static_cast<float>(std::min(viewportW, viewportH));
+  const float windowThirdWorld = worldPerPx * minScreenPx * 0.33f;
+  const float burstRadius = windowThirdWorld * (0.25f + age * 0.95f);
+  const float ringRadius = windowThirdWorld * (0.12f + age * 0.55f);
+  const float y = hubY + 0.12f + age * 0.14f;
+  const float spin = age * 1.35f;
+  const float pulse = 0.85f + 0.15f * std::sin(age * kTwoPi * 3.0f);
+
+  appendCellBillboard(verts, hubX, hubY + 0.1f, hubZ, eyeX, eyeY, eyeZ, 1.0f, 0.98f, 0.62f,
+                      burstAlpha * 0.98f, windowThirdWorld * 0.14f * pulse);
+  appendCellBillboard(verts, hubX, hubY + 0.14f, hubZ, eyeX, eyeY, eyeZ, 1.0f, 0.72f, 0.95f,
+                      burstAlpha * 0.55f, windowThirdWorld * 0.22f * pulse);
+
+  constexpr int kRayCount = 24;
+  for (int ray = 0; ray < kRayCount; ++ray) {
+    const float t = static_cast<float>(ray) / static_cast<float>(kRayCount);
+    const float angle = birthHeading + t * kTwoPi + spin;
+    const float dirX = std::sin(angle);
+    const float dirZ = std::cos(angle);
+    const float tipX = hubX + dirX * burstRadius;
+    const float tipZ = hubZ + dirZ * burstRadius;
+
+    const float hueShift = std::sin(t * kTwoPi * 3.0f + age * 8.0f) * 0.5f + 0.5f;
+    const float r = 0.98f + hueShift * 0.02f;
+    const float g = 0.45f + hueShift * 0.55f;
+    const float b = 0.22f + (1.0f - hueShift) * 0.45f;
+    const float rayAlpha = burstAlpha * (0.72f + 0.28f * (1.0f - age));
+    const float halfWidth =
+        worldPerPx * 4.5f * (1.0f - age * 0.25f) * (0.65f + 0.35f * pulse);
+
+    appendGroundLinkStrip(verts, hubX, hubZ, tipX, tipZ, y, halfWidth, r, g, b, rayAlpha);
+
+    const float midX = hubX + dirX * burstRadius * 0.55f;
+    const float midZ = hubZ + dirZ * burstRadius * 0.55f;
+    appendCellBillboard(verts, midX, y + 0.04f, midZ, eyeX, eyeY, eyeZ, 1.0f, 0.92f, 0.48f,
+                        rayAlpha * 0.75f, worldPerPx * 14.0f * (1.0f - age * 0.4f));
+
+    const float sparkSize = worldPerPx * 18.0f * (1.0f - age * 0.35f);
+    appendCellBillboard(verts, tipX, y + 0.06f, tipZ, eyeX, eyeY, eyeZ, 1.0f, 0.88f, 0.35f,
+                        rayAlpha, sparkSize);
+  }
+
+  for (int ring = 0; ring < 3; ++ring) {
+    const float ringAge = std::clamp(age - static_cast<float>(ring) * 0.12f, 0.0f, 1.0f);
+    if (ringAge <= 0.0f) {
+      continue;
+    }
+    const float thisRadius = ringRadius * (0.6f + static_cast<float>(ring) * 0.35f + ringAge * 0.4f);
+    constexpr int kRingSegments = 20;
+    for (int seg = 0; seg < kRingSegments; ++seg) {
+      const float a0 = birthHeading + (static_cast<float>(seg) / static_cast<float>(kRingSegments)) *
+                                          kTwoPi +
+                       spin * (0.35f + static_cast<float>(ring) * 0.2f);
+      const float a1 =
+          birthHeading +
+          (static_cast<float>(seg + 1) / static_cast<float>(kRingSegments)) * kTwoPi +
+          spin * (0.35f + static_cast<float>(ring) * 0.2f);
+      const float x0 = hubX + std::sin(a0) * thisRadius;
+      const float z0 = hubZ + std::cos(a0) * thisRadius;
+      const float x1 = hubX + std::sin(a1) * thisRadius;
+      const float z1 = hubZ + std::cos(a1) * thisRadius;
+      appendGroundLinkStrip(verts, x0, z0, x1, z1, y - 0.03f * static_cast<float>(ring),
+                            worldPerPx * 3.2f, 1.0f, 0.78f + static_cast<float>(ring) * 0.08f,
+                            0.95f, burstAlpha * 0.55f * (1.0f - ringAge * 0.55f));
+    }
+  }
+
+  const float spawnOffset = kParthenogenesisSpawnOffsetFactor * windowThirdWorld * 0.35f;
+  const float spawnX = hubX + std::sin(birthHeading) * spawnOffset;
+  const float spawnZ = hubZ + std::cos(birthHeading) * spawnOffset;
+  appendHeadingChevron(verts, spawnX, y, spawnZ, birthHeading, windowThirdWorld * 0.28f, 1.0f,
+                       0.92f, 0.38f, burstAlpha * 0.95f);
+  appendHeadingChevron(verts, spawnX, y + 0.05f, spawnZ, birthHeading + 0.35f,
+                       windowThirdWorld * 0.18f, 1.0f, 0.65f, 0.95f, burstAlpha * 0.7f);
+}
+
 }  // namespace
 
 OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms, float eyeX,
                                          float eyeY, float eyeZ, const engine::Mat4& mvp,
-                                         int viewportW, int viewportH) {
+                                         int viewportW, int viewportH, std::uint64_t simTick) {
   OrganismDrawBatch batch;
-  batch.cellVerts.reserve(organisms.size() * 64);
+  batch.cellVerts.reserve(organisms.size() * 128);
 
   for (const Organism& organism : organisms) {
     if (!organism.alive) {
@@ -286,15 +395,13 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
         float dy = 0.0f;
         float dz = 0.0f;
         if (srcDangling) {
-          sx = axon.uncappedWorldX;
-          sz = axon.uncappedWorldZ;
+          axonUncappedWorldPos(organism, axon, sx, sz);
           sy = (src != nullptr ? src->worldY : 0.0f) + 0.06f;
         } else {
           visualPos(*src, sx, sy, sz);
         }
         if (dstDangling) {
-          dx = axon.uncappedWorldX;
-          dz = axon.uncappedWorldZ;
+          axonUncappedWorldPos(organism, axon, dx, dz);
           dy = (dst != nullptr ? dst->worldY : 0.0f) + 0.06f;
         } else {
           visualPos(*dst, dx, dy, dz);
@@ -382,6 +489,16 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
         b = 0.95f;
       }
       appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha, halfSize);
+    }
+
+    if (organism.parthenogenesisCelebrationStartTick != 0 && hub != nullptr) {
+      float hx = hub->worldX;
+      float hy = hub->worldY;
+      float hz = hub->worldZ;
+      visualPos(*hub, hx, hy, hz);
+      appendBirthFirework(batch.cellVerts, eyeX, eyeY, eyeZ, hx, hy, hz,
+                          organism.parthenogenesisBirthHeading, hubWorldPerPx, alpha, simTick,
+                          organism.parthenogenesisCelebrationStartTick, viewportW, viewportH);
     }
   }
 

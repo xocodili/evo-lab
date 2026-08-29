@@ -2,8 +2,8 @@
 
 Consolidated review of architecture, simulation, evolution, engine, and quantum-integration discussions.
 
-**Status:** Phase 2.x Actuator Nom + water-column bands — public WIP  
-**Last updated:** 2026-08-27 (CAMP Nom + metabolic break-even + M FSA)
+**Status:** Phase 2.x Actuator camper + water-column bands — public WIP  
+**Last updated:** 2026-08-27 (CAMP camper + metabolic break-even + M FSA)
 
 **Delivery:** Native C++ binary (SDL desktop). Web viewer deferred.
 
@@ -108,7 +108,7 @@ Universal **0–7 confidence byte** on the believe channel (`NeuronSignal.hpp`).
 
 Mouth **pre-advect emit** (`emitPreAdvectSignals`) writes fuel confidence on M→P, M→C, and M→A axons. **C** emits hub satiation on C→P and C→A during the same phase. Bite credits **Fresh** bytes to M’s local store; **digest** moves mouth surplus into the hub; **conveyance** routes wallet/hub surplus after spend. The late **signal** phase skips duplicate CAMP mouth emit.
 
-**Tick order (CAMP Nom):** `perceive → feed → digest+computer → preAdvect (M+C emit) → advect → metabolise → viability → convey → signal → prune`
+**Tick order (CAMP camper):** `perceive → feed → digest+computer → preAdvect (M+C emit) → advect → metabolise → viability → convey → signal → prune`
 
 | Phase | Who emits | Who reads (same tick unless noted) |
 |-------|-----------|-----------------------------------|
@@ -120,7 +120,13 @@ Mouth **pre-advect emit** (`emitPreAdvectSignals`) writes fuel confidence on M�
 
 **Actuator interoception (chemotaxis v1):** A gathers P→A (approach/flee), M→A and **C→A** (satiation), trust-weighted via `OrganismNeuron`. Motor intent = `max(baseline crawl, approach) × (1 − satiation)` with **hub brake** from C→A. Graded stroke pays 0–`kActuatorStrokeCostPerTick` bytes from the A wallet.
 
-**Mouth interoception (feed v1):** unchanged — threat/flee suppresses bite; approach + hunger enables bite.
+**Mouth interoception (feed v1):** Go/NoGo appetite from hunger × P approach (or horror baseline); chew satiation subtracts drive; threat/flee hard-stops bite. **Chew FSA:** hysteresis pause at **5/7**, resume at **3/7**; when paused, food-locked, and P approach ≤0.15, **REFUSE** sets `allowFoodBite = false` (strong food approach overrides; horror feedbag without food lock still bites).
+
+**Perceptor temporal gradient (shipped):** After each paid scan, P stores best food Go/NoGo score; next scan nudges outbound confidence by `Δscore × kPerceptTemporalGradientGain` (Berg-style run bias when the food channel improves, tumble bias when it fades). Jitter-free score used for memory; winner selection still uses chaos jitter.
+
+**Mouth satiation encoding:** `mouthChewFill` (0–32 B from field bites only) → `mouthFuelConfidence` (0–7). Conveyance fuel in M wallet does not raise chew satiation. Spawn: empty chew buffer; reserve fuel lives in hub.
+
+**Spawn (gen-0 camper):** Mouth wallet and chew buffer empty; hub carries starter fuel so basal can run without false “full mouth” brakes.
 
 **Shared neuron layer:** `OrganismNeuron.hpp` — inbound axon fusion, P valence decode, outbound confidence emit. Stem basal metabolism remains in `OrganismDetail`.
 
@@ -135,7 +141,7 @@ Mouth **pre-advect emit** (`emitPreAdvectSignals`) writes fuel confidence on M�
 
 **Runtime learning (`NeuronTrust.cpp`):** Post-perceive on M→P / A→P; post-feed on P→M / A→M; post-advect on P→A / M→A; post-transfer on feed-channel `trustFeed`. **`trustFeed` runtime plasticity** via `conveyCampEnergon` + `nudgeTrustFeed`.
 
-**Deferred:** **C inbound trust** — post-digest learning when Computer evolves.
+**Deferred:** ~~**C inbound trust**~~ — post-digest RPE believe learning on P→C and M→C (`applyCampComputerTrustLearning`); register match trust remains on A→C.
 
 **Pruning:** When **all eight** believe bins **and** `trustFeed` reach **0**, the axon is removed structurally.
 
@@ -151,7 +157,7 @@ At spawn, CAMP developmental axons use believe baseline **100%** and feed baseli
 
 **Digest:** after feed, mouth surplus (> `kNeuronStoreMaxBytes`) moves M→C hub.
 
-**Computer tick:** pattern-match inbound believe bytes vs register; set `computerFeedGain`; at hub satiation expel **blue signal** byte to field; pre-advect emit hub confidence.
+**Computer tick:** pattern-match inbound believe bytes vs register; **P vs M CTA RPE** suppresses dispatch when spatial P and postingestive M valences diverge; post-digest believe trust on P→C and M→C from RPE; set `computerFeedGain`; at hub satiation expel cloaca byte to field; pre-advect emit hub confidence.
 
 **Field boundary:** **M only** for environmental energon ingress; internal routing + η loss on axons.
 
@@ -200,9 +206,9 @@ perceive → feed → digest+computer → preAdvect → advect → metabolise �
 
 Each tick, **two passes** over **M → C → P → A**. Hub surplus = `bodyStorage` above `kComputerHubReserveBytes`. Hop applies `η_energy` payload loss; feed-trust nudge on successful delivery.
 
-### 2.6 Actuator Nom (Phase 2.x — shipped; mouths shelved in visual app)
+### 2.6 Actuator camper (Phase 2.x — shipped; mouths shelved in visual app)
 
-**Design intent:** One `[A]` neuron, **no mouth** — a Nom that **crawls until it starves**. Movement alone is not success; the organism must eventually **know whether its stroke worked**. Before a full **P** neuron exists, we expose **proprioceptive delta fields** on `Organism`:
+**Design intent:** One `[A]` neuron, **no mouth** — a camper that **crawls until it starves**. Movement alone is not success; the organism must eventually **know whether its stroke worked**. Before a full **P** neuron exists, we expose **proprioceptive delta fields** on `Organism`:
 
 | Field | Meaning |
 |-------|---------|
@@ -238,7 +244,7 @@ Mechanical displacement per stroke: `kActuatorStrokeCostPerTick × kActuatorThru
 
 **Constants:** `kActuatorStrokeCostPerTick`, `kActuatorThrustPerStrokeByte`, `kActuatorTranslationEta`, `kActuatorTumbleRate`, `kActuatorTumbleTurn`.
 
-**Visual:** `seedActuatorOrganisms()` (~60 Noms); pale violet orb + heading arrow.
+**Visual:** `seedActuatorOrganisms()` (~60 campers); pale violet orb + heading arrow.
 
 #### Biological model — flagellar motor & run/tumble (literature)
 
@@ -252,9 +258,9 @@ We treat the actuator stroke as a **minimal IMF/PMF analog**, not ATP hydrolysis
 
 **Success criterion (design-centric):** A stroke is “successful” when `lastDisplacement` reflects paid thrust against tide/passive drift — inspectable now; learnable later when **P→A** closes the loop.
 
-### 2.9 Nom visual geometry — triangles over squares
+### 2.9 camper visual geometry — triangles over squares
 
-**Design choice (evo-lab specific):** CAMP Nom ground presence and heading cues use **triangular** primitives (heading chevron, bone-strip wedges) rather than square billboards alone.
+**Design choice (evo-lab specific):** CAMP camper ground presence and heading cues use **triangular** primitives (heading chevron, bone-strip wedges) rather than square billboards alone.
 
 **Rationale:** A triangle is a **more useful shape than a square** for this sim:
 
@@ -272,7 +278,7 @@ We treat the actuator stroke as a **minimal IMF/PMF analog**, not ATP hydrolysis
 
 **Conceptual model:** **M** is a **finite-state automaton** whose active state is “chew when allowed.” Each tick with energon in contact range, M *may* execute one consume step (one field byte → mouth store). **Intercept signals** (same tick, before bite) shift appetite — analogous to **vagal distension / leptin-like relaxation of hunger**: you do not stop at the biologically “correct” joule count; you stop when internal state **feels full enough**.
 
-**States (v1 implementation):**
+**States (shipped v1):**
 
 ```text
                     threat / flee dominant
@@ -280,36 +286,39 @@ We treat the actuator stroke as a **minimal IMF/PMF analog**, not ATP hydrolysis
                            ▼
               ┌─── SUPPRESSED (allowFoodBite = false)
               │
-  IDLE ───────┤    storeFull ∧ low approach
+              CHEWING ────┤    chewPaused ∧ foodLocked ∧ foodApproach ≤ 0.15
               │           │
               │           ▼
-              │    SUPPRESSED (appetite = 0)
+              │    REFUSE (allowFoodBite = false, feedSuppressed)
               │
-              └─── CONSUMING (allowFoodBite = true) ──► bite +1 net B ──► digest surplus ──► loop
+              └─── CHEWING (allowFoodBite = true) ──► bite +8 net B ──► digest surplus ──► loop
+                        ▲
+                        │ satiation ≥ 5/7 (latched chewPaused)
+                        └── PAUSE band (hysteresis: resume ≤ 3/7)
 ```
 
-**Intercept inputs (`computeCampFeedIntent`):**
+**Intercept inputs (`computeCampFeedIntent`, Go/NoGo):**
 
 | Signal | Effect |
 |--------|--------|
-| `localSatiation` | From `mouthFuelConfidence` — blended **recent** (55% × min(store, 32 B)) + **reserve** (45% × min(store, 1 fuel-day)) |
-| P approach / flee | Modulates appetite; threat focus hard-stops |
-| A activity | Slightly suppresses feed when crawling hard |
+| `localSatiation` | From `mouthFuelConfidence(mouthChewFill)` — **chew buffer only** (0–32 B → 0–7) |
+| P approach / flee | Go = hunger × approach when food-locked; threat focus hard-stops |
+| A activity | NoGo on feed when crawling hard |
+| `chewPaused` | Latched at satiation ≥ **5/7**; clears only ≤ **3/7** |
+| REFUSE | `chewPaused` ∧ food-locked ∧ P approach ≤ **0.15** → mechanical bite off; strong approach overrides; horror feedbag (not food-locked) unaffected |
 
 **Bytes before feedback “bites back”:**
 
-The **32 B nominal wallet** (`kNeuronStoreMaxBytes`) is the **conveyance cap**, not a hard chew limit — M store can swell (digest backlog; C→M has no inbound cap).
+The **32 B chew buffer** (`kMouthLocalStoreMaxBytes`) drives satiation broadcast and chew FSA. M **wallet** (`store`) can swell from conveyance; surplus digests to hub.
 
-| Feedback | Threshold (confidence byte) | Approx. M store to reach (alone) | Notes |
-|----------|----------------------------|----------------------------------|-------|
-| Gradual appetite ↓ | continuous via `hungerGap = 1 − 0.5×satiation` | from **0 B** upward | Baseline feed drive **0.35** keeps many ticks biting until satiation high |
-| Crawl brake (M→A) | ≥ **5/7** mouth confidence | **~31 500 B** in M *or* never from recent buffer alone | Recent buffer full at 32 B → only **4/7** confidence — brake needs reserve component or hub signal |
-| Hard feed stop | `storeFull` (≥5/7) **and** approach ≤0.15 | same | Mate/food approach can override “full” feeling |
-| Hub vent (C expulsion) | ≥ **6/7** hub confidence | **~222 000 B** in C (`kComputerHubStoreMaxBytes` scale) | Blue signal byte; primary excess route when truly replete |
+| Feedback | Threshold (confidence byte) | Approx. chew fill | Notes |
+|----------|----------------------------|-------------------|-------|
+| Gradual appetite ↓ | continuous chew NoGo | from **0 B** upward | Baseline feed drive **0.35** when not food-guided |
+| Crawl brake (M→A) | ≥ **5/7** mouth confidence | **32 B** chew fill → **7/7** | Aligns peripheral full with actuator brake |
+| REFUSE | `chewPaused` ∧ food-locked ∧ P approach ≤ **0.15** | **~20+ B** chew (≥5/7) | Horror feedbag (not food-locked) still bites at contact; strong food approach overrides REFUSE |
+| Hub vent (C expulsion) | ≥ **6/7** hub confidence | hub scale | Blue signal byte; excess route when replete |
 
-**Design gap (acknowledged):** Current encoding makes **peripheral “full” (~32 B)** register as **4/7**, not 5/7 — so **stomach-full feel** is softer than the actuator brake threshold implies. Tuning target: align **5/7** with “nominal wallet full” so cyclic chewing idles after ~**32 net bytes** in M (post-digest equilibrium), matching the human **“comfortably full, not measuring calories”** metaphor without requiring 31k B in the mouth wallet.
-
-**Planned FSA refinement:** Explicit **CHEW / PAUSE / REFUSE** states with hysteresis (chew until intercept confidence crosses **stop** band; resume only below **start** band) — avoids flicker at threshold.
+**Implementation:** `OrganismMouth.cpp` + `CampNeuronGating.hpp` (`updateMouthChewPause`, `campMouthChewRefuseActive`). `mouthChewPaused` lives on `SkeletonNode`.
 
 ### 2.11 Metabolic break-even — bytes/tick to live indefinitely
 
@@ -403,7 +412,7 @@ bites_per_tick × 8  ≥  8   (crawl) →  need 1.0 bite/tick  (feedbag equilibr
 
 #### Water-column bands (shipped 2026-08)
 
-Noms do **not** use a deforming water mesh. Placement is a cheap **category model** over depth — one sample per entity per tick, no extra grids.
+campers do **not** use a deforming water mesh. Placement is a cheap **category model** over depth — one sample per entity per tick, no extra grids.
 
 | Band | Depth (sim units) | Meaning |
 |------|-------------------|---------|
@@ -423,7 +432,7 @@ Noms do **not** use a deforming water mesh. Placement is a cheap **category mode
 
 Constants: `kWaterBandBenthicMaxDepth`, `kWaterBandShallowMaxDepth`, `kWaterBandPelagicMaxDepth` in `WaterColumn.hpp`.
 
-**Why categories:** Correct enough for a tidal evo lab, discrete enough for future **P** senses (“which band am I in?”), cheap enough to run forever. Terrain wetness is still **vertex colour** on fixed geometry; Noms use the band model for vertical truth.
+**Why categories:** Correct enough for a tidal evo lab, discrete enough for future **P** senses (“which band am I in?”), cheap enough to run forever. Terrain wetness is still **vertex colour** on fixed geometry; campers use the band model for vertical truth.
 
 | Tide state | Effect |
 |------------|--------|
@@ -431,9 +440,9 @@ Constants: `kWaterBandBenthicMaxDepth`, `kWaterBandShallowMaxDepth`, `kWaterBand
 | **Low** | Land bridges, exposed shelves; refugia in pools and lakes |
 | **Transition** | Emergent isolation / migration corridors |
 
-**Organisms (post–Phase 0):** Aquatic **Noms** — swim where wet. Stranded on land when exposed: stress/dormancy/death (tune). Kinematic FK on XZ with **water-column placement** for Y. **No land survival** until transitional morphologies are designed.
+**Organisms (post–Phase 0):** Aquatic **campers** — swim where wet. Stranded on land when exposed: stress/dormancy/death (tune). Kinematic FK on XZ with **water-column placement** for Y. **No land survival** until transitional morphologies are designed.
 
-**Energon (post–Phase 0):** The unified **information–energy** substrate (technical name). Sunfall strings and fragments are **Noms** too — they nom nothing, but they get nommed. See §3.5.
+**Energon (post–Phase 0):** The unified **information–energy** substrate (technical name). Sunfall strings and fragments are **campers** too — they nom nothing, but they get nommed. See §3.5.
 
 **Defer:** multi-basin independent water levels; Navier–Stokes; arbitrary file drops.
 
@@ -489,7 +498,7 @@ struct EnergonBlob {
 | **Green** | **Status quo** — “paying the bills, surviving not thriving” | Metabolically active, eating, venting hub pressure when replete but **not** soliciting mate | **1 B** / tick when hub accepts vent; low salience | Weak / ignore — background conspecific noise |
 | **Red** | **Mate-open** — “cloaca open, soliciting” | Mate-readiness predicate (replete + solvent + clear + age); **only** when explicitly willing to reproduce | **2–3 B** / tick; costly tag byte in `data` | **`Mate`** lock **only if** receiver also mate-ready |
 
-**Not the same as death spill:** A dying neuron **already** releases its wallet as energon (corpse feast — uncontrolled, all bytes). **Blue** is a **cheap live alarm** before or beside that: “maybe I die, maybe you eat my corpse, maybe you die the same way.” Scavengers and paranoid Noms both have something to learn from blue trails — evolution decides which interpretation wins.
+**Not the same as death spill:** A dying neuron **already** releases its wallet as energon (corpse feast — uncontrolled, all bytes). **Blue** is a **cheap live alarm** before or beside that: “maybe I die, maybe you eat my corpse, maybe you die the same way.” Scavengers and paranoid campers both have something to learn from blue trails — evolution decides which interpretation wins.
 
 **Hub vent remapping (deprecates v1 “blue = full = mate lure”):**
 
@@ -511,7 +520,7 @@ ageFloor       survivalTicks ≥ kMateMinAgeTicks
 cooldown       not recently mated
 ```
 
-**Receiver red response:** Symmetric mate predicate — don't lock Mate on red unless self could pay **red-tier** cost too (quality filter). Hungry Noms may still **smell** red but shouldn't commit approach without solvency.
+**Receiver red response:** Symmetric mate predicate — don't lock Mate on red unless self could pay **red-tier** cost too (quality filter). Hungry campers may still **smell** red but shouldn't commit approach without solvency.
 
 **Energon cost ledger (bits model):**
 
@@ -591,7 +600,7 @@ Geography is **where you can swim** once life exists—derived from 3D data, not
 11. Reproduction (local mate preference when wet paths allow)
 12. Render (terrain, water, Energon strings, organisms, focus debug)
 
-**Current implementation (Phase 2.x — CAMP Nom default):**
+**Current implementation (Phase 2.x — CAMP camper default):**
 
 1. World tick + day cycle + energon tick (sunfall with chaos jitter on spawn params)
 2. Per organism: **perceive** (P scans focus cone) → **feed** (M interoception bite gate) → **neuron pre-advect hooks** (M fuel signals) → **advect** → metabolise → viability → purge → transfer → signal → prune → colony → remove dead
@@ -605,11 +614,11 @@ Isolation is **dynamic**: low tide → refugia; high tide → gene flow. Mate **
 
 ## 4. Evolution & Genetics
 
-See **[HGT-INSERTION.md](HGT-INSERTION.md)** for full evidence-based R0 spec and **[EVOLUTION.md](EVOLUTION.md)** for rollout, parthenogenesis, geography. Brief pointer:
+See **[PARTHENOGENESIS.md](PARTHENOGENESIS.md)** for full R1 spec and **[EVOLUTION.md](EVOLUTION.md)** for rollout. Brief pointer:
 
-- Partial topology death cascade; uncapped-end INSERTION; axon transit basal
-- HGT before parthenogenesis (pre-LUCA literature)
-- Grover `{P,M,C,A}` floor at birth (eventual)
+- Two-layer entropy: structural gate (~3%) then mandatory ±3% parametric jitter on every clone
+- Unified energon ledger — abort = bytes spent, no child (no separate stillbirth taxonomy)
+- Grover `{P,M,C,A}` floor at birth collapse
 
 ### 4.0 Parthenogenesis energon budget (proposed)
 
@@ -673,7 +682,7 @@ Similarly `ε_random_mate` (~0.05) for partner choice. ε never zero.
 
 | Channel | Stimulus | P focus kind | Intent |
 |---------|----------|--------------|--------|
-| **Direct** | Other Nom neurons in focus cone | `PerceptFocusKind::Mate` | Turn toward conspecific bearing |
+| **Direct** | Other camper neurons in focus cone | `PerceptFocusKind::Mate` | Turn toward conspecific bearing |
 | **Indirect (bee-dance)** | *(deprecated)* C hub vent read as food | — | v1 mistake — attracted scavengers to “full” |
 
 **Planned (RGB cloaca, §3.5):** **Red** = costly mate-open; **Green** = routine hub breath; **Blue** = cheap distress / pre-corpse alarm. Corpse = uncontrolled death release (feast) — separate from voluntary blue ping.
@@ -756,7 +765,7 @@ Do **not** jitter the same parameter twice (e.g. bone `restLength` pre- and post
 
 **Still macro-random (by design):** wet XZ placement, energon byte-count bias distribution, world seed. Large dice first; jitter second.
 
-**Tests:** `tests/unit/test_chaos.cpp`, `[nom]` spawn trust cases.
+**Tests:** `tests/unit/test_chaos.cpp`, `[nom]` (legacy tag for camper) spawn trust cases.
 
 ### 4.5 Fitness (when explicitly needed)
 
@@ -944,7 +953,7 @@ Target **Windows, macOS, Linux** via SDL platform backend. PS5 = future `platfor
 
 | File | Role |
 |------|------|
-| `src/sim/WaterColumn.hpp`, `.cpp` | Depth bands, Nom habitat placement, tide-riding Y |
+| `src/sim/WaterColumn.hpp`, `.cpp` | Depth bands, camper habitat placement (`NomHabitat`), tide-riding Y |
 | `src/sim/Chaos.hpp`, `Chaos.cpp` | ε rates, ±3% jitter, spawn RNG, `chaosInitialStorage` |
 | `src/sim/NeuralAxon.hpp`, `.cpp` | Axon struct, developmental trust init, pruning predicate |
 | `src/sim/Organism.hpp`, `Organism.cpp`, `OrganismDetail.cpp`, `OrganismKinematics.cpp`, `OrganismFactories.cpp` | Skeleton + neural graphs, tick methods split by concern |
@@ -982,13 +991,13 @@ Day/night cycle; sunfall byte-strings (1–8 bytes); fall on land/sea; **TTL dec
 
 **2.2 Kinematic mouth organisms ✓:** Star-mouth (Computer hub + rim Mouths); organism yaw; food/tide heading; skeleton FK.
 
-**2.x CAMP Nom ✓ (current visual default):** Developmental **P → M → C → A** chain — perceptor scans, mouth feeds, computer digests/dispatches, actuator propels. Universal 0–7 confidence bytes on outbound axons. Visual app seeds ~60 Noms (`--archetype nom`).
+**2.x CAMP camper ✓ (current visual default):** Developmental **P → M → C → A** chain — perceptor scans, mouth feeds, computer digests/dispatches, actuator propels. Universal 0–7 confidence bytes on outbound axons. Visual app seeds ~60 campers (`--archetype nom`, legacy alias for camper).
 
-**2.x Water column ✓:** Band model for Nom vertical placement; surface Noms ride tide; grounded energon re-snaps each tick.
+**2.x Water column ✓:** Band model for camper vertical placement; surface campers ride tide; grounded energon re-snaps each tick.
 
 **2.x foundations (current):** CAMP metabolism, regulation, population-scaled rain, feedbag oracles — the **RNA/protein of cognition**: buildable substrate, not the finished evolvable organism. **Evolution is for** twin-string inheritance, mating collapse, epoch selection, and trust convergence.
 
-**P2 (next on Nom):** Computer evolution (register inheritance/mutation); temporal chemotaxis gradient (Δsalience); mate on proximity. ~~Hebbian believe trust~~ ✓ (`trustBelieveByConfidence[8]`, `NeuronTrust.cpp`).
+**P2 (next on camper):** Computer evolution (register inheritance/mutation); temporal chemotaxis gradient (Δsalience); mate on proximity. ~~Hebbian believe trust~~ ✓ (`trustBelieveByConfidence[8]`, `NeuronTrust.cpp`).
 
 **Chemotaxis v1 ✓:** A interoception from P→A + M→A + C→A; graded stroke; tumble bias; P-driven heading — see §2.5.
 
@@ -1113,7 +1122,7 @@ Peer basis for axon **feed** channel economics — complementary to §8.1 (belie
 
 | Term | Meaning |
 |------|---------|
-| **Nom** | Collective name for things in the wet layer that exist to **nom** (organisms + energon food) |
+| **camper** | Collective name for things in the wet layer that exist to **nom** (organisms + energon food) |
 | **StemCell** | Undifferentiated life unit (Phase 2.0); base for future P/M/C/A differentiation |
 | **Twin-string** | `(G_seq , G_axon)` genotype encoding—neuron chain + outbound axon targets |
 | **Operational floor** | Static viability predicate (`valid(G)`) before spawn or after mating collapse |

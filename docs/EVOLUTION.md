@@ -17,7 +17,7 @@ Perceptor RGB cloaca decoding is **downstream technology** in biological terms. 
 |-------|------|----------------|
 | **P** | Spatial pre-conscious scan; cloaca band → approach/flee | `OrganismPerceptor.cpp`, `CloacaSignal` |
 | **M** | Postingestive diet EMA; gag reflex on distress-heavy diet | `recordMouthDietBite`, `mouthOutboundConfidence` |
-| **C** | *(planned)* Compare P focus vs M diet for RPE / trust | `predictionErrorByte`, register slots |
+| **C** | Compare P vs M valence for CTA RPE / dispatch + believe trust | `OrganismComputer.cpp`, `NeuronTrust.cpp` |
 
 M→P/C/A axons now emit **fuel/diet satiation** (not fuel alone): distress-cloaca-heavy diet caps outbound at ≤2 even when the local store is full — conditioned taste aversion analogue.
 
@@ -51,7 +51,7 @@ Energon and entropy remain **systemic** throughout; only geography and release s
 
 ### 2.2 Chaos at epoch boundaries (deferred)
 
-On app close: save **bottom 18%** and **top 18%**; on startup re-seed population from archive + fresh “algae” Noms. High mortality + environmental chaos can accelerate convergence (author’s masters thesis — **to be cited when digitised**; see §2.3 for peer-reviewed analogues).
+On app close: save **bottom 18%** and **top 18%**; on startup re-seed population from archive + fresh “algae” campers. High mortality + environmental chaos can accelerate convergence (author’s masters thesis — **to be cited when digitised**; see §2.3 for peer-reviewed analogues).
 
 **Literature (environmental stochasticity — nuanced):**
 
@@ -94,7 +94,7 @@ Entropy is **systemic**, not a parthenogenesis-only tax:
 
 ## 3. Genome — topological string algebra
 
-Nom genotype is a **developmental locus string** over `{P, M, C, A}`:
+Camper genotype is a **developmental locus string** over `{P, M, C, A}`:
 
 - Baseline: **`[CAMP]`** (developmental order P→M→C→A on the Y-star).
 - Future: **`[CAMPAMC]`** etc. via duplication / insertion / deletion on loci **and** parallel axon graph.
@@ -152,6 +152,10 @@ See §3.2. Mating deferred until R1 parthenogenesis telemetry is honest.
 ---
 
 ## 4. Parthenogenesis — triggers, entropy morphogenesis, variable cost
+
+**Authoritative spec:** **[PARTHENOGENESIS.md](PARTHENOGENESIS.md)** — two-layer entropy (structural gate + parametric jitter), unified energon-vs-outcome ledger, Grover floor, test plan.
+
+Summary:
 
 ### 4.1 Triggers (agreed design)
 
@@ -314,7 +318,7 @@ Validate against Ohno/Lynch: most duplications pseudogenise; neofunctionalisatio
 
 ## 8. On-track questions
 
-1. **Can a Nom accumulate enough fuel for `estimateParthenogenesisCost()` on a `[CCAMP]` draw?** Duplication should hurt — if not, raise operator surcharges.
+1. **Can a camper accumulate enough fuel for `estimateParthenogenesisCost()` on a `[CCAMP]` draw?** Duplication should hurt — if not, raise operator surcharges.
 2. **Does R0 insertion (corpse register graft) precede viable parthenogenesis in practice?** Align sim with pre-LUCA ordering.
 3. **Does distress-heavy diet reduce crawl via M→A brake faster than P learns to avoid blue?** Trust telemetry on P→A vs M→A.
 
@@ -376,6 +380,6 @@ See **[HGT-INSERTION.md](HGT-INSERTION.md)** §2 and §17 for full citations. In
 |------|--------|
 | Mouth diet / H0 chemical layer | ✅ shipped |
 | R0 partial topology + uncapped-end dock | ⬜ [HGT-INSERTION.md](HGT-INSERTION.md) |
-| R1 parthenogenesis + Grover floor | ⬜ §4 |
+| R1 parthenogenesis + Grover floor | ⬜ [PARTHENOGENESIS.md](PARTHENOGENESIS.md) |
 | Geography / Lorenz curriculum | ⬜ §2 |
 | Topology co-evolution `(G_seq, G_axon, G_skel)` | ⬜ §9 |

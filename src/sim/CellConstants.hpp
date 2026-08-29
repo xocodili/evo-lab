@@ -1,12 +1,15 @@
 #pragma once
 
+#include "sim/Chaos.hpp"
+
 #include <cstdint>
 
 namespace evolab {
 
 // Basal metabolism burns 1 storage byte per sim tick. One fuel-day = 60*60*24 bytes.
 inline constexpr std::uint32_t kTicksPerStemCellDay = 60u * 60u * 24u;
-inline constexpr std::uint32_t kStemCellStorageMaxBytes = kTicksPerStemCellDay * 3u;
+// Four fuel-days: hub must hold baseline parthenogenesis debit + parent reserve (see PARTHENOGENESIS.md).
+inline constexpr std::uint32_t kStemCellStorageMaxBytes = kTicksPerStemCellDay * 4u;
 inline constexpr std::uint32_t kStemCellBasalCostPerTick = 1;
 // Ticks a neuron may run basal-arrears before death (conveyance/refill happens same frame after viability).
 inline constexpr std::uint32_t kNeuronBasalGraceTicks = 8u;
@@ -29,6 +32,10 @@ inline constexpr std::size_t kNeuronConfidenceBinCount =
 inline constexpr std::uint32_t kNeuronConfidenceFullFuelBytes = kTicksPerStemCellDay;
 // Mouth satiation at/above this level inhibits baseline crawl (M→A brake threshold).
 inline constexpr std::uint8_t kMouthInhibitActuatorConfidence = 5u;
+// Chew FSA resume band — mouth un-pauses only after satiation falls to/below this byte.
+inline constexpr std::uint8_t kMouthChewResumeActuatorConfidence = 3u;
+// When chew-paused, P food-approach above this unit overrides REFUSE (keep grazing).
+inline constexpr float kMouthChewRefuseMaxApproach = 0.15f;
 // CAMP horror-crawl baseline when hungry and mouth is not signaling satiation.
 inline constexpr float kActuatorBaselineCrawlDrive = 0.35f;
 inline constexpr float kMouthBaselineFeedDrive = 0.35f;
@@ -52,37 +59,72 @@ inline constexpr float kCampNomLinkJointAngle = 0.0f;
 inline constexpr float kAxonBundleMaxFlexRad = 0.38f;
 inline constexpr float kAxonBundleFlexGain = 0.34f;
 inline constexpr float kAxonBundleFlexStiffness = 0.82f;
-// Bundle-coupled stroke: hub follows actuator; lateral arms trail; keel torque from asymmetry.
-inline constexpr float kActuatorHubThrustShare = 0.55f;
+// Bundle-coupled stroke: lateral arms trail; keel torque from asymmetry.
 inline constexpr float kActuatorStrokeFlexGain = 3.2f;
 inline constexpr float kAxonBundleTrailFlexGain = 1.1f;
-inline constexpr float kAxonBundleDragCoupling = 0.72f;
 inline constexpr float kAxonBundleKeelYawGain = 14.0f;
+
+inline constexpr float kBodyLinearDrag = 0.12f;
+inline constexpr float kBodyYawDamping = 0.15f;
+inline constexpr float kBodyInvMass = 1.0f;
+inline constexpr float kBodyInvInertia = 0.35f;
+inline constexpr float kMusclePdDamping = 0.28f;
+inline constexpr float kStrokeMuscleStiffnessBoost = 2.4f;
 inline constexpr std::size_t kComputerRegisterBytes = 8u;
 inline constexpr std::uint32_t kComputerHubStoreMaxBytes = kStemCellStorageMaxBytes;
 inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay / 4u;
 inline constexpr std::uint8_t kComputerSatiationConfidence = 6u;
 inline constexpr std::uint8_t kComputerSignalExpulsionByte = 1u;
 inline constexpr float kComputerMinDispatchGain = 0.15f;
+// P vs M valence mismatch suppresses dispatch (CTA / postingestive RPE analogue).
+inline constexpr float kComputerCtaDisagreementGain = 0.3f;
 inline constexpr std::uint8_t kSignalTagReservedMin = 0xA0u;
 // Perceptor focus cone (radians): total width ≈ 90°.
 inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 // Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
 inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
 inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
-inline constexpr float kPerceptorSenseRadiusFactor = 3.5f;
+// Chemotaxis horizon in multiples of cellSize (~nom body scale). Analogue: E. coli run-and-tumble
+// bias over ~10–20 body lengths (Berg & Purcell 1977; Dusenbery 1998), not mile-scale absolute
+// chemoreception (debunked shark trope; Gardiner & Atema 2010, Hueter et al. 2004 JEB).
+inline constexpr float kPerceptorSenseRadiusFactor = 10.0f;
+inline constexpr float kPerceptorFocusLockThreshold = 0.05f;
+inline constexpr float kPerceptorFocusReleaseThreshold = 0.02f;
+// Berg-style run bias: outbound confidence nudged by Δ food Go/NoGo score vs prior paid scan.
+inline constexpr float kPerceptTemporalGradientGain = 4.0f;
+inline constexpr float kOrganismCampChemotaxisAdaptRad = 0.35f;
+inline constexpr float kOrganismCampFoodTumbleBearingRad = 0.25f;
+inline constexpr float kPerceptorRangeSalienceFloor = 0.25f;
 // Diurnal transduction: night shrinks effective radius and inflates perceptual noise.
 inline constexpr float kPerceptDiurnalRadiusFloor = 0.35f;
 inline constexpr float kPerceptNoiseBearingRad = 0.05f;
 inline constexpr float kPerceptNightChaosGain = 2.5f;
 inline constexpr float kPerceptFalseNegativeNightRate = 0.12f;
-inline constexpr float kOrganismCampReflexMinValence = 0.15f;
+inline constexpr float kOrganismCampReflexMinValence = 0.12f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
 // R0 HGT: idle/dangling axon line maintenance debited from downstream dst (or live cap if dst dead).
 inline constexpr std::uint32_t kAxonTransitBasalCostPerTick = 1u;
 // Uncapped-end INSERTION: brush radius and dock entropy (see docs/HGT-INSERTION.md).
 inline constexpr float kAxonDockRadiusFactor = 0.5f;
 inline constexpr std::uint32_t kHgtInsertionCostBytes = 4u;
+
+// R1 parthenogenesis — vertical reproduction (see docs/PARTHENOGENESIS.md).
+inline constexpr std::uint32_t kParthenogenesisMinAgeTicks = 600u;
+inline constexpr std::uint32_t kParthenogenesisInitCost = 864u;
+inline constexpr std::uint32_t kParthenogenesisStepBasalCost = 8u;
+inline constexpr std::uint32_t kParthenogenesisChildEndowmentBytes = kTicksPerStemCellDay * 2u;
+// Retain hub reserve floor after birth — aligned with vent steady-state (~6/7 hub cap).
+inline constexpr std::uint32_t kParthenogenesisParentReserveMin = 10750u;
+inline constexpr std::uint32_t kParthenogenesisBaselineCampDebit = 259'200u;
+inline constexpr float kParthenogenesisStructuralRate = kMisalignmentRate;
+inline constexpr std::size_t kCampMorphogenesisMaxNeurons = 8u;
+inline constexpr std::uint32_t kParthenogenesisDuplicationSurcharge = 2'160u;
+inline constexpr std::uint32_t kParthenogenesisDeletionSurcharge = 432u;
+inline constexpr std::uint32_t kParthenogenesisInsertionSurcharge = 4'320u;
+inline constexpr float kParthenogenesisSpawnOffsetFactor = 0.8f;
+inline constexpr std::uint32_t kParthenogenesisCelebrationTicks = 180u;
+inline constexpr std::uint32_t kFeedbagOracleParthenogenesisMinAgeTicks = 120u;
+inline constexpr std::uint32_t kParthenogenesisRefractoryTicks = 3600u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size.
 inline constexpr float kMouthContactRadiusFactor = 0.65f;

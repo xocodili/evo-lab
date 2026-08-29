@@ -18,15 +18,22 @@ inline float clamp01(float value) { return std::clamp(value, 0.0f, 1.0f); }
 const SkeletonNode* findFirstNeuronNode(const Organism& organism, NeuronType type,
                                         bool requireAlive = true);
 
-struct PerceptorMirror {
-  bool locked = false;
-  float salience = 0.0f;
+struct AggregatedPerceptSignals {
+  float approach = 0.0f;
+  float flee = 0.0f;
+  float perceptorSalience = 0.0f;
+  bool perceptorLocked = false;
   PerceptFocusKind focusKind = PerceptFocusKind::None;
   float focusBearing = 0.0f;
   float gazeHeading = 0.0f;
 };
 
-PerceptorMirror readPerceptorMirror(const Organism& organism);
+// Fuse inbound perceptor axons: trust-weighted valence, lock/kind from dominance, bearing from
+// the strongest contributing P node.
+AggregatedPerceptSignals aggregatePerceptorInboundSignals(const Organism& organism,
+                                                          std::uint32_t dstNodeId,
+                                                          std::uint64_t simTick,
+                                                          bool requireAlignedTick = true);
 
 float perceptorGain(bool locked, float salience);
 

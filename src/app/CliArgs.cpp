@@ -20,6 +20,23 @@ int parsePositiveInt(std::string_view value, const char* name) {
   }
 }
 
+int parseDebugIntervalMs(std::string_view value) {
+  std::string text(value);
+  if (text.size() >= 2 && (text.back() == 's' || text.back() == 'S') && text[text.size() - 2] == 'm' &&
+      (text[text.size() - 3] == 'm' || text[text.size() - 3] == 'M')) {
+    text = text.substr(0, text.size() - 2);
+  }
+  try {
+    const int ms = std::stoi(text);
+    if (ms <= 0) {
+      throw std::invalid_argument("non-positive");
+    }
+    return ms;
+  } catch (...) {
+    throw std::runtime_error("Invalid value for --debug: " + std::string(value));
+  }
+}
+
 float parsePositiveFloat(std::string_view value, const char* name) {
   try {
     const float n = std::stof(std::string(value));
@@ -112,6 +129,11 @@ CliArgs parseCliArgs(int argc, char** argv) {
         throw std::runtime_error("Missing value for --sim-hz");
       }
       args.fixedSimHz = parsePositiveFloat(argv[++i], "--sim-hz");
+    } else if (arg == "--debug") {
+      if (i + 1 >= argc) {
+        throw std::runtime_error("Missing value for --debug");
+      }
+      args.debugIntervalMs = parseDebugIntervalMs(argv[++i]);
     } else {
       throw std::runtime_error("Unknown argument: " + std::string(arg));
     }
@@ -134,6 +156,7 @@ void printHelp() {
             << "  --design-width N     Design resolution width (default: 1280)\n"
             << "  --design-height N    Design resolution height (default: 720)\n"
             << "  --sim-hz N           Fixed simulation rate (default: 60)\n"
+            << "  --debug MS           Session debug log interval (evo-lab.session.log)\n"
             << "  --exit               Exit after headless run (for smoke tests)\n"
             << "  --version            Print version and exit\n"
             << "  --help               Show this help\n\n"

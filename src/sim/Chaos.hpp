@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <random>
+#include <cstddef>
 
 namespace evolab {
 
@@ -25,6 +26,7 @@ inline constexpr std::uint64_t kChaosSaltActuator = 0xAC7A4710ULL;
 inline constexpr std::uint64_t kChaosSaltNom = 0x0BAA0701ULL;
 inline constexpr std::uint64_t kChaosSaltEnergonSunfall = 0xE16E6050111ULL;
 inline constexpr std::uint64_t kChaosSaltHgtDock = 0x0670D00CULL;
+inline constexpr std::uint64_t kChaosSaltParthenogenesis = 0x0A871E00ULL;
 inline constexpr float kAxonDockRate = kMisalignmentRate;
 
 std::mt19937 chaosSpawnRng(std::uint64_t seed, std::uint64_t salt);

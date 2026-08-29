@@ -23,6 +23,9 @@ struct CliArgs {
   int designWidth = 1280;
   int designHeight = 720;
   float fixedSimHz = 60.0f;
+
+  // Session debug log interval in milliseconds (0 = disabled). Writes evo-lab.session.log.
+  int debugIntervalMs = 0;
 };
 
 SimConfig simConfigFromCli(const CliArgs& args);

@@ -109,7 +109,15 @@ std::uint32_t axonLiveEndNodeId(const Organism& organism, const NeuralAxon& axon
   return 0;
 }
 
-void axonUncappedWorldPos(const NeuralAxon& axon, float& wx, float& wz) {
+void axonUncappedWorldPos(const Organism& organism, const NeuralAxon& axon, float& wx, float& wz) {
+  if (axon.uncappedNodeId != 0) {
+    const SkeletonNode* node = organism.findNode(axon.uncappedNodeId);
+    if (node != nullptr) {
+      wx = node->worldX;
+      wz = node->worldZ;
+      return;
+    }
+  }
   wx = axon.uncappedWorldX;
   wz = axon.uncappedWorldZ;
 }

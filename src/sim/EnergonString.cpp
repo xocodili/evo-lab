@@ -1,5 +1,7 @@
 #include "sim/EnergonString.hpp"
 
+#include "sim/CloacaSignal.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -39,6 +41,75 @@ std::uint8_t energonByteAt(const EnergonBlob& blob, int index) {
     return 0;
   }
   return static_cast<std::uint8_t>((blob.data >> (8 * index)) & 0xFFu);
+}
+
+std::uint64_t energonPackRawBytes(const std::uint8_t* bytes, int count) {
+  std::uint64_t packed = 0;
+  for (int i = 0; i < count; ++i) {
+    packed |= static_cast<std::uint64_t>(bytes[i]) << (8 * i);
+  }
+  return packed;
+}
+
+float energonWetTtlScaleForBlob(const EnergonBlob& blob) {
+  switch (blob.origin) {
+    case EnergonOrigin::Fragment:
+    case EnergonOrigin::Waste:
+      return kEnergonFragmentTtlScale;
+    case EnergonOrigin::Cloaca:
+      switch (cloacaBandFromBlob(blob)) {
+        case CloacaBand::Distress:
+          return kEnergonTtlDistressScale;
+        case CloacaBand::Baseline:
+          return kEnergonTtlBaselineScale;
+        case CloacaBand::Mate:
+          return kEnergonTtlMateScale;
+        default:
+          return kEnergonTtlBaselineScale;
+      }
+    case EnergonOrigin::Signal:
+      return kEnergonTtlBaselineScale;
+    case EnergonOrigin::Sunfall:
+    default:
+      return 1.0f;
+  }
+}
+
+float energonWetTtlSeconds(const EnergonBlob& blob, const EnergonConfig& config, float ttlScale) {
+  return config.ttlWetSeconds * energonWetTtlScaleForBlob(blob) * ttlScale;
+}
+
+float energonDryTtlSeconds(const EnergonBlob& blob, const EnergonConfig& config, float ttlScale) {
+  if (config.ttlWetSeconds <= 0.0f) {
+    return 0.0f;
+  }
+  const float wetTtl = energonWetTtlSeconds(blob, config, ttlScale);
+  return wetTtl * (config.ttlDrySeconds / config.ttlWetSeconds);
+}
+
+void energonAssignGroundedTtl(EnergonBlob& blob, const EnergonConfig& config, bool onWet,
+                              float ttlScale) {
+  blob.ttl = onWet ? energonWetTtlSeconds(blob, config, ttlScale)
+                   : energonDryTtlSeconds(blob, config, ttlScale);
+}
+
+EnergonBlob makeCornucopiaBlob(float x, float z, std::uint8_t byte) {
+  EnergonBlob blob;
+  blob.data = byte;
+  for (int i = 1; i < kEnergonMaxBytesPerBlob; ++i) {
+    blob.data |= static_cast<std::uint64_t>(byte) << (8 * i);
+  }
+  blob.remaining = static_cast<std::uint16_t>(kEnergonMaxBytesPerBlob);
+  blob.initialBytes = static_cast<std::uint8_t>(kEnergonMaxBytesPerBlob);
+  blob.origin = EnergonOrigin::Sunfall;
+  blob.x = x;
+  blob.z = z;
+  blob.y = 0.0f;
+  blob.grounded = true;
+  blob.onWet = true;
+  blob.cornucopia = true;
+  energonBlobInitPoint(blob);
+  return blob;
 }
 
 std::uint64_t energonPackBytes(const EnergonBlob& blob, int startIndex, int count) {

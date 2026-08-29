@@ -4,9 +4,12 @@
 
 #include "sim/Energon.hpp"
 
+#include "engine/kinematics/ArticulatedBodyState.hpp"
+#include "engine/kinematics/KinematicSkeleton.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/OrganismActuator.hpp"
 #include "sim/PerceptorFocus.hpp"
 
 
@@ -55,6 +58,12 @@ struct SkeletonNode {
 
   std::vector<std::uint8_t> store;
 
+  // Chew-buffer occupancy from field bites (0–kMouthLocalStoreMaxBytes); conveyance fuel does not
+  // raise satiation broadcasts.
+  std::uint32_t mouthChewFill = 0;
+  // Latched when chew satiation crosses stop band; clears only below resume band (hysteresis).
+  bool mouthChewPaused = false;
+
   bool ateThisTick = false;
 
   // Rolling diet composition (EMA per bite category) — postingestive confirmation for P→M prediction.
@@ -74,9 +83,18 @@ struct SkeletonNode {
   float focusSalience = 0.0f;
   bool focusLocked = false;
   std::uint8_t perceptConfidence = 0;
+  // Prior paid-scan best food Go/NoGo score (temporal chemotaxis gradient).
+  float perceptPriorFoodSalience = 0.0f;
+  bool perceptPriorFoodSalienceValid = false;
 
   // Consecutive ticks basal cost could not be paid from this neuron's fuel pool.
   std::uint16_t basalArrearsTicks = 0;
+
+  // Computer (C) node: pattern template + per-tick match/dispatch (valid when neuron == Computer).
+  std::array<std::uint8_t, kComputerRegisterBytes> computerRegister{};
+  float lastComputerMatchScore = 0.0f;
+  float lastComputerPredictionError = 0.0f;
+  float computerFeedGain = 1.0f;
 
 };
 
@@ -154,6 +172,8 @@ public:
   std::uint32_t lastStrokeBytesFromActuatorStore = 0;
   bool lastActuatorInhibited = false;
   float lastActuatorNetDrive = 0.0f;
+  ActuatorInteroception lastActuatorInteroception;
+  MotorIntent lastMotorIntent;
   float lastMouthBiteDrive = 0.0f;
   bool lastMouthFeedSuppressed = false;
   bool lastMouthHadFoodContact = false;
@@ -162,6 +182,23 @@ public:
   float lastTideDelta = 0.0f;
   bool lastStrokePaid = false;
   bool lastTumbled = false;
+  float campAdvectStartX = 0.0f;
+  float campAdvectStartZ = 0.0f;
+  CampActuatorProprioSnapshot campActuatorProprio;
+
+  // R1 parthenogenesis telemetry (inspector / research).
+  std::uint32_t lastParthenogenesisBytesSpent = 0;
+  bool lastParthenogenesisSpawned = false;
+  std::uint32_t offspringSpawnedCount = 0;
+  std::uint64_t parthenogenesisCelebrationStartTick = 0;
+  float parthenogenesisBirthHeading = 0.0f;
+  bool feedbagOracle = false;
+  bool disableTideAdvection = false;
+  // Nursery harness: freeze stroke/tumble so babies graze in place (no drift, no crawl).
+  bool disableNurseryLocomotion = false;
+  // Nursery / chemotaxis harness: skip terrain boundary dry threat scans (scanBlocks).
+  bool disableTerrainThreatScan = false;
+  std::uint64_t lastParthenogenesisSuccessTick = 0;
 
   // Proprioception (P neuron): mirror of primary perceptor focus (inspector / debug).
   std::uint8_t lastPerceptConfidence = 0;
@@ -171,17 +208,27 @@ public:
   bool lastPerceptScanPaid = false;
   std::uint32_t lastPerceptBytesPaid = 0;
 
-  // Computer (C) hub — register template + runtime match/dispatch (CAMP only).
-  std::array<std::uint8_t, kComputerRegisterBytes> computerRegister{};
+  // Computer (C) hub — fused match/dispatch telemetry across live C nodes (CAMP only).
   float lastComputerMatchScore = 0.0f;
+  float lastComputerPredictionError = 0.0f;
   float computerFeedGain = 1.0f;
   bool lastHubSignalExpelledThisTick = false;
   CloacaBand lastCloacaBandExpelled = CloacaBand::None;
   std::uint32_t computerNodeId = 0;
-  // Transient stroke flex injected into buildCampMusclePose (CAMP bundle locomotion).
+  // Transient stroke flex injected into buildMuscleCommands (CAMP bundle locomotion).
   float lastActuatorStrokeFlexBoost = 0.0f;
 
+  // Articulated-body dynamics (engine E1/E2 — impulse at A, muscle PD flex).
+  engine::kinematics::ArticulatedBodyState bodyDynamics;
+  float pendingImpulseX = 0.0f;
+  float pendingImpulseZ = 0.0f;
+  std::uint32_t pendingImpulseNodeId = 0;
+  float lastTideVelX = 0.0f;
+  float lastTideVelZ = 0.0f;
 
+  // Reused by syncKinematicsPose when it immediately follows updateKinematics (one build/tick).
+  engine::kinematics::KinematicSkeleton kinematicsSkeletonScratch_;
+  bool kinematicsSkeletonScratchValid_ = false;
 
   SkeletonNode* findNode(std::uint32_t nodeId);
 
@@ -202,6 +249,9 @@ public:
 
 
   void updateKinematics(const BarrenWorld& world, float cellSize, float heightScale);
+
+  // FK-only pass from current bodyDynamics joint state (after clamp / pose edits).
+  void syncKinematicsPose(const BarrenWorld& world, float cellSize, float heightScale);
 
   void advectRoot(const BarrenWorld& world, const EnergonField& energon, float cellSize,
 
@@ -264,6 +314,16 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
 
 Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
                              std::uint64_t createdAtTick, float boneLength);
+
+// PMCCAM chain: two computers sharing one hub, for multi-C pattern/dispatch tests.
+Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, float wy,
+                                      std::size_t storageBytes, std::uint64_t createdAtTick,
+                                      float boneLength);
+
+// Random chain mutant: 4–8 CAMP-class neurons, neighbour wiring, non-canonical topology.
+Organism makeRandomCampMutant(std::uint32_t id, float wx, float wz, float wy,
+                              std::size_t storageBytes, std::uint64_t createdAtTick,
+                              float boneLength, std::uint64_t mutantSeed);
 
 Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
                                std::size_t storageBytes, std::uint64_t createdAtTick,

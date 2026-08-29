@@ -1,14 +1,15 @@
 #pragma once
 
-#include "engine/kinematics/KinematicLocalPose.hpp"
+#include "engine/kinematics/ArticulatedDynamics.hpp"
 #include "engine/kinematics/KinematicSkeleton.hpp"
 #include "sim/Organism.hpp"
 
+#include <vector>
+
 namespace evolab {
 
-// Build runtime joint flex from bidirectional neural axon bundles on each skeleton link.
-engine::kinematics::KinematicLocalPose buildCampMusclePose(const Organism& organism,
-                                                           const engine::kinematics::KinematicSkeleton& skeleton);
+std::vector<engine::kinematics::MuscleCommand> buildMuscleCommands(
+    const Organism& organism, const engine::kinematics::KinematicSkeleton& skeleton);
 
 void applyCampJointFlexLimits(engine::kinematics::KinematicSkeleton& skeleton);
 
@@ -17,7 +18,6 @@ float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
 
 float campKeelYawTorque(const Organism& organism);
 
-void applyCampBundleStroke(Organism& organism, SkeletonNode& motor, SkeletonNode& hub,
-                           float mechanicalThrust);
+void queueCampStrokeImpulse(Organism& organism, float mechanicalThrust, float thrustHeading);
 
 }  // namespace evolab

@@ -36,6 +36,8 @@ public:
                              std::uint64_t seed);
   void seedNoms(const BarrenWorld& world, float cellSize, float heightScale, int count,
                 std::uint64_t seed);
+  void installFeedbagReproductionOracle(const BarrenWorld& world, float cellSize,
+                                        float heightScale, std::uint64_t simTick);
 
   void tick(const BarrenWorld& world, EnergonField& energon, float cellSize, float heightScale,
             float sunIntensity = 1.0f);

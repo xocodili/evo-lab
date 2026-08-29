@@ -27,9 +27,20 @@ void pushEnergonVertex(std::vector<EnergonVertex>& out, float x, float y, float 
   out.push_back({x, y, z, r, g, b, a});
 }
 
+void appendSunfallGroundPatch(std::vector<EnergonVertex>& verts, float x, float y, float z,
+                              float arm, float pillar, float r, float g, float b, float alpha) {
+  pushEnergonVertex(verts, x - arm, y, z, r, g, b, alpha);
+  pushEnergonVertex(verts, x + arm, y, z, r, g, b, alpha * 0.85f);
+  pushEnergonVertex(verts, x, y, z - arm, r, g, b, alpha);
+  pushEnergonVertex(verts, x, y, z + arm, r, g, b, alpha * 0.85f);
+  pushEnergonVertex(verts, x, y, z, r, g, b, alpha);
+  pushEnergonVertex(verts, x, y + pillar, z, r * 1.08f, g * 1.05f, b * 0.95f, alpha * 0.55f);
+}
+
 void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob) {
   const float sizeScale = static_cast<float>(blob.initialBytes);
   const float byteNorm = sizeScale / 8.0f;
+  const bool isSunfall = blob.origin == evolab::EnergonOrigin::Sunfall;
 
   const std::uint8_t br = static_cast<std::uint8_t>((blob.data >> 0) & 0xFF);
   const std::uint8_t bg = static_cast<std::uint8_t>((blob.data >> 8) & 0xFF);
@@ -78,21 +89,35 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
     r += 0.12f * byteNorm;
     g += 0.10f * byteNorm;
     alpha = std::min(1.0f, alpha + 0.15f);
+    if (isSunfall && blob.grounded) {
+      alpha = std::max(0.45f, alpha);
+    }
   }
 
   if (!blob.grounded) {
-    const float streak = 1.4f + sizeScale * 2.6f;
+    const float streak = isSunfall ? (2.0f + sizeScale * 3.0f) : (1.4f + sizeScale * 2.6f);
     pushEnergonVertex(verts, blob.x, blob.y, blob.z, r, g, b, alpha);
     pushEnergonVertex(verts, blob.x, blob.y - streak, blob.z, r * 0.7f, g * 0.7f, b * 0.6f, 0.0f);
     const float w = 0.08f + byteNorm * 0.12f;
     pushEnergonVertex(verts, blob.x + w, blob.y, blob.z, r, g, b, alpha * 0.85f);
     pushEnergonVertex(verts, blob.x + w, blob.y - streak, blob.z, r * 0.7f, g * 0.7f, b * 0.6f, 0.0f);
   } else {
-    const float pillar = 0.35f + sizeScale * 0.55f;
+    const float pillar =
+        isSunfall ? (1.15f + sizeScale * 0.95f) : (0.35f + sizeScale * 0.55f);
     const bool hasSegment =
         blob.remaining > 1 &&
         (std::abs(blob.headX - blob.tailX) > 1.0e-3f || std::abs(blob.headZ - blob.tailZ) > 1.0e-3f);
-    if (hasSegment) {
+    if (isSunfall && blob.onWet && !hasSegment) {
+      const float arm = 0.35f + byteNorm * 0.55f;
+      appendSunfallGroundPatch(verts, blob.x, blob.y, blob.z, arm, pillar, r, g, b, alpha);
+    } else if (isSunfall && blob.onWet && hasSegment) {
+      pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, r, g, b, alpha);
+      pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, r * 1.05f, g * 1.02f, b * 0.95f,
+                        alpha * 0.9f);
+      const float arm = 0.28f + byteNorm * 0.4f;
+      appendSunfallGroundPatch(verts, blob.x, blob.y, blob.z, arm, pillar * 0.65f, r, g, b,
+                               alpha * 0.85f);
+    } else if (hasSegment) {
       pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, r, g, b, alpha);
       pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, r * 1.05f, g * 1.02f, b * 0.95f,
                         alpha * 0.85f);
@@ -313,7 +338,7 @@ void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engi
   }
 
   std::vector<EnergonVertex> verts;
-  verts.reserve(blobs.size() * 4);
+  verts.reserve(std::min(blobs.size(), static_cast<std::size_t>(8192)) * 4);
   for (const EnergonBlob& blob : blobs) {
     appendBlobStreak(verts, blob);
   }
@@ -346,7 +371,8 @@ void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engi
 }
 
 void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
-                                 const engine::OrbitCamera& camera, int viewportW, int viewportH) {
+                                 const engine::OrbitCamera& camera, int viewportW, int viewportH,
+                                 std::uint64_t simTick) {
   if (!initialized_ || organisms.empty()) {
     return;
   }
@@ -358,7 +384,7 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
 
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
   const OrganismDrawBatch batch =
-      buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH);
+      buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH, simTick);
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.viewport(0, 0, viewportW, viewportH);

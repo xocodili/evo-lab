@@ -1,8 +1,12 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonRain.hpp"
+#include "sim/EnergonString.hpp"
+#include "sim/NeuronStem.hpp"
+#include "sim/Organism.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -118,6 +122,127 @@ TEST_CASE("dry land energon decays faster than wet", "[energon]") {
   }
 
   REQUIRE(dryTtl < wetTtl);
+}
+
+TEST_CASE("injectBlob enforces maxBlobs for cloaca vents", "[energon]") {
+  evolab::EnergonConfig config;
+  config.maxBlobs = 32;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(99, config);
+
+  for (int i = 0; i < 40; ++i) {
+    evolab::EnergonBlob blob;
+    blob.id = static_cast<std::uint32_t>(i + 1);
+    blob.data = 0x01010101;
+    blob.remaining = 1;
+    blob.initialBytes = 1;
+    blob.origin = evolab::EnergonOrigin::Cloaca;
+    blob.x = static_cast<float>(i);
+    blob.z = 0.0f;
+    blob.y = 1.0f;
+    blob.grounded = true;
+    blob.onWet = true;
+    blob.ttl = 10.0f;
+    field.injectBlob(blob);
+  }
+
+  REQUIRE(field.activeCount() == config.maxBlobs);
+}
+
+TEST_CASE("corpse release packs up to eight bytes per blob", "[energon]") {
+  evolab::EnergonField field(1, {});
+  evolab::SkeletonNode node;
+  node.worldX = 1.0f;
+  node.worldZ = 2.0f;
+  node.worldY = 0.5f;
+  std::vector<std::uint8_t> storage(10, 0xAB);
+
+  evolab::releaseFuelAtNode(node, field, storage, evolab::EnergonOrigin::Fragment, 1.0f);
+
+  REQUIRE(storage.empty());
+  REQUIRE(field.activeCount() == 2);
+  REQUIRE(field.blobs()[0].remaining == 8);
+  REQUIRE(field.blobs()[1].remaining == 2);
+  REQUIRE(field.blobs()[0].origin == evolab::EnergonOrigin::Fragment);
+}
+
+TEST_CASE("cloaca band wet TTL blue faster than green faster than red", "[energon]") {
+  evolab::EnergonConfig config;
+  config.ttlWetSeconds = 50.0f;
+
+  evolab::EnergonBlob distress;
+  distress.origin = evolab::EnergonOrigin::Cloaca;
+  distress.data = evolab::kCloacaTagDistress;
+  distress.remaining = 1;
+
+  evolab::EnergonBlob baseline = distress;
+  baseline.data = evolab::kCloacaTagBaseline;
+
+  evolab::EnergonBlob mate = distress;
+  mate.data = evolab::kCloacaTagMate;
+
+  const float distressTtl = evolab::energonWetTtlSeconds(distress, config);
+  const float baselineTtl = evolab::energonWetTtlSeconds(baseline, config);
+  const float mateTtl = evolab::energonWetTtlSeconds(mate, config);
+
+  REQUIRE(distressTtl < baselineTtl);
+  REQUIRE(baselineTtl < mateTtl);
+  REQUIRE(distressTtl == Catch::Approx(50.0f * evolab::kEnergonTtlDistressScale));
+  REQUIRE(mateTtl == Catch::Approx(50.0f * evolab::kEnergonTtlMateScale));
+}
+
+TEST_CASE("airborne sunfall retains TTL until landing", "[energon]") {
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonConfig config;
+  config.populationScaledRain = false;
+  config.spawnRateMax = 4.0f;
+  config.maxBlobs = 64;
+  evolab::EnergonField field(42, config);
+
+  for (int i = 0; i < 40; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  }
+  REQUIRE(field.activeCount() > 0);
+
+  bool sawAirborne = false;
+  float airborneTtl = 0.0f;
+  for (const evolab::EnergonBlob& blob : field.blobs()) {
+    if (blob.origin == evolab::EnergonOrigin::Sunfall && !blob.grounded) {
+      sawAirborne = true;
+      airborneTtl = blob.ttl;
+      break;
+    }
+  }
+  REQUIRE(sawAirborne);
+  REQUIRE(airborneTtl == Catch::Approx(evolab::kEnergonAirborneTtlSeconds));
+
+  for (int i = 0; i < 5; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  }
+
+  for (const evolab::EnergonBlob& blob : field.blobs()) {
+    if (blob.origin == evolab::EnergonOrigin::Sunfall && !blob.grounded) {
+      REQUIRE(blob.ttl == Catch::Approx(airborneTtl));
+    }
+  }
+}
+
+TEST_CASE("fragment TTL is shorter than sunfall", "[energon]") {
+  evolab::EnergonConfig config;
+  config.ttlWetSeconds = 40.0f;
+
+  evolab::EnergonBlob fragment;
+  fragment.origin = evolab::EnergonOrigin::Fragment;
+  fragment.remaining = 4;
+
+  evolab::EnergonBlob sunfall;
+  sunfall.origin = evolab::EnergonOrigin::Sunfall;
+  sunfall.remaining = 4;
+
+  REQUIRE(evolab::energonWetTtlSeconds(fragment, config) <
+          evolab::energonWetTtlSeconds(sunfall, config));
 }
 
 TEST_CASE("barren world height at world coordinates clamps to grid", "[energon]") {

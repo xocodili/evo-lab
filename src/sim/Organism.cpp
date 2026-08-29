@@ -1,8 +1,10 @@
+#include "sim/CampTopology.hpp"
 #include "sim/Organism.hpp"
 
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/OrganismComputer.hpp"
 #include "sim/Energon.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/NeuralAxon.hpp"
@@ -113,49 +115,36 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
   lastMouthFeedSuppressed = false;
   lastMouthHadFoodContact = false;
 
-  const FeedIntent* campFeedIntent = nullptr;
-  FeedIntent feedIntent{};
-  MouthInteroception mouthInteroception{};
-  std::uint32_t campMouthId = 0;
-  if (isCampNom()) {
-    for (SkeletonNode& node : nodes) {
-      if (!node.alive || node.neuron != NeuronType::Mouth) {
-        continue;
-      }
-      mouthInteroception = gatherMouthInteroception(*this, node.id, node, simTick);
-      feedIntent = computeCampFeedIntent(mouthInteroception);
+  const float radius = cellSize * kMouthContactRadiusFactor;
+  const bool campPhases = organismUsesCampNeuronPhases(*this);
+  for (SkeletonNode& node : nodes) {
+    if (!node.alive || node.neuron != NeuronType::Mouth) {
+      continue;
+    }
+    const FeedIntent* mouthFeedIntent = nullptr;
+    FeedIntent feedIntent{};
+    if (campPhases) {
+      const MouthInteroception mouthInteroception =
+          gatherMouthInteroception(*this, node.id, node, simTick);
+      feedIntent = computeCampFeedIntent(mouthInteroception, node.mouthChewPaused);
       lastMouthBiteDrive = feedIntent.biteDrive;
       lastMouthFeedSuppressed = feedIntent.feedSuppressed;
-      campFeedIntent = &feedIntent;
-      campMouthId = node.id;
-      break;
+      mouthFeedIntent = &feedIntent;
     }
-  }
+    organism_detail::tickMouthNode(*this, node, field, radius, simTick, mouthFeedIntent);
 
-  const float radius = cellSize * kMouthContactRadiusFactor;
-  for (SkeletonNode& node : nodes) {
-    if (node.alive && node.neuron == NeuronType::Mouth) {
-      organism_detail::tickMouthNode(*this, node, field, radius, simTick, campFeedIntent);
+    if (campPhases) {
+      MouthTrustEvent trustEvent;
+      trustEvent.hadFoodContact = lastMouthHadFoodContact;
+      trustEvent.ate = node.ateThisTick;
+      trustEvent.feedSuppressed = feedIntent.feedSuppressed;
+      applyCampMouthTrustLearning(*this, node.id, trustEvent, simTick);
     }
-  }
-
-  if (isCampNom() && campMouthId != 0) {
-    MouthTrustEvent trustEvent;
-    trustEvent.hadFoodContact = lastMouthHadFoodContact;
-    trustEvent.ate = false;
-    for (const SkeletonNode& node : nodes) {
-      if (node.alive && node.neuron == NeuronType::Mouth && node.ateThisTick) {
-        trustEvent.ate = true;
-        break;
-      }
-    }
-    trustEvent.feedSuppressed = lastMouthFeedSuppressed;
-    applyCampMouthTrustLearning(*this, campMouthId, trustEvent, simTick);
   }
 }
 
 void Organism::runDigestAndComputer(EnergonField& field, std::uint64_t simTick) {
-  if (!alive || !isCampNom()) {
+  if (!alive || !organismUsesCampNeuronPhases(*this)) {
     return;
   }
   digestMouthToComputer(*this);
@@ -176,7 +165,7 @@ void Organism::transferEnergy(EnergonField& field, float cellSize, std::uint64_t
     return;
   }
 
-  if (isCampNom() && hasNeuralAxons()) {
+  if (organismUsesCampNeuronPhases(*this) && hasNeuralAxons()) {
     conveyCampEnergon(*this, field, simTick);
     return;
   }
@@ -331,20 +320,17 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
   }
 
   if (isCampNom()) {
-    for (std::size_t i = 0; i < 7; ++i) {
-      const int jitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
-      const int next = static_cast<int>(computerRegister[i]) + jitter;
-      computerRegister[i] = static_cast<std::uint8_t>(
-          std::clamp(next, 0, static_cast<int>(kNeuronConfidenceMax)));
-    }
-    if (computerRegister[4] == 0) {
-      computerRegister[4] = 1;
-    }
-    if (computerRegister[5] == 0) {
-      computerRegister[5] = 1;
-    }
-    if (computerRegister[6] == 0) {
-      computerRegister[6] = 1;
+    for (SkeletonNode& node : nodes) {
+      if (node.neuron != NeuronType::Computer) {
+        continue;
+      }
+      for (std::size_t i = 0; i < 7; ++i) {
+        const int jitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
+        const int next = static_cast<int>(node.computerRegister[i]) + jitter;
+        node.computerRegister[i] = static_cast<std::uint8_t>(
+            std::clamp(next, 0, static_cast<int>(kNeuronConfidenceMax)));
+      }
+      guardComputerNodeRegister(node);
     }
   }
 }

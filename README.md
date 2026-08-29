@@ -36,6 +36,7 @@ Public **work-in-progress**: experimental, fun to run, behaviour and APIs will c
 | [docs/DESIGN-NOTES.md](docs/DESIGN-NOTES.md) | Architecture, metabolism, trust/chaos |
 | [docs/HGT-INSERTION.md](docs/HGT-INSERTION.md) | HGT + INSERTION spec (R0) |
 | [docs/EVOLUTION.md](docs/EVOLUTION.md) | Rollout plan, literature, parthenogenesis economics |
+| [docs/PARTHENOGENESIS.md](docs/PARTHENOGENESIS.md) | R1 asexual reproduction — two-layer entropy, energon ledger |
 | [docs/MARKETING-COMMS.md](docs/MARKETING-COMMS.md) | Public visual language & tone |
 | [docs/KINEMATICS.md](docs/KINEMATICS.md) | Skeleton FK / bundle gaps |
 

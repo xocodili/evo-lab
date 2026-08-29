@@ -19,14 +19,29 @@ std::uint8_t fuelStoreToConfidence(std::size_t storeBytes, std::uint32_t fullByt
 }
 
 std::uint8_t mouthFuelConfidence(const SkeletonNode& mouth) {
-  const float recent =
-      static_cast<float>(std::min(mouth.store.size(), static_cast<std::size_t>(kMouthLocalStoreMaxBytes))) /
-      static_cast<float>(kMouthLocalStoreMaxBytes);
-  const float reserve = static_cast<float>(
-      std::min(mouth.store.size(), static_cast<std::size_t>(kNeuronConfidenceFullFuelBytes))) /
-                        static_cast<float>(kNeuronConfidenceFullFuelBytes);
-  const float fill = std::clamp(0.55f * recent + 0.45f * reserve, 0.0f, 1.0f);
+  const float fill = std::clamp(
+      static_cast<float>(std::min(mouth.mouthChewFill, kMouthLocalStoreMaxBytes)) /
+          static_cast<float>(kMouthLocalStoreMaxBytes),
+      0.0f, 1.0f);
   return static_cast<std::uint8_t>(std::lround(fill * static_cast<float>(kNeuronConfidenceMax)));
+}
+
+void reconcileMouthChewFill(SkeletonNode& mouth) {
+  const std::uint32_t cap = static_cast<std::uint32_t>(std::min(
+      mouth.store.size(), static_cast<std::size_t>(kMouthLocalStoreMaxBytes)));
+  if (mouth.mouthChewFill > cap) {
+    mouth.mouthChewFill = cap;
+  }
+}
+
+void creditMouthChew(SkeletonNode& mouth, std::uint32_t netBytes) {
+  if (netBytes == 0) {
+    return;
+  }
+  reconcileMouthChewFill(mouth);
+  const std::uint32_t cap = kMouthLocalStoreMaxBytes;
+  const std::uint32_t room = cap > mouth.mouthChewFill ? cap - mouth.mouthChewFill : 0;
+  mouth.mouthChewFill += std::min(netBytes, room);
 }
 
 namespace {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sim/PerceptorFocus.hpp"
+
 #include <cstdint>
 
 namespace evolab {
@@ -15,6 +17,7 @@ struct ActuatorInteroception {
   float mouthConfidence = 0.0f;
   float perceptorSalience = 0.0f;
   bool perceptorLocked = false;
+  PerceptFocusKind focusKind = PerceptFocusKind::None;
   float focusBearing = 0.0f;
   float gazeHeading = 0.0f;
 };
@@ -25,6 +28,16 @@ struct MotorIntent {
   float turnRateScale = 0.0f;
   float tumbleRateScale = 1.0f;
   bool motorSuppressed = false;
+};
+
+// Post-kinematics trust learning: snapshot taken when a CAMP stroke is queued.
+struct CampActuatorProprioSnapshot {
+  bool pending = false;
+  float startX = 0.0f;
+  float startZ = 0.0f;
+  std::uint32_t actuatorId = 0;
+  ActuatorInteroception interoception;
+  MotorIntent motorIntent;
 };
 
 ActuatorInteroception gatherActuatorInteroception(const Organism& organism,

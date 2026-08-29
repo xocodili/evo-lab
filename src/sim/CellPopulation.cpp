@@ -5,6 +5,8 @@
 #include "sim/Chaos.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/OrganismHgt.hpp"
+#include "sim/OrganismFeedbagOracle.hpp"
+#include "sim/OrganismParthenogenesis.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WaterColumn.hpp"
@@ -239,13 +241,34 @@ void CellPopulation::seedNoms(const BarrenWorld& world, float cellSize, float he
       });
 }
 
+void CellPopulation::installFeedbagReproductionOracle(const BarrenWorld& world, float cellSize,
+                                                      float heightScale,
+                                                      std::uint64_t simTick) {
+  (void)world;
+  (void)cellSize;
+  (void)heightScale;
+  for (Organism& organism : organisms_) {
+    if (!organism.alive || !organism.isCampNom() || organism.feedbagOracle) {
+      continue;
+    }
+    ::evolab::installFeedbagReproductionOracle(organism, simTick);
+    return;
+  }
+}
+
 void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float cellSize,
                           float heightScale, float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
   energon.prepareSpatialQueries(cellSize, halfExtent);
   for (Organism& organism : organisms_) {
+    if (organism.feedbagOracle) {
+      continue;
+    }
     organism.perceive(world, energon, cellSize, halfExtent, organisms_, world.tickCount(),
                       sunIntensity);
+  }
+  for (Organism& organism : organisms_) {
+    tickFeedbagOracleHooks(organism, energon, cellSize);
   }
   for (Organism& organism : organisms_) {
     organism.feed(energon, cellSize, world.tickCount());
@@ -259,7 +282,9 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
     runOrganismPreAdvectHooks(organism, tickCtx);
   }
   for (Organism& organism : organisms_) {
-    organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
+    if (!organism.feedbagOracle) {
+      organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
+    }
   }
   for (Organism& organism : organisms_) {
     organism.metabolise(world, cellSize, heightScale);
@@ -281,6 +306,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   for (Organism& organism : organisms_) {
     organism.pruneNeuralAxons();
   }
+  tickParthenogenesisPass(organisms_, world, cellSize, heightScale, world.tickCount(), nextId_);
   for (Organism& organism : organisms_) {
     organism.transferColony();
   }

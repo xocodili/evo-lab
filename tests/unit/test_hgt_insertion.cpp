@@ -84,7 +84,7 @@ DeathFeastScenario makeDeathFeastRubScenario() {
   const evolab::NeuralAxon& stub = scenario.dying.neuralAxons.front();
   float rubX = 0.0f;
   float rubZ = 0.0f;
-  evolab::axonUncappedWorldPos(stub, rubX, rubZ);
+  evolab::axonUncappedWorldPos(scenario.dying, stub, rubX, rubZ);
   seedAllNodes(scenario.immortal, rubX, rubZ);
   for (evolab::SkeletonNode& node : scenario.dying.nodes) {
     if (node.alive) {

@@ -44,7 +44,7 @@ struct NeuralAxon {
 bool axonIsDangling(const NeuralAxon& axon);
 bool axonEndpointLive(const Organism& organism, const NeuralAxon& axon, bool isSrc);
 std::uint32_t axonLiveEndNodeId(const Organism& organism, const NeuralAxon& axon);
-void axonUncappedWorldPos(const NeuralAxon& axon, float& wx, float& wz);
+void axonUncappedWorldPos(const Organism& organism, const NeuralAxon& axon, float& wx, float& wz);
 void transitionAxonsOnNeuronDeath(Organism& organism, const SkeletonNode& deadNode);
 
 float axonTrustScale(std::uint16_t trust);

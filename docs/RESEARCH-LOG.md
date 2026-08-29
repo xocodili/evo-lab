@@ -2,7 +2,7 @@
 
 **Started:** 2026-08-27  
 **Status:** Active exploratory / engineering research  
-**Working title:** *Distributed metabolic regulation in a minimal aquatic artificial organism (CAMP Nom)*
+**Working title:** *Distributed metabolic regulation in a minimal aquatic artificial organism (CAMP camper)*
 
 ---
 
@@ -36,7 +36,7 @@ A skeletal **P↔C** link may correspond to a **bundle** of directed neural axon
 
 ## 2. System under study
 
-**Organism:** CAMP Nom — developmental P(1), M(2), C(3), A(4); 12 neural axons (all directed pairs); skeleton **Y-star** (C hub, P forward, M/A on ±120° arms).
+**Organism:** CAMP camper — developmental P(1), M(2), C(3), A(4); 12 neural axons (all directed pairs); skeleton **Y-star** (C hub, P forward, M/A on ±120° arms).
 
 **Environment:** BarrenWorld tidal shallow sea; sunfall energon; wet placement at spawn.
 
@@ -65,7 +65,7 @@ Shared runner: `runFeedbagOracle(cycleDays, worldSeed, energonSeed)` in `test_re
 
 ### 2026-08-27 — Energon flow review (pre-train pause)
 
-**Setup:** Default seeding `chaosInitialStorage` 1–3 fuel-days; 50% hub / 50% peripheral split; 60 Noms; sunfall 6–14 blobs/tick.
+**Setup:** Default seeding `chaosInitialStorage` 1–3 fuel-days; 50% hub / 50% peripheral split; 60 campers; sunfall 6–14 blobs/tick.
 
 **Findings:**
 - Regulation architecture is **structurally closed-loop** (digest, brakes, conveyance, computer dispatch).
@@ -73,7 +73,7 @@ Shared runner: `runFeedbagOracle(cycleDays, worldSeed, energonSeed)` in `test_re
 - Population-level sunfall **<** full-population basal duty cycle → expect **thinning** until intake matches drain.
 - Test coverage: 400-tick intact without feed (short vs fuel-day scale); no long-horizon autotrophy benchmark yet.
 
-**Screenshot (tick ~777, seed 42, day ~22):** HUD reports **0 intact CAMP / 60 degraded**; inspected Nom #13 = single actuator survivor. Consistent with peripheral bankruptcy + neuron death cascade over multi-hour run. **Action item:** add telemetry run logging survival curves before env tuning.
+**Screenshot (tick ~777, seed 42, day ~22):** HUD reports **0 intact CAMP / 60 degraded**; inspected camper #13 = single actuator survivor. Consistent with peripheral bankruptcy + neuron death cascade over multi-hour run. **Action item:** add telemetry run logging survival curves before env tuning.
 
 ### 2026-08-27 — Kinematics intent
 
@@ -188,12 +188,12 @@ Ramp: `hubPeak≈57k` from `43k` start in 4000 ticks; hub end lower due to basal
 
 | Priority | Experiment | Output |
 |----------|------------|--------|
-| P0 | Headless survival cohort: 1/12/60 Noms × 1–3 fuel-days × sunfall {6,14} | Kaplan-Meier-style alive/intact/degraded curves |
+| P0 | Headless survival cohort: 1/12/60 campers × 1–3 fuel-days × sunfall {6,14} | Kaplan-Meier-style alive/intact/degraded curves |
 | P0 | Upper-bound satiety regulation (`test_regulation_satiety.cpp`) | ✅ initial harness |
 | P0 | Flux-cap factory (C-root star) + render regression | Visual + FK tests |
 | P1 | Mouth cap sweep {16, 24, 32} × mouth count {1, 3} | Hub response lag; bytes to first dispatch |
 | P1 | Generation-0 regulation audit: brake engagement rate | % ticks stroke suppressed when M or C satiated |
-| P2 | Trust convergence over 10 fuel-days (single nom, food-rich patch) | Axon trust heatmaps |
+| P2 | Trust convergence over 10 fuel-days (single camper, food-rich patch) | Axon trust heatmaps |
 
 ---
 
@@ -238,6 +238,29 @@ Plausible directions: **ALife conference** (short/long); **ECAL**; workshop trac
 
 **HGT dock:** entropy at **uncapped end brushes neuron** — not field blob, not live-live bump. Grover `{P,M,C,A}` floor confirmed for eventual birth collapse.
 
-### 2026-08-28 (f) — HGT-INSERTION.md consolidated spec
+### 2026-08-28 (g) — PARTHENOGENESIS.md drafted
 
-Authoritative design: [HGT-INSERTION.md](HGT-INSERTION.md) — two-layer HGT (H0 chemical + H1/H2 structural INSERTION), death cascade partial topology, axon transit basal, rejected models, constants, test plan, bibliography.
+R1 spec: [PARTHENOGENESIS.md](PARTHENOGENESIS.md) — two-layer entropy (structural gate + mandatory parametric jitter), unified energon-vs-outcome ledger (abort = spent, no child), Grover floor at birth, rub-until-birth test plan.
+
+### 2026-08-28 (h) — R1 parthenogenesis implemented + birth-rub tests
+
+**Implementation:** `OrganismParthenogenesis.cpp` — eligibility (age ≥600, solvency ≥345 600 B hub, wet, valid CAMP, no basal arrears), morphogenesis pipeline (init 864 B + 19×8 B step basal + finalisation to **259 200 B** baseline), Gate 2 parametric jitter (trust, η, bones, register, sense radius, heading), Gate 1 structural dup/del/ins on axon graph (**developmental edges protected** from deletion). Child endowment **172 800 B** (2 fuel-days). Integrated in `CellPopulation` tick after HGT prune.
+
+**Harness:** `tests/unit/test_parthenogenesis.cpp` — tags `[parthenogenesis]`, `[birth_rub]`; `ParthenogenesisPassOptions` exposes `structuralRateOverride` and `skipEligibilityChecks` for oracle parents.
+
+**Results (Release build, seed 42 world):**
+
+| Test | Result | Key metric |
+|------|--------|------------|
+| Wealthy aged parent spawns faithful camp child | ✅ | `bytesSpent` = **259 200**; parent hub debited exactly; Gate 2 jitter on P→M axon; `offspringSpawnedCount` = 1 |
+| Young parent cannot spawn | ✅ | age &lt;600 → **0 B** spent, no child |
+| Insolvent parent aborts without spawn | ✅ | partial pipeline debit (**964 B**: full wallet consumed — 864 init + 12×8 step basals + remainder on failed step 13); `aborted` = true |
+| 0% structural rate preserves axon count | ✅ | child axons **12/12** (matches parent) |
+| 100% structural rate rub (16 trials) | ✅ | **16/16** valid CAMP spawns (`campGenotypeValid`); dup/ins may add axons, del skips `{P,M,C,A}` developmental edges |
+| Population tick adds child | ✅ | population 1→2; parent telemetry set |
+
+**Full suite:** **161/161** tests passed (was 156 pre-R1; +5 parthenogenesis cases, 28 assertions in `[parthenogenesis]` filter).
+
+**Interpretation:** Reproductive debit matches design target (259 200 B ≈ 3 fuel-days at 1 B/tick basal duty). Abort path correctly spends init + partial morphogenesis without spawning — unified ledger behaviour. Structural entropy at 100% does not break CAMP viability when developmental axons are immutable (R1 axon-level ops only; full `G_seq` locus operators deferred to R1b).
+
+**Backlog:** 50%/10% structural-rate binomial calibration (mirror death-feast HGT rub); Grover `{P,M,C,A}` floor at birth; inspector HUD for `lastParthenogenesisBytesSpent` / `offspringSpawnedCount`; headless cohort survival with spontaneous parthenogenesis under default tick (no oracle skip).

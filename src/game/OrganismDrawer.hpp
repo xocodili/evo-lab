@@ -30,6 +30,7 @@ inline constexpr float kNeuralAxonWidthPx = 1.0f;
 
 OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms, float eyeX,
                                          float eyeY, float eyeZ, const engine::Mat4& mvp,
-                                         int viewportW, int viewportH);
+                                         int viewportW, int viewportH,
+                                         std::uint64_t simTick = 0);
 
 }  // namespace evolab::game
