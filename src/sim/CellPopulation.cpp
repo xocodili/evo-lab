@@ -3,7 +3,12 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/NeuronTick.hpp"
+#include "sim/NeuronCoordinator.hpp"
+#include "sim/OrganismComputer.hpp"
+#include "sim/EnergonConveyance.hpp"
+#include "sim/NeuronSignal.hpp"
 #include "sim/OrganismHgt.hpp"
 #include "sim/OrganismFeedbagOracle.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
@@ -259,7 +264,7 @@ void CellPopulation::installFeedbagReproductionOracle(const BarrenWorld& world, 
 void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float cellSize,
                           float heightScale, float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
-  energon.prepareSpatialQueries(cellSize, halfExtent);
+  energon.prepareSpatialQueries(cellSize, halfExtent, world);
   for (Organism& organism : organisms_) {
     if (organism.feedbagOracle) {
       continue;
@@ -270,11 +275,29 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   for (Organism& organism : organisms_) {
     tickFeedbagOracleHooks(organism, energon, cellSize);
   }
+  const float stickyRadius = cellSize * kMouthStickyRadiusFactor;
+  for (Organism& organism : organisms_) {
+    if (organism.feedbagOracle) {
+      continue;
+    }
+    energon.applyMouthStickiness({organism}, stickyRadius);
+  }
+  energon.syncMouthAttachments(organisms_, world, cellSize, heightScale);
   for (Organism& organism : organisms_) {
     organism.feed(energon, cellSize, world.tickCount());
   }
   for (Organism& organism : organisms_) {
-    organism.runDigestAndComputer(energon, world.tickCount());
+    if (!organismUsesCampNeuronPhases(organism)) {
+      continue;
+    }
+    for (SkeletonNode& node : organism.nodes) {
+      if (!node.alive || node.neuron != NeuronType::Mouth) {
+        continue;
+      }
+      tickMouthChewMetabolism(node, node.ateThisTick);
+    }
+    digestMouthToComputer(organism);
+    conveyMouthDownstream(organism, energon, world.tickCount());
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,
                                     heightScale, halfExtent, world.tickCount()};
@@ -283,14 +306,37 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   }
   for (Organism& organism : organisms_) {
     if (!organism.feedbagOracle) {
+      tickCoordinatorPhase(organism, world.tickCount());
+    }
+  }
+  for (Organism& organism : organisms_) {
+    if (!organism.feedbagOracle && organismUsesCampNeuronPhases(organism)) {
+      tickComputerPhase(organism, energon, world.tickCount());
+    }
+  }
+  for (Organism& organism : organisms_) {
+    if (!organism.feedbagOracle) {
       organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
     }
   }
+  energon.syncMouthAttachments(organisms_, world, cellSize, heightScale);
+  energon.pruneMouthAnchors(organisms_, stickyRadius);
   for (Organism& organism : organisms_) {
     organism.metabolise(world, cellSize, heightScale);
   }
   for (Organism& organism : organisms_) {
     organism.tickNeuronViability(energon);
+  }
+  for (Organism& organism : organisms_) {
+    if (organism.feedbagOracle || !organismUsesCampNeuronPhases(organism)) {
+      continue;
+    }
+    for (SkeletonNode& node : organism.nodes) {
+      if (!node.alive || node.neuron != NeuronType::Mouth) {
+        continue;
+      }
+      reconcileMouthChewFill(node);
+    }
   }
   for (Organism& organism : organisms_) {
     organism.tickAxonTransitBasal();

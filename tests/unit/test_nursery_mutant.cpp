@@ -52,14 +52,23 @@ evolab::EnergonConfig nurseryFieldConfig() {
   return config;
 }
 
+evolab::BarrenWorld makeNurseryWorld(int seed, int resolution = 31) {
+  return evolab::BarrenWorld(seed, resolution, evolab::Tide(evolab::TideConfig{}));
+}
+
 void tickNurseryOrganism(evolab::Organism& organism, evolab::BarrenWorld& world,
                          evolab::EnergonField& energon, float sunIntensity) {
   const float cellSize = evolab::kWorldCellSize;
   const float heightScale = evolab::kTerrainHeightScale;
+  world.tick();
+  energon.tick(world, sunIntensity, cellSize, heightScale);
   const float halfExtent = worldHalfExtent(world, cellSize);
-  energon.prepareSpatialQueries(cellSize, halfExtent);
+  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
+  energon.prepareSpatialQueries(cellSize, halfExtent, world);
   organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
                     sunIntensity);
+  energon.applyMouthStickiness({organism}, stickyRadius);
+  energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
   organism.feed(energon, cellSize, world.tickCount());
   organism.runDigestAndComputer(energon, world.tickCount());
   const evolab::OrganismTickContext ctx{world, energon, cellSize, heightScale, halfExtent,
@@ -75,8 +84,8 @@ void tickNurseryOrganism(evolab::Organism& organism, evolab::BarrenWorld& world,
   organism.transferEnergy(energon, cellSize, world.tickCount());
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
-  world.tick();
-  energon.tick(world, sunIntensity, cellSize, heightScale);
+  energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
+  energon.pruneMouthAnchors({organism}, stickyRadius);
 }
 
 int countNeuronType(const evolab::Organism& organism, evolab::NeuronType type) {
@@ -91,9 +100,7 @@ int countNeuronType(const evolab::Organism& organism, evolab::NeuronType type) {
 
 }  // namespace
 
-TEST_CASE("nursery random camp mutants tick without code faults", "[nursery][mutant]") {
-  evolab::TideConfig tideConfig;
-  tideConfig.amplitude = 0.0f;
+TEST_CASE("nursery random camp mutants tick without code faults", "[nursery][mutant][drift]") {
   constexpr int kMutantSeeds = 32;
   constexpr int kNurseryTicks = 1024;
   constexpr float kMinDepth = 0.35f;
@@ -101,7 +108,7 @@ TEST_CASE("nursery random camp mutants tick without code faults", "[nursery][mut
   int multiPerceptorCases = 0;
 
   for (int seed = 0; seed < kMutantSeeds; ++seed) {
-    evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+    evolab::BarrenWorld world = makeNurseryWorld(31, 32);
     evolab::EnergonField energon(static_cast<std::uint32_t>(1000 + seed), nurseryFieldConfig());
 
     float wx = 0.0f;
@@ -112,7 +119,6 @@ TEST_CASE("nursery random camp mutants tick without code faults", "[nursery][mut
         1, wx, wz, 1.0f, evolab::kTicksPerStemCellDay, 0, evolab::kWorldCellSize,
         static_cast<std::uint64_t>(seed));
     mutant.alive = true;
-    mutant.disableTideAdvection = true;
     mutant.disableTerrainThreatScan = true;
     mutant.disableNurseryLocomotion = true;
     mutant.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
@@ -139,7 +145,7 @@ TEST_CASE("nursery random camp mutants tick without code faults", "[nursery][mut
       tickNurseryOrganism(mutant, world, energon, 1.0f);
     }
 
-    INFO("alive=" << mutant.alive << " hubBytes=" << mutant.bodyStorage.size()
+    INFO("alive=" << mutant.alive << " hubBytes=" << mutant.computerHubFuelBytes()
                   << " axonsRemaining=" << mutant.neuralAxons.size());
     if (perceptorCount >= 2) {
       INFO("multi-eye abomination seed=" << seed << " genotype=" << genotype

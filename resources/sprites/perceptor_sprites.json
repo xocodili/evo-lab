@@ -1,0 +1,15 @@
+{
+  "image": "perceptor_sprites.png",
+  "clips": {
+    "eye_half_lidded": {
+      "fps": 1,
+      "loop": "loop",
+      "frames": [[0, 0, 16, 16]]
+    },
+    "eye_open": {
+      "fps": 1,
+      "loop": "loop",
+      "frames": [[16, 0, 16, 16]]
+    }
+  }
+}

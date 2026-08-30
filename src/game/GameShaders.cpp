@@ -79,5 +79,6 @@ void main() {
   FragColor = vColor;
 }
 )";
-}
+
+}  // namespace evolab::game
 

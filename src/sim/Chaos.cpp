@@ -82,6 +82,10 @@ std::uint32_t chaosInitialStorage(std::mt19937& rng) {
   return std::clamp(jittered, kTicksPerStemCellDay, kStemCellStorageMaxBytes);
 }
 
+float clampWalletCapFactor(float factor) {
+  return std::clamp(factor, kWalletCapFactorMin, kWalletCapFactorMax);
+}
+
 float nominalBoneLength(float cellSize) {
   return cellSize * kNominalBoneLengthFactor;
 }

@@ -1,4 +1,4 @@
-#include "sim/CampTopology.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/Organism.hpp"
 
 #include "sim/BarrenWorld.hpp"
@@ -15,7 +15,8 @@
 #include "sim/NeuronTrust.hpp"
 #include "sim/OrganismComputer.hpp"
 #include "sim/OrganismPerceptor.hpp"
-#include "sim/CampTopology.hpp"
+#include "sim/Chaos.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/NeuronStem.hpp"
 
 #include <algorithm>
@@ -131,7 +132,8 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
       lastMouthFeedSuppressed = feedIntent.feedSuppressed;
       mouthFeedIntent = &feedIntent;
     }
-    organism_detail::tickMouthNode(*this, node, field, radius, simTick, mouthFeedIntent);
+    organism_detail::tickMouthNode(*this, node, field, node.worldX, node.worldZ, radius, simTick,
+                                   mouthFeedIntent);
 
     if (campPhases) {
       MouthTrustEvent trustEvent;
@@ -148,6 +150,8 @@ void Organism::runDigestAndComputer(EnergonField& field, std::uint64_t simTick) 
     return;
   }
   digestMouthToComputer(*this);
+  // Test harness convenience: runs full C without fresh mini-C. Production tick order is
+  // digest → preAdvect taste → tickCoordinatorPhase → tickComputerPhase (see CellPopulation).
   tickComputerPhase(*this, field, simTick);
 }
 
@@ -166,7 +170,9 @@ void Organism::transferEnergy(EnergonField& field, float cellSize, std::uint64_t
   }
 
   if (organismUsesCampNeuronPhases(*this) && hasNeuralAxons()) {
-    conveyCampEnergon(*this, field, simTick);
+    if (!feedbagOracle) {
+      conveyCampEnergon(*this, field, simTick);
+    }
     return;
   }
 
@@ -196,10 +202,10 @@ void Organism::transferEnergy(EnergonField& field, float cellSize, std::uint64_t
 
     if (parent->id == rootNodeId) {
       for (std::size_t i = 0; i < actualMove; ++i) {
-        if (bodyStorage.size() >= kStemCellStorageMaxBytes) {
+        if (parent->store.size() >= kStemCellStorageMaxBytes) {
           break;
         }
-        bodyStorage.push_back(child->store.back());
+        parent->store.push_back(child->store.back());
         child->store.pop_back();
       }
     } else {
@@ -312,6 +318,9 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
   heading = chaosJitterHeading(heading, rng);
 
   senseRadiusFactor = chaosJitterFloat(kPerceptorSenseRadiusFactor, rng);
+  peripheralStoreCapFactor =
+      clampWalletCapFactor(chaosJitterFloat(kDefaultPeripheralStoreCapFactor, rng));
+  hubStoreCapFactor = clampWalletCapFactor(chaosJitterFloat(kDefaultHubStoreCapFactor, rng));
 
   for (SkeletonLink& link : links) {
     link.restLength = chaosJitterFloat(link.restLength, rng);
@@ -321,16 +330,26 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
 
   if (isCampNom()) {
     for (SkeletonNode& node : nodes) {
-      if (node.neuron != NeuronType::Computer) {
-        continue;
+      if (node.neuron == NeuronType::Computer) {
+        for (std::size_t i = 0; i < 7; ++i) {
+          const int jitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
+          const int next = static_cast<int>(node.computerRegister[i]) + jitter;
+          node.computerRegister[i] = static_cast<std::uint8_t>(
+              std::clamp(next, 0, static_cast<int>(kNeuronConfidenceMax)));
+        }
+        guardComputerNodeRegister(node);
       }
-      for (std::size_t i = 0; i < 7; ++i) {
-        const int jitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
-        const int next = static_cast<int>(node.computerRegister[i]) + jitter;
-        node.computerRegister[i] = static_cast<std::uint8_t>(
-            std::clamp(next, 0, static_cast<int>(kNeuronConfidenceMax)));
-      }
-      guardComputerNodeRegister(node);
+      const int coordJitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
+      const int coordNext = static_cast<int>(node.coordinatorRegister[0]) + coordJitter;
+      node.coordinatorRegister[0] = static_cast<std::uint8_t>(
+          std::clamp(coordNext, 0, static_cast<int>(kNeuronConfidenceMax)));
+    }
+  } else {
+    for (SkeletonNode& node : nodes) {
+      const int coordJitter = static_cast<int>(chaosBernoulli(0.5f, rng) ? 1 : -1);
+      const int coordNext = static_cast<int>(node.coordinatorRegister[0]) + coordJitter;
+      node.coordinatorRegister[0] = static_cast<std::uint8_t>(
+          std::clamp(coordNext, 0, static_cast<int>(kNeuronConfidenceMax)));
     }
   }
 }
@@ -347,6 +366,14 @@ bool Organism::allLocalStoresEmpty() const {
     }
   }
   return true;
+}
+
+std::size_t Organism::totalFuelBytes() const {
+  return totalOrganismFuelBytes(*this);
+}
+
+std::size_t Organism::computerHubFuelBytes() const {
+  return evolab::computerHubFuelBytes(*this);
 }
 
 }  // namespace evolab

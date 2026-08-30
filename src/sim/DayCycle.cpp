@@ -38,7 +38,9 @@ void DayCycle::skyColor(std::uint64_t tick, float& r, float& g, float& b) const 
 }
 
 void DayCycle::clockTime(std::uint64_t tick, int& hours, int& minutes) const {
-  const float dayT = phase01(tick);
+  // Linear 0→1 over the visual day; phase01 is a twilight sine and runs backward at night.
+  const float dayT =
+      std::fmod(static_cast<float>(tick), periodTicks_) / periodTicks_;
   const int totalMinutes = static_cast<int>(dayT * 24.0f * 60.0f) % (24 * 60);
   hours = totalMinutes / 60;
   minutes = totalMinutes % 60;

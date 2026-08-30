@@ -1,11 +1,14 @@
+#include "sim/NeuronFuel.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
 #include "sim/OrganismComputer.hpp"
+#include "sim/NeuronCoordinator.hpp"
 #include "sim/OrganismFeedbagOracle.hpp"
+#include "sim/Organism.hpp"
 
+#include "sim/Chaos.hpp"
 #include "sim/BarrenWorld.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
-#include "sim/Chaos.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/WaterColumn.hpp"
@@ -27,7 +30,10 @@ enum class MorphogenesisKind : std::uint8_t { Locus, Axon, Link };
 struct MorphogenesisStep {
   MorphogenesisKind kind = MorphogenesisKind::Locus;
   std::uint32_t nodeId = 0;
-  std::size_t index = 0;
+  std::uint32_t axonSrcId = 0;
+  std::uint32_t axonDstId = 0;
+  std::uint32_t linkParentId = 0;
+  std::uint32_t linkChildId = 0;
 };
 
 void splitCampEndowment(std::size_t total, std::size_t& hubBytes, std::size_t& perceptorBytes,
@@ -59,18 +65,39 @@ bool consumeHubBytes(Organism& organism, std::uint32_t amount, std::uint32_t& by
   if (amount == 0) {
     return true;
   }
-  if (organism.bodyStorage.size() < amount) {
-    bytesSpent += static_cast<std::uint32_t>(organism.bodyStorage.size());
-    organism.bodyStorage.clear();
+  SkeletonNode* computer = findComputerHubNode(organism);
+  if (computer == nullptr) {
     return false;
   }
-  consumeFuelBack(organism.bodyStorage, amount);
+  if (computer->store.size() < amount) {
+    bytesSpent += static_cast<std::uint32_t>(computer->store.size());
+    computer->store.clear();
+    return false;
+  }
+  consumeFuelBack(computer->store, amount);
   bytesSpent += amount;
   return true;
 }
 
+void creditHubBytes(Organism& organism, std::uint32_t amount) {
+  if (amount == 0) {
+    return;
+  }
+  SkeletonNode* computer = findComputerHubNode(organism);
+  if (computer == nullptr) {
+    return;
+  }
+  const std::size_t cap = hubStoreCapBytes(organism);
+  const std::size_t room = cap > computer->store.size() ? cap - computer->store.size() : 0;
+  const std::size_t credit = std::min<std::size_t>(room, amount);
+  if (credit == 0) {
+    return;
+  }
+  computer->store.insert(computer->store.end(), credit, 1);
+}
+
 bool canAffordReserveAfterSpend(const Organism& organism, std::uint32_t spent) {
-  const std::size_t remaining = organism.bodyStorage.size();
+  const std::size_t remaining = computerHubFuelBytes(organism);
   (void)spent;
   return remaining >= kParthenogenesisParentReserveMin;
 }
@@ -92,6 +119,10 @@ void jitterAxonGate2(NeuralAxon& axon, std::mt19937& rng) {
 
 void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt19937& rng) {
   organism.senseRadiusFactor = chaosJitterFloat(parent.senseRadiusFactor, rng);
+  organism.peripheralStoreCapFactor =
+      clampWalletCapFactor(chaosJitterFloat(parent.peripheralStoreCapFactor, rng));
+  organism.hubStoreCapFactor =
+      clampWalletCapFactor(chaosJitterFloat(parent.hubStoreCapFactor, rng));
   organism.heading = chaosJitterHeading(parent.heading, rng);
   for (SkeletonNode& node : organism.nodes) {
     if (node.neuron != NeuronType::Computer) {
@@ -100,7 +131,9 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
     const SkeletonNode* parentNode = parent.findNode(node.id);
     if (parentNode != nullptr && parentNode->neuron == NeuronType::Computer) {
       node.computerRegister = parentNode->computerRegister;
+      node.coordinatorRegister = parentNode->coordinatorRegister;
     } else {
+      initCoordinatorNodeRegister(node);
       initComputerNodeRegister(node);
     }
     for (std::size_t i = 0; i < 7; ++i) {
@@ -148,6 +181,26 @@ std::uint32_t maxNodeId(const Organism& organism) {
 int findNodeIndexById(const Organism& organism, std::uint32_t nodeId) {
   for (std::size_t i = 0; i < organism.nodes.size(); ++i) {
     if (organism.nodes[i].id == nodeId) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+int findAxonIndexByEdge(const Organism& organism, std::uint32_t srcId, std::uint32_t dstId) {
+  for (std::size_t i = 0; i < organism.neuralAxons.size(); ++i) {
+    const NeuralAxon& axon = organism.neuralAxons[i];
+    if (axon.srcNodeId == srcId && axon.dstNodeId == dstId) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+int findLinkIndexByEdge(const Organism& organism, std::uint32_t parentId, std::uint32_t childId) {
+  for (std::size_t i = 0; i < organism.links.size(); ++i) {
+    const SkeletonLink& link = organism.links[i];
+    if (link.parentNodeId == parentId && link.childNodeId == childId) {
       return static_cast<int>(i);
     }
   }
@@ -215,12 +268,13 @@ void assignChildCampEndowment(Organism& child) {
     }
   }
 
-  child.bodyStorage.assign(hubBytes + mouthBytes, 0);
   for (SkeletonNode& node : child.nodes) {
     if (!node.alive) {
       continue;
     }
-    if (node.neuron == NeuronType::Perceptor) {
+    if (node.neuron == NeuronType::Computer) {
+      initComputerHubStore(node, hubBytes + mouthBytes, child);
+    } else if (node.neuron == NeuronType::Perceptor) {
       const std::size_t share =
           perceptorBytes / static_cast<std::size_t>(std::max(1, perceptorCount));
       node.store.assign(share, 0);
@@ -243,9 +297,13 @@ Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, flo
   child.computerNodeId = parent.computerNodeId;
   child.heading = parent.heading;
   child.senseRadiusFactor = parent.senseRadiusFactor;
+  child.peripheralStoreCapFactor = parent.peripheralStoreCapFactor;
+  child.hubStoreCapFactor = parent.hubStoreCapFactor;
   child.nodes = parent.nodes;
   child.links = parent.links;
   child.neuralAxons = parent.neuralAxons;
+
+  ensureCampDevelopmentalAxons(child);
 
   for (SkeletonNode& node : child.nodes) {
     node.worldX = wx;
@@ -262,13 +320,13 @@ std::vector<MorphogenesisStep> buildMorphogenesisPlan(const Organism& child) {
   std::vector<MorphogenesisStep> plan;
   plan.reserve(child.nodes.size() + child.neuralAxons.size() + child.links.size());
   for (const SkeletonNode& node : child.nodes) {
-    plan.push_back({MorphogenesisKind::Locus, node.id, 0});
+    plan.push_back({MorphogenesisKind::Locus, node.id, 0, 0, 0, 0});
   }
-  for (std::size_t i = 0; i < child.neuralAxons.size(); ++i) {
-    plan.push_back({MorphogenesisKind::Axon, 0, i});
+  for (const NeuralAxon& axon : child.neuralAxons) {
+    plan.push_back({MorphogenesisKind::Axon, 0, axon.srcNodeId, axon.dstNodeId, 0, 0});
   }
-  for (std::size_t i = 0; i < child.links.size(); ++i) {
-    plan.push_back({MorphogenesisKind::Link, 0, i});
+  for (const SkeletonLink& link : child.links) {
+    plan.push_back({MorphogenesisKind::Link, 0, 0, 0, link.parentNodeId, link.childNodeId});
   }
   return plan;
 }
@@ -396,6 +454,7 @@ bool applyStructuralOpLocus(Organism& child, std::size_t index, StructuralOp op,
       inserted.worldZ = source.worldZ;
       inserted.worldY = source.worldY;
       resetSpawnNodeRuntime(inserted);
+      initCoordinatorNodeRegister(inserted);
       if (inserted.neuron == NeuronType::Computer) {
         initComputerNodeRegister(inserted);
       }
@@ -433,6 +492,29 @@ bool applyStructuralOpLink(Organism& child, std::size_t index, StructuralOp op,
       if (child.links.size() <= 1) {
         return false;
       }
+      const SkeletonLink& doomed = child.links[index];
+      if (doomed.parentNodeId == child.rootNodeId) {
+        const SkeletonNode* peripheral = child.findNode(doomed.childNodeId);
+        if (peripheral != nullptr && peripheral->alive &&
+            (peripheral->neuron == NeuronType::Perceptor ||
+             peripheral->neuron == NeuronType::Mouth ||
+             peripheral->neuron == NeuronType::Actuator)) {
+          int hubArmCount = 0;
+          for (const SkeletonLink& link : child.links) {
+            if (link.parentNodeId != child.rootNodeId ||
+                link.childNodeId != doomed.childNodeId) {
+              continue;
+            }
+            const SkeletonNode* node = child.findNode(link.childNodeId);
+            if (node != nullptr && node->alive && node->neuron == peripheral->neuron) {
+              ++hubArmCount;
+            }
+          }
+          if (hubArmCount <= 1) {
+            return false;
+          }
+        }
+      }
       child.links.erase(child.links.begin() + static_cast<std::ptrdiff_t>(index));
       return true;
     }
@@ -447,12 +529,7 @@ bool applyStructuralOpLink(Organism& child, std::size_t index, StructuralOp op,
 }
 
 bool isDevelopmentalAxonEdge(std::uint32_t src, std::uint32_t dst) {
-  for (const auto& edge : kCampDevelopmentalAxons) {
-    if (edge.first == src && edge.second == dst) {
-      return true;
-    }
-  }
-  return false;
+  return isCampDevelopmentalAxonEdge(src, dst);
 }
 
 bool applyStructuralOpAxon(std::vector<NeuralAxon>& axons, StructuralOp op, std::mt19937& rng,
@@ -510,16 +587,21 @@ bool applyMorphogenesisStructuralOp(Organism& child, const MorphogenesisStep& st
       }
       return applyStructuralOpLocus(child, static_cast<std::size_t>(nodeIndex), op, rng);
     }
-    case MorphogenesisKind::Axon:
-      if (step.index >= child.neuralAxons.size()) {
+    case MorphogenesisKind::Axon: {
+      const int axonIndex = findAxonIndexByEdge(child, step.axonSrcId, step.axonDstId);
+      if (axonIndex < 0) {
         return false;
       }
-      return applyStructuralOpAxon(child.neuralAxons, op, rng, step.index);
-    case MorphogenesisKind::Link:
-      if (step.index >= child.links.size()) {
+      return applyStructuralOpAxon(child.neuralAxons, op, rng,
+                                   static_cast<std::size_t>(axonIndex));
+    }
+    case MorphogenesisKind::Link: {
+      const int linkIndex = findLinkIndexByEdge(child, step.linkParentId, step.linkChildId);
+      if (linkIndex < 0) {
         return false;
       }
-      return applyStructuralOpLink(child, step.index, op, rng);
+      return applyStructuralOpLink(child, static_cast<std::size_t>(linkIndex), op, rng);
+    }
   }
   return false;
 }
@@ -599,7 +681,12 @@ bool findSpawnPose(const Organism& parent, const BarrenWorld& world, float cellS
   return true;
 }
 
-void abortSpend(Organism& parent, ParthenogenesisResult& result, std::uint32_t bytesSpent) {
+void abortSpend(Organism& parent, ParthenogenesisResult& result, std::uint32_t bytesSpent,
+                bool refundSpent = false) {
+  if (refundSpent) {
+    creditHubBytes(parent, bytesSpent);
+    bytesSpent = 0;
+  }
   result.aborted = true;
   result.bytesSpent = bytesSpent;
   parent.lastParthenogenesisBytesSpent = bytesSpent;
@@ -673,6 +760,11 @@ bool campGenotypeValid(const Organism& organism) {
   return organism.alive && organismHasCampNeuronFloor(organism) && axonGraphLegal(organism);
 }
 
+bool campSpawnMorphologyValid(const Organism& organism) {
+  return campGenotypeValid(organism) && organismHasCampDevelopmentalAxons(organism) &&
+         organismHasCampHubArms(organism);
+}
+
 std::uint32_t estimateParthenogenesisCostCamp() {
   return kParthenogenesisBaselineCampDebit;
 }
@@ -694,14 +786,15 @@ bool eligibleForParthenogenesis(const Organism& organism, const BarrenWorld& wor
   if (!campGenotypeValid(organism)) {
     return false;
   }
-  if (parentHasBasalArrears(organism)) {
+  if (parentHasBasalArrears(organism) &&
+      computerHubFuelBytes(organism) < estimateParthenogenesisRequiredHubBytes()) {
     return false;
   }
   if (organism.lastParthenogenesisSuccessTick != 0 &&
       simTick < organism.lastParthenogenesisSuccessTick + kParthenogenesisRefractoryTicks) {
     return false;
   }
-  if (organism.bodyStorage.size() < estimateParthenogenesisRequiredHubBytes()) {
+  if (computerHubFuelBytes(organism) < estimateParthenogenesisRequiredHubBytes()) {
     return false;
   }
   if (!organism.feedbagOracle &&
@@ -739,6 +832,8 @@ ParthenogenesisResult attemptParthenogenesis(Organism& parent, const BarrenWorld
     return result;
   }
 
+  ParthenogenesisPassOptions runOptions = options;
+
   float spawnX = 0.0f;
   float spawnY = 0.0f;
   float spawnZ = 0.0f;
@@ -751,7 +846,7 @@ ParthenogenesisResult attemptParthenogenesis(Organism& parent, const BarrenWorld
 
   std::uint32_t bytesSpent = 0;
   std::uint32_t structuralExtra = 0;
-  const float structuralRate = effectiveStructuralRate(options);
+  const float structuralRate = effectiveStructuralRate(runOptions);
 
   if (!consumeHubBytes(parent, kParthenogenesisInitCost, bytesSpent)) {
     abortSpend(parent, result, bytesSpent);
@@ -772,24 +867,24 @@ ParthenogenesisResult attemptParthenogenesis(Organism& parent, const BarrenWorld
           ? kParthenogenesisBaselineCampDebit - pipelineDebit
           : 0;
 
-  if (parent.bodyStorage.size() < finalisationDebit + structuralExtra +
-                                         kParthenogenesisParentReserveMin) {
-    abortSpend(parent, result, bytesSpent);
+  if (!campSpawnMorphologyValid(child)) {
+    abortSpend(parent, result, bytesSpent, true);
     return result;
   }
 
-  if (!campGenotypeValid(child)) {
-    abortSpend(parent, result, bytesSpent);
+  if (computerHubFuelBytes(parent) < finalisationDebit + structuralExtra +
+                                         kParthenogenesisParentReserveMin) {
+    abortSpend(parent, result, bytesSpent, true);
     return result;
   }
 
   if (!consumeHubBytes(parent, finalisationDebit + structuralExtra, bytesSpent)) {
-    abortSpend(parent, result, bytesSpent);
+    abortSpend(parent, result, bytesSpent, true);
     return result;
   }
 
   if (!canAffordReserveAfterSpend(parent, bytesSpent)) {
-    abortSpend(parent, result, bytesSpent);
+    abortSpend(parent, result, bytesSpent, true);
     return result;
   }
 

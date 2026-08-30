@@ -36,17 +36,7 @@ std::vector<std::uint8_t>* neuronFuelPool(Organism& organism, SkeletonNode& node
   if (!node.alive) {
     return nullptr;
   }
-  if (node.neuron == NeuronType::Computer) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::Actuator && organism.actuatorCount() == 1 &&
-      !organism.hasMouthNeurons()) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::None && node.id == organism.rootNodeId) {
-    return &organism.bodyStorage;
-  }
-  if (node.neuron == NeuronType::None) {
+  if (node.neuron == NeuronType::None && node.id != organism.rootNodeId) {
     return nullptr;
   }
   return &node.store;
@@ -67,25 +57,36 @@ void consumeFuelBack(std::vector<std::uint8_t>& storage, std::size_t count) {
 
 bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
   std::vector<std::uint8_t>* pool = neuronFuelPool(organism, node);
+  if (pool != nullptr && organism.isCampNom() && node.neuron != NeuronType::None &&
+      node.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f &&
+      pool->size() >= kStemCellBasalCostPerTick) {
+    std::mt19937 rng(static_cast<std::uint32_t>(node.id * 2654435761u ^
+                                                static_cast<std::uint32_t>(
+                                                    organism.createdAtTick + node.basalArrearsTicks)));
+    if (!chaosBernoulli(node.coordinatorDutyScale, rng)) {
+      return true;
+    }
+  }
   if (pool == nullptr) {
     return true;
   }
   if (pool->size() >= kStemCellBasalCostPerTick) {
-    if (pool == &node.store) {
-      neuronConsumeBack(node, kStemCellBasalCostPerTick);
-    } else {
-      consumeFuelBack(*pool, kStemCellBasalCostPerTick);
+    neuronConsumeBack(node, kStemCellBasalCostPerTick);
+    return true;
+  }
+  if (organism.feedbagOracle) {
+    SkeletonNode* root = organism.findNode(organism.rootNodeId);
+    if (root != nullptr && !root->store.empty()) {
+      neuronConsumeBack(*root, kStemCellBasalCostPerTick);
+      return true;
     }
-    return true;
   }
-  if (organism.feedbagOracle && !organism.bodyStorage.empty()) {
-    consumeFuelBack(organism.bodyStorage, kStemCellBasalCostPerTick);
-    return true;
-  }
-  if (node.neuron == NeuronType::Mouth && !organism.isCampNom() &&
-      !organism.bodyStorage.empty()) {
-    consumeFuelBack(organism.bodyStorage, kStemCellBasalCostPerTick);
-    return true;
+  if (node.neuron == NeuronType::Mouth && !organism.isCampNom()) {
+    const std::size_t hubBytes = computerHubFuelBytes(organism);
+    if (hubBytes >= kStemCellBasalCostPerTick) {
+      hubStoreConsumeBack(organism, kStemCellBasalCostPerTick);
+      return true;
+    }
   }
   return false;
 }
@@ -148,12 +149,36 @@ void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick) {
 
   static constexpr NeuronType kMouthAllowedDst[] = {NeuronType::Perceptor, NeuronType::Actuator,
                                                    NeuronType::Computer};
-  for (const SkeletonNode& node : organism.nodes) {
+  for (SkeletonNode& node : organism.nodes) {
     if (!node.alive || node.neuron != NeuronType::Mouth) {
       continue;
     }
-    emitOutboundConfidence(organism, node.id, mouthOutboundConfidence(node), simTick,
-                           kMouthAllowedDst, std::size(kMouthAllowedDst));
+    for (NeuralAxon& axon : organism.neuralAxons) {
+      if (axon.srcNodeId != node.id) {
+        continue;
+      }
+      const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
+      if (dst == nullptr || !dst->alive || axon.uncappedNodeId == axon.dstNodeId ||
+          axon.uncappedNodeId == axon.srcNodeId) {
+        continue;
+      }
+      bool allowed = false;
+      for (NeuronType allowedDst : kMouthAllowedDst) {
+        if (dst->neuron == allowedDst) {
+          allowed = true;
+          break;
+        }
+      }
+      if (!allowed) {
+        continue;
+      }
+      const std::uint8_t confidence = mouthOutboundConfidenceForDst(node, dst->neuron);
+      if (!isNeuronConfidenceByte(confidence)) {
+        continue;
+      }
+      writeAxonConfidence(axon, confidence, simTick);
+      node.lastEmittedByte = confidence;
+    }
   }
 
   const SkeletonNode* computer = findNeuronNode(organism, NeuronType::Computer);
@@ -163,7 +188,7 @@ void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick) {
   static constexpr NeuronType kComputerAllowedDst[] = {NeuronType::Perceptor, NeuronType::Actuator,
                                                        NeuronType::Mouth};
   emitOutboundConfidence(organism, computer->id,
-                         hubFuelConfidence(organism.bodyStorage.size()), simTick,
+                         hubFuelConfidence(computerHubFuelBytes(organism)), simTick,
                          kComputerAllowedDst, std::size(kComputerAllowedDst));
 }
 

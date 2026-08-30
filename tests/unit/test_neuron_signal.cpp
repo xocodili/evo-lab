@@ -18,6 +18,22 @@ TEST_CASE("neuron confidence byte range is shared by all neuron types", "[neuron
   REQUIRE(!evolab::isNeuronConfidenceByte(0xA1u));
 }
 
+TEST_CASE("mouth chew satiation decays when not biting", "[neuron_signal]") {
+  evolab::SkeletonNode mouth;
+  mouth.neuron = evolab::NeuronType::Mouth;
+  mouth.store.assign(evolab::kMouthLocalStoreMaxBytes, 1);
+  mouth.mouthChewFill = evolab::kMouthLocalStoreMaxBytes;
+
+  REQUIRE(evolab::mouthFuelConfidence(mouth) == evolab::kNeuronConfidenceMax);
+
+  for (int i = 0; i < 20; ++i) {
+    evolab::tickMouthChewMetabolism(mouth, false);
+  }
+
+  REQUIRE(mouth.mouthChewFill < evolab::kMouthLocalStoreMaxBytes);
+  REQUIRE(evolab::mouthFuelConfidence(mouth) < evolab::kMouthInhibitActuatorConfidence);
+}
+
 TEST_CASE("mouth fuel confidence maps store fill to 0-7", "[neuron_signal]") {
   evolab::SkeletonNode mouth;
   mouth.neuron = evolab::NeuronType::Mouth;

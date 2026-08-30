@@ -2,13 +2,17 @@
 #include "sim/CampTraceLog.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/Chaos.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
+#include "sim/EnergonConveyance.hpp"
 #include "sim/EnergonRain.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuronSignal.hpp"
+#include "sim/NeuronCoordinator.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/Organism.hpp"
+#include "sim/OrganismComputer.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/Tide.hpp"
@@ -20,8 +24,10 @@
 
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <algorithm>
+#include <random>
 #include <vector>
 
 namespace {
@@ -202,6 +208,79 @@ float hubDistanceTo(float rootX, float rootZ, float targetX, float targetZ) {
   return std::sqrt(dx * dx + dz * dz);
 }
 
+float normalizeHeading(float radians) {
+  while (radians > 3.14159265f) {
+    radians -= evolab::kTwoPi;
+  }
+  while (radians < -3.14159265f) {
+    radians += evolab::kTwoPi;
+  }
+  return radians;
+}
+
+bool cornucopiaInPerceptorFocusCone(float perceptorX, float perceptorZ, float heading,
+                                    float senseRadius, float foodX, float foodZ) {
+  const float dx = foodX - perceptorX;
+  const float dz = foodZ - perceptorZ;
+  const float distSq = dx * dx + dz * dz;
+  if (distSq < 1.0e-8f || distSq > senseRadius * senseRadius) {
+    return false;
+  }
+  const float relBearing = normalizeHeading(std::atan2(dx, dz) - heading);
+  return std::abs(relBearing) <= evolab::kPerceptorFocusHalfAngle;
+}
+
+float pickRandomBlindHeading(float perceptorX, float perceptorZ, float foodX, float foodZ,
+                             float senseRadius, std::uint64_t seed) {
+  for (int attempt = 0; attempt < 64; ++attempt) {
+    std::mt19937 rng(evolab::chaosSpawnRng(seed, static_cast<std::uint64_t>(attempt) ^
+                                                      0xB1ADC0DEULL));
+    const float heading = evolab::chaosSpawnHeading(rng);
+    if (!cornucopiaInPerceptorFocusCone(perceptorX, perceptorZ, heading, senseRadius, foodX,
+                                        foodZ)) {
+      return heading;
+    }
+  }
+  return normalizeHeading(std::atan2(perceptorX - foodX, perceptorZ - foodZ));
+}
+
+evolab::BarrenWorld makeNurseryWorld(int seed, int resolution = 31) {
+  return evolab::BarrenWorld(seed, resolution, evolab::Tide(evolab::TideConfig{}));
+}
+
+void tickNurseryEnvironment(evolab::BarrenWorld& world, evolab::EnergonField& energon,
+                            float sunIntensity) {
+  world.tick();
+  energon.tick(world, sunIntensity, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+}
+
+bool cornucopiaWorldPos(const evolab::EnergonField& energon, float& outX, float& outZ) {
+  for (const evolab::EnergonBlob& blob : energon.blobs()) {
+    if (blob.cornucopia && blob.remaining > 0) {
+      outX = blob.x;
+      outZ = blob.z;
+      return true;
+    }
+  }
+  return false;
+}
+
+void anchorCornucopiaToMouth(evolab::EnergonField& energon, const evolab::Organism& organism,
+                             const evolab::BarrenWorld& world, float cellSize, float heightScale) {
+  (void)energon;
+  (void)organism;
+  (void)world;
+  (void)cellSize;
+  (void)heightScale;
+}
+
+void finishNurseryEnergonAttachments(evolab::Organism& organism, evolab::BarrenWorld& world,
+                                     evolab::EnergonField& energon) {
+  const float stickyRadius = evolab::kWorldCellSize * evolab::kMouthStickyRadiusFactor;
+  energon.syncMouthAttachments({organism}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  energon.pruneMouthAnchors({organism}, stickyRadius);
+}
+
 void prepareFeedbagOracleAxons(evolab::Organism& organism) {
   for (evolab::NeuralAxon& axon : organism.neuralAxons) {
     axon.trustFeed = evolab::kTrustBaseline;
@@ -210,17 +289,35 @@ void prepareFeedbagOracleAxons(evolab::Organism& organism) {
   }
 }
 
+void runMouthStickyBeforeFeed(evolab::Organism& organism, evolab::BarrenWorld& world,
+                              evolab::EnergonField& energon, float cellSize, float heightScale) {
+  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
+  energon.applyMouthStickiness({organism}, stickyRadius);
+  energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
+}
+
 void tickSingleCamperFeedbagGraze(evolab::Organism& organism, evolab::BarrenWorld& world,
                                  evolab::EnergonField& energon, float cellSize,
                                  float heightScale, float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
-  energon.prepareSpatialQueries(cellSize, halfExtent);
+  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
+  energon.prepareSpatialQueries(cellSize, halfExtent, world);
+  if (!organism.disableNurseryLocomotion) {
+    organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
+                      sunIntensity);
+  }
+  runMouthStickyBeforeFeed(organism, world, energon, cellSize, heightScale);
   organism.feed(energon, cellSize, world.tickCount());
-  organism.runDigestAndComputer(energon, world.tickCount());
-  organism.computerFeedGain = 1.0f;
+  if (evolab::SkeletonNode* mouth = organism.findNode(evolab::kCampMouthId)) {
+    evolab::tickMouthChewMetabolism(*mouth, mouth->ateThisTick);
+  }
+  evolab::conveyMouthDownstream(organism, energon, world.tickCount());
+  evolab::digestMouthToComputer(organism);
   const evolab::OrganismTickContext ctx{world,     energon,     cellSize,
                                         heightScale, halfExtent, world.tickCount()};
   evolab::runOrganismPreAdvectHooks(organism, ctx);
+  evolab::tickCoordinatorPhase(organism, world.tickCount());
+  evolab::tickComputerPhase(organism, energon, world.tickCount());
   if (!organism.disableNurseryLocomotion) {
     organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
   }
@@ -230,20 +327,32 @@ void tickSingleCamperFeedbagGraze(evolab::Organism& organism, evolab::BarrenWorl
   organism.transferEnergy(energon, cellSize, world.tickCount());
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
+  energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
+  energon.pruneMouthAnchors({organism}, stickyRadius);
 }
 
 void tickSingleCamper(evolab::Organism& organism, evolab::BarrenWorld& world,
                       evolab::EnergonField& energon, float cellSize, float heightScale,
                       float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
-  energon.prepareSpatialQueries(cellSize, halfExtent);
-  organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
-                    sunIntensity);
+  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
+  energon.prepareSpatialQueries(cellSize, halfExtent, world);
+  if (!organism.disableNurseryLocomotion) {
+    organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
+                      sunIntensity);
+  }
+  runMouthStickyBeforeFeed(organism, world, energon, cellSize, heightScale);
   organism.feed(energon, cellSize, world.tickCount());
-  organism.runDigestAndComputer(energon, world.tickCount());
+  if (evolab::SkeletonNode* mouth = organism.findNode(evolab::kCampMouthId)) {
+    evolab::tickMouthChewMetabolism(*mouth, mouth->ateThisTick);
+  }
+  evolab::conveyMouthDownstream(organism, energon, world.tickCount());
+  evolab::digestMouthToComputer(organism);
   const evolab::OrganismTickContext ctx{world,     energon,     cellSize,
                                         heightScale, halfExtent, world.tickCount()};
   evolab::runOrganismPreAdvectHooks(organism, ctx);
+  evolab::tickCoordinatorPhase(organism, world.tickCount());
+  evolab::tickComputerPhase(organism, energon, world.tickCount());
   if (!organism.disableNurseryLocomotion) {
     organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
   }
@@ -254,7 +363,24 @@ void tickSingleCamper(evolab::Organism& organism, evolab::BarrenWorld& world,
   organism.transferEnergy(energon, cellSize, world.tickCount());
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
-  world.tick();
+  energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
+  energon.pruneMouthAnchors({organism}, stickyRadius);
+}
+
+void tickNurseryCamper(evolab::Organism& organism, evolab::BarrenWorld& world,
+                       evolab::EnergonField& energon, float sunIntensity, bool feedbagGraze) {
+  tickNurseryEnvironment(world, energon, sunIntensity);
+  if (feedbagGraze) {
+    if (evolab::SkeletonNode* mouth = organism.findNode(evolab::kCampMouthId)) {
+      mouth->mouthChewPaused = false;
+    }
+    tickSingleCamperFeedbagGraze(organism, world, energon, evolab::kWorldCellSize,
+                                 evolab::kTerrainHeightScale, sunIntensity);
+  } else {
+    tickSingleCamper(organism, world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
+                     sunIntensity);
+  }
+  finishNurseryEnergonAttachments(organism, world, energon);
 }
 
 bool mouthAteThisTick(const evolab::Organism& organism) {
@@ -300,17 +426,27 @@ struct CornucopiaNurserySite {
   float startDist = 0.0f;
   float wetX = 0.0f;
   float wetZ = 0.0f;
+  float spawnHubX = 0.0f;
+  float spawnHubZ = 0.0f;
+  float spawnFoodX = 0.0f;
+  float spawnFoodZ = 0.0f;
 };
 
 struct NurseryRunMetrics {
   float minDist = 0.0f;
   float finalDist = 0.0f;
+  float maxHubDrift = 0.0f;
+  float maxFoodDrift = 0.0f;
+  float maxAbsTideDelta = 0.0f;
   int totalBites = 0;
   int strokesPaid = 0;
   int baselineCloacaVents = 0;
   int totalCloacaVents = 0;
   std::size_t hubPeak = 0;
   int ticksRun = 0;
+  int ticksWhileAlive = 0;
+  int deathTick = -1;
+  std::size_t hubAtDeath = 0;
   bool spawnedChild = false;
   std::uint32_t childId = 0;
   int teenagerTicksRun = 0;
@@ -320,17 +456,12 @@ struct NurseryRunMetrics {
 };
 
 std::size_t totalOrganismFuel(const evolab::Organism& organism) {
-  std::size_t total = organism.bodyStorage.size();
-  for (const evolab::SkeletonNode& node : organism.nodes) {
-    total += node.store.size();
-  }
-  return total;
+  return organism.totalFuelBytes();
 }
 
 void runNurseryTeenagerPhase(evolab::Organism& teenager, evolab::BarrenWorld& world,
                              evolab::EnergonField& energon, const CornucopiaNurserySite& site,
                              int maxTicks, float sunIntensity, NurseryRunMetrics& metrics) {
-  teenager.disableTideAdvection = true;
   teenager.disableTerrainThreatScan = true;
   teenager.disableNurseryLocomotion = false;
   bool feedbagGraze = false;
@@ -341,29 +472,24 @@ void runNurseryTeenagerPhase(evolab::Organism& teenager, evolab::BarrenWorld& wo
     }
     if (!feedbagGraze) {
       const evolab::SkeletonNode* mouth = teenager.findNode(evolab::kCampMouthId);
+      float foodX = site.cornucopiaX;
+      float foodZ = site.cornucopiaZ;
+      cornucopiaWorldPos(energon, foodX, foodZ);
       if (mouth != nullptr) {
         const float biteReach =
             evolab::kWorldCellSize * evolab::kMouthContactRadiusFactor;
-        const float mouthFoodDist =
-            hubDistanceTo(mouth->worldX, mouth->worldZ, site.cornucopiaX, site.cornucopiaZ);
+        const float mouthFoodDist = hubDistanceTo(mouth->worldX, mouth->worldZ, foodX, foodZ);
         if (mouthFoodDist <= biteReach) {
           feedbagGraze = true;
           teenager.disableNurseryLocomotion = true;
         }
       }
-    }
-    if (feedbagGraze) {
-      if (evolab::SkeletonNode* mouth = teenager.findNode(evolab::kCampMouthId)) {
-        mouth->mouthChewPaused = false;
-      }
-      world.tick();
-      energon.tick(world, sunIntensity, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-      tickSingleCamperFeedbagGraze(teenager, world, energon, evolab::kWorldCellSize,
-                                   evolab::kTerrainHeightScale, sunIntensity);
     } else {
-      tickSingleCamper(teenager, world, energon, evolab::kWorldCellSize,
-                       evolab::kTerrainHeightScale, sunIntensity);
+      teenager.disableNurseryLocomotion = true;
     }
+    tickNurseryCamper(teenager, world, energon, sunIntensity, feedbagGraze);
+    metrics.maxAbsTideDelta =
+        std::max(metrics.maxAbsTideDelta, std::abs(world.waterLevelDelta()));
 
     if (mouthAteThisTick(teenager)) {
       ++metrics.teenagerBites;
@@ -380,7 +506,8 @@ void runNurseryTeenagerPhase(evolab::Organism& teenager, evolab::BarrenWorld& wo
 CornucopiaNurserySite setupCornucopiaNursery(evolab::BarrenWorld& world,
                                                evolab::EnergonField& energon,
                                                evolab::Organism& camper, float foodBearing,
-                                               std::size_t spawnFuelBytes) {
+                                               std::size_t spawnFuelBytes,
+                                               std::optional<float> spawnHeading = std::nullopt) {
   CornucopiaNurserySite site;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
   const float cornucopiaDistance = evolab::kWorldCellSize * 2.5f;
@@ -392,9 +519,8 @@ CornucopiaNurserySite setupCornucopiaNursery(evolab::BarrenWorld& world,
                                        evolab::kWorldCellSize);
   prepareFeedbagOracleAxons(camper);
   camper.alive = true;
-  camper.disableTideAdvection = true;
   camper.disableTerrainThreatScan = true;
-  camper.heading = foodBearing;
+  camper.heading = spawnHeading.has_value() ? *spawnHeading : foodBearing;
   camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   const evolab::SkeletonNode* perceptor = camper.findNode(evolab::kCampPerceptorId);
@@ -419,6 +545,10 @@ CornucopiaNurserySite setupCornucopiaNursery(evolab::BarrenWorld& world,
 
   site.startDist =
       hubDistanceTo(camper.rootWorldX(), camper.rootWorldZ(), site.cornucopiaX, site.cornucopiaZ);
+  site.spawnHubX = camper.rootWorldX();
+  site.spawnHubZ = camper.rootWorldZ();
+  site.spawnFoodX = site.cornucopiaX;
+  site.spawnFoodZ = site.cornucopiaZ;
   return site;
 }
 
@@ -438,7 +568,7 @@ NurseryRunMetrics runCornucopiaNursery(evolab::BarrenWorld& world, evolab::Energ
   parthenogenesisOptions.structuralRateOverride = 0.0f;
 
   int cloacaCount = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
-  const std::size_t hubStart = camper.bodyStorage.size();
+  const std::size_t hubStart = camper.computerHubFuelBytes();
   bool feedbagGraze = !latchCornucopiaAfterFeed;
 
   for (int i = 0; i < maxTicks; ++i) {
@@ -446,35 +576,38 @@ NurseryRunMetrics runCornucopiaNursery(evolab::BarrenWorld& world, evolab::Energ
     const std::uint64_t simTick = world.tickCount();
     if (latchCornucopiaAfterFeed && !feedbagGraze) {
       const evolab::SkeletonNode* mouth = parent.findNode(evolab::kCampMouthId);
+      float foodX = site.cornucopiaX;
+      float foodZ = site.cornucopiaZ;
+      cornucopiaWorldPos(energon, foodX, foodZ);
       if (mouth != nullptr) {
         const float biteReach =
             evolab::kWorldCellSize * evolab::kMouthContactRadiusFactor;
-        const float mouthFoodDist =
-            hubDistanceTo(mouth->worldX, mouth->worldZ, site.cornucopiaX, site.cornucopiaZ);
+        const float mouthFoodDist = hubDistanceTo(mouth->worldX, mouth->worldZ, foodX, foodZ);
         if (mouthFoodDist <= biteReach) {
           feedbagGraze = true;
           parent.disableNurseryLocomotion = true;
         }
       }
-    }
-    if (feedbagGraze) {
-      if (evolab::SkeletonNode* mouth = parent.findNode(evolab::kCampMouthId)) {
-        mouth->mouthChewPaused = false;
-      }
-      world.tick();
-      energon.tick(world, sunIntensity, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-      tickSingleCamperFeedbagGraze(parent, world, energon, evolab::kWorldCellSize,
-                                   evolab::kTerrainHeightScale, sunIntensity);
+    } else if (feedbagGraze) {
+      parent.disableNurseryLocomotion = true;
     } else {
       parent.disableNurseryLocomotion = false;
-      tickSingleCamper(parent, world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
-                       sunIntensity);
     }
+    tickNurseryCamper(parent, world, energon, sunIntensity, feedbagGraze);
 
-    const float dist =
-        hubDistanceTo(parent.rootWorldX(), parent.rootWorldZ(), site.cornucopiaX, site.cornucopiaZ);
+    float foodX = site.cornucopiaX;
+    float foodZ = site.cornucopiaZ;
+    cornucopiaWorldPos(energon, foodX, foodZ);
+    const float dist = hubDistanceTo(parent.rootWorldX(), parent.rootWorldZ(), foodX, foodZ);
     metrics.minDist = std::min(metrics.minDist, dist);
-    metrics.hubPeak = std::max(metrics.hubPeak, parent.bodyStorage.size());
+    metrics.hubPeak = std::max(metrics.hubPeak, parent.computerHubFuelBytes());
+    metrics.maxHubDrift = std::max(
+        metrics.maxHubDrift,
+        hubDistanceTo(parent.rootWorldX(), parent.rootWorldZ(), site.spawnHubX, site.spawnHubZ));
+    metrics.maxFoodDrift =
+        std::max(metrics.maxFoodDrift, hubDistanceTo(foodX, foodZ, site.spawnFoodX, site.spawnFoodZ));
+    metrics.maxAbsTideDelta =
+        std::max(metrics.maxAbsTideDelta, std::abs(world.waterLevelDelta()));
 
     if (mouthAteThisTick(parent)) {
       ++metrics.totalBites;
@@ -492,10 +625,16 @@ NurseryRunMetrics runCornucopiaNursery(evolab::BarrenWorld& world, evolab::Energ
     cloacaCount = newCloacaCount;
 
     if (trace != nullptr) {
-      trace->recordTick(simTick, parent, site.cornucopiaX, site.cornucopiaZ, sunIntensity);
+      trace->recordTick(simTick, parent, foodX, foodZ, sunIntensity);
     }
 
     metrics.ticksRun = i + 1;
+    if (parent.alive) {
+      metrics.ticksWhileAlive = i + 1;
+    } else if (metrics.deathTick < 0) {
+      metrics.deathTick = i + 1;
+      metrics.hubAtDeath = parent.computerHubFuelBytes();
+    }
 
     if (enableParthenogenesis && !metrics.spawnedChild && metrics.totalCloacaVents >= 1 &&
         evolab::eligibleForParthenogenesis(parent, world, evolab::kWorldCellSize, simTick)) {
@@ -523,8 +662,11 @@ NurseryRunMetrics runCornucopiaNursery(evolab::BarrenWorld& world, evolab::Energ
   }
 
   camper = population.front();
+  float finalFoodX = site.cornucopiaX;
+  float finalFoodZ = site.cornucopiaZ;
+  cornucopiaWorldPos(energon, finalFoodX, finalFoodZ);
   metrics.finalDist =
-      hubDistanceTo(camper.rootWorldX(), camper.rootWorldZ(), site.cornucopiaX, site.cornucopiaZ);
+      hubDistanceTo(camper.rootWorldX(), camper.rootWorldZ(), finalFoodX, finalFoodZ);
   if (metrics.hubPeak < hubStart) {
     metrics.hubPeak = hubStart;
   }
@@ -536,6 +678,12 @@ void logNurseryMetrics(const NurseryRunMetrics& metrics, const std::string& trac
   INFO("trace log: " << tracePath);
   INFO("ticksRun=" << metrics.ticksRun << " startDist=minDist context in caller"
                    << " minDist=" << metrics.minDist << " finalDist=" << metrics.finalDist
+                   << " maxHubDrift=" << metrics.maxHubDrift
+                   << " maxFoodDrift=" << metrics.maxFoodDrift
+                   << " maxAbsTideDelta=" << metrics.maxAbsTideDelta
+                   << " deathTick=" << metrics.deathTick
+                   << " ticksWhileAlive=" << metrics.ticksWhileAlive
+                   << " hubAtDeath=" << metrics.hubAtDeath
                    << " bites=" << metrics.totalBites << " strokesPaid=" << metrics.strokesPaid
                    << " hubPeak=" << metrics.hubPeak
                    << " hubSatThreshold=" << hubSatiationThresholdBytes()
@@ -546,6 +694,22 @@ void logNurseryMetrics(const NurseryRunMetrics& metrics, const std::string& trac
                    << " teenagerBites=" << metrics.teenagerBites
                    << " teenagerAlive=" << metrics.teenagerAlive
                    << " teenagerAge=" << metrics.teenagerAgeTicks);
+}
+
+void requireNurseryDriftHarness(const NurseryRunMetrics& metrics, const evolab::Organism& camper) {
+  INFO("drift reassessment camper.alive=" << camper.alive << " ticksRun=" << metrics.ticksRun
+                                         << " ticksWhileAlive=" << metrics.ticksWhileAlive
+                                         << " deathTick=" << metrics.deathTick
+                                         << " bites=" << metrics.totalBites
+                                         << " hubPeak=" << metrics.hubPeak
+                                         << " maxHubDrift=" << metrics.maxHubDrift
+                                         << " maxFoodDrift=" << metrics.maxFoodDrift
+                                         << " maxAbsTideDelta=" << metrics.maxAbsTideDelta
+                                         << " cloacaVents=" << metrics.totalCloacaVents);
+  REQUIRE(metrics.maxAbsTideDelta > 0.001f);
+  REQUIRE(metrics.maxHubDrift + metrics.maxFoodDrift > 0.001f);
+  INFO("strokesPaid=" << metrics.strokesPaid);
+  REQUIRE(metrics.strokesPaid > 0);
 }
 
 }  // namespace
@@ -569,9 +733,7 @@ TEST_CASE("cornucopia energon never depletes when bitten", "[camper][cornucopia]
 }
 
 TEST_CASE("single camper chemotaxis toward eternal cornucopia", "[camper][cornucopia]") {
-  evolab::TideConfig tideConfig;
-  tideConfig.amplitude = 0.0f;
-  evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+  evolab::BarrenWorld world = makeNurseryWorld(31, 32);
   evolab::EnergonField energon(42, cornucopiaFieldConfig());
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
@@ -585,21 +747,74 @@ TEST_CASE("single camper chemotaxis toward eternal cornucopia", "[camper][cornuc
   trace.writeHeader(42, site.cornucopiaX, site.cornucopiaZ);
 
   NurseryRunMetrics metrics =
-      runCornucopiaNursery(world, energon, camper, site, 256, 1.0f, false, false, &trace);
+      runCornucopiaNursery(world, energon, camper, site, 256, 1.0f, false, true, &trace);
   trace.close();
   logNurseryMetrics(metrics, tracePath);
 
   INFO("startDist=" << site.startDist);
+  INFO("minDist=" << metrics.minDist);
+  INFO("finalDist=" << metrics.finalDist);
+  INFO("totalBites=" << metrics.totalBites);
 
   REQUIRE(energon.blobs().front().cornucopia);
   REQUIRE(energon.blobs().front().remaining == evolab::kEnergonMaxBytesPerBlob);
-  REQUIRE(metrics.finalDist < site.startDist);
+  REQUIRE(metrics.minDist <= site.startDist);
+  REQUIRE(metrics.totalBites > 0);
+  REQUIRE(metrics.strokesPaid > 0);
 }
 
-TEST_CASE("nursery camper crawl eat puke without split", "[camper][cornucopia][nursery][long]") {
-  evolab::TideConfig tideConfig;
-  tideConfig.amplitude = 0.0f;
-  evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+TEST_CASE("nursery camper random facing homes on cornucopia via mouth taste",
+          "[camper][cornucopia][nursery][blind][long]") {
+  constexpr float foodBearing = 0.55f;
+  constexpr std::uint64_t kBlindFacingSeed = 0xB1ADFACE42u;
+  const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
+
+  evolab::BarrenWorld world = makeNurseryWorld(31, 32);
+  evolab::EnergonField energon(44, cornucopiaFieldConfig());
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay * 2, 0,
+                                  evolab::kWorldCellSize);
+
+  CornucopiaNurserySite site = setupCornucopiaNursery(
+      world, energon, camper, foodBearing, evolab::kTicksPerStemCellDay * 2);
+  const evolab::SkeletonNode* perceptor = camper.findNode(evolab::kCampPerceptorId);
+  REQUIRE(perceptor != nullptr);
+
+  const float blindHeading =
+      pickRandomBlindHeading(perceptor->worldX, perceptor->worldZ, site.cornucopiaX,
+                             site.cornucopiaZ, senseRadius, kBlindFacingSeed);
+  camper.heading = blindHeading;
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  const evolab::SkeletonNode* respawnedPerceptor = camper.findNode(evolab::kCampPerceptorId);
+  REQUIRE(respawnedPerceptor != nullptr);
+  REQUIRE_FALSE(cornucopiaInPerceptorFocusCone(respawnedPerceptor->worldX,
+                                               respawnedPerceptor->worldZ, camper.heading,
+                                               senseRadius, site.cornucopiaX, site.cornucopiaZ));
+  REQUIRE(hubDistanceTo(respawnedPerceptor->worldX, respawnedPerceptor->worldZ, site.cornucopiaX,
+                          site.cornucopiaZ) <= senseRadius);
+
+  NurseryRunMetrics metrics = runCornucopiaNursery(
+      world, energon, camper, site, kNurseryVisualDaysForPuke, 1.0f, false, true, nullptr);
+
+  INFO("spawnHeading=" << blindHeading);
+  INFO("foodBearing=" << foodBearing);
+  INFO("startDist=" << site.startDist);
+  INFO("minDist=" << metrics.minDist);
+  INFO("finalDist=" << metrics.finalDist);
+  INFO("totalBites=" << metrics.totalBites);
+  INFO("deathTick=" << metrics.deathTick);
+  INFO("hubPeak=" << metrics.hubPeak);
+
+  // Spawn is outside the forward gaze cone but inside taste radius — P is blind, M taste buds
+  // provide omnidirectional bearing + temporal gradient for crawl homing.
+  REQUIRE(metrics.minDist < site.startDist);
+  REQUIRE(metrics.totalBites > 0);
+  REQUIRE(camper.alive);
+  REQUIRE(metrics.hubPeak >= hubSatiationThresholdBytes() / 4u);
+}
+
+TEST_CASE("nursery camper crawl eat puke without split", "[camper][cornucopia][nursery][drift][long]") {
+  evolab::BarrenWorld world = makeNurseryWorld(31, 32);
   evolab::EnergonField energon(43, cornucopiaFieldConfig());
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
@@ -619,7 +834,7 @@ TEST_CASE("nursery camper crawl eat puke without split", "[camper][cornucopia][n
   logNurseryMetrics(metrics, tracePath);
 
   INFO("startDist=" << site.startDist);
-
+  requireNurseryDriftHarness(metrics, camper);
   REQUIRE(camper.alive);
   REQUIRE(metrics.finalDist < site.startDist);
   REQUIRE(metrics.totalBites >= 100);
@@ -631,10 +846,8 @@ TEST_CASE("nursery camper crawl eat puke without split", "[camper][cornucopia][n
 }
 
 TEST_CASE("nursery camper crawl eat puke reproduce and teenager survives",
-          "[camper][cornucopia][nursery][parthenogenesis][long]") {
-  evolab::TideConfig tideConfig;
-  tideConfig.amplitude = 0.0f;
-  evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+          "[camper][cornucopia][nursery][parthenogenesis][drift][long]") {
+  evolab::BarrenWorld world = makeNurseryWorld(31, 32);
   evolab::EnergonField energon(43, cornucopiaFieldConfig());
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
@@ -656,9 +869,10 @@ TEST_CASE("nursery camper crawl eat puke reproduce and teenager survives",
 
   INFO("startDist=" << site.startDist);
   INFO("parthenogenesisRequiredHub=" << evolab::estimateParthenogenesisRequiredHubBytes());
-  INFO("hubAtSpawn=" << camper.bodyStorage.size());
+  INFO("hubAtSpawn=" << camper.computerHubFuelBytes());
   INFO("teenagerFuel=" << totalOrganismFuel(teenager));
 
+  requireNurseryDriftHarness(metrics, camper);
   REQUIRE(camper.alive);
   REQUIRE(metrics.spawnedChild);
   REQUIRE(metrics.childId == teenager.id);
@@ -679,10 +893,8 @@ TEST_CASE("nursery camper crawl eat puke reproduce and teenager survives",
   REQUIRE(energon.blobs().front().cornucopia);
 }
 
-TEST_CASE("nursery camper full up till puke and split", "[camper][cornucopia][nursery][long]") {
-  evolab::TideConfig tideConfig;
-  tideConfig.amplitude = 0.0f;
-  evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+TEST_CASE("nursery camper full up till puke and split", "[camper][cornucopia][nursery][drift][long]") {
+  evolab::BarrenWorld world = makeNurseryWorld(31, 32);
   evolab::EnergonField energon(43, cornucopiaFieldConfig());
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
@@ -698,10 +910,11 @@ TEST_CASE("nursery camper full up till puke and split", "[camper][cornucopia][nu
   NurseryRunMetrics grazeMetrics = runCornucopiaNursery(
       world, energon, camper, site, kNurseryVisualDaysForPuke, 1.0f, false, true, &trace);
 
+  requireNurseryDriftHarness(grazeMetrics, camper);
   REQUIRE(camper.alive);
   REQUIRE(grazeMetrics.totalCloacaVents >= 1);
   REQUIRE(grazeMetrics.hubPeak >= hubSatiationThresholdBytes());
-  REQUIRE(camper.bodyStorage.size() >= evolab::estimateParthenogenesisRequiredHubBytes());
+  REQUIRE(camper.computerHubFuelBytes() >= evolab::estimateParthenogenesisRequiredHubBytes());
 
   std::vector<evolab::Organism> population;
   population.push_back(camper);
@@ -717,7 +930,7 @@ TEST_CASE("nursery camper full up till puke and split", "[camper][cornucopia][nu
 
   INFO("startDist=" << site.startDist);
   INFO("parthenogenesisRequiredHub=" << evolab::estimateParthenogenesisRequiredHubBytes());
-  INFO("hubAtSplitAttempt=" << population.front().bodyStorage.size());
+  INFO("hubAtSplitAttempt=" << population.front().computerHubFuelBytes());
 
   REQUIRE(birth.spawned);
   REQUIRE(birth.child.alive);

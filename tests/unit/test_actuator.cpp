@@ -124,7 +124,7 @@ TEST_CASE("actuator advect debits stroke bytes only", "[actuator]") {
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 32.0f);
 
   REQUIRE(organism.lastStrokeBytesPaid == evolab::kActuatorStrokeCostPerTick);
-  REQUIRE(organism.bodyStorage.size() == 10u - evolab::kActuatorStrokeCostPerTick);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() == 10u - evolab::kActuatorStrokeCostPerTick);
 }
 
 TEST_CASE("actuator full tick crawl debits stroke plus basal", "[actuator]") {
@@ -141,7 +141,7 @@ TEST_CASE("actuator full tick crawl debits stroke plus basal", "[actuator]") {
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   organism.tickNeuronViability(energon);
 
-  REQUIRE(organism.bodyStorage.size() == 10u - evolab::kActuatorCrawlCostPerTick);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() == 10u - evolab::kActuatorCrawlCostPerTick);
   REQUIRE(organism.alive);
 }
 
@@ -155,7 +155,7 @@ TEST_CASE("actuator with one byte cannot wag tail", "[actuator]") {
 
   REQUIRE(!organism.lastStrokePaid);
   REQUIRE(organism.lastStrokeBytesPaid == 0);
-  REQUIRE(organism.bodyStorage.size() == 1);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() == 1);
 }
 
 TEST_CASE("actuator final two bytes wag then basal death after grace window", "[actuator]") {
@@ -174,7 +174,7 @@ TEST_CASE("actuator final two bytes wag then basal death after grace window", "[
 
   REQUIRE(organism.lastStrokePaid);
   REQUIRE(organism.lastStrokeBytesPaid == evolab::kActuatorStrokeCostPerTick);
-  REQUIRE(organism.bodyStorage.empty());
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.empty());
   REQUIRE(organism.alive);
 
   // First viability above already accrued one basal-arrears tick after the stroke emptied the wallet.
@@ -249,7 +249,7 @@ TEST_CASE("actuator on dry land cannot stroke with fuel", "[actuator]") {
   REQUIRE(!organism.lastInWater);
   REQUIRE(!organism.lastStrokePaid);
   REQUIRE(organism.lastStrokeBytesPaid == 0);
-  REQUIRE(organism.bodyStorage.size() == 50);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() == 50);
 }
 
 TEST_CASE("actuator stroke clamps to map edge", "[actuator]") {

@@ -897,11 +897,13 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
   std::uint32_t bytesDue = kPerceptorScanCostPerTick;
-
   if (!candidates.empty()) {
-
     bytesDue += kPerceptorTransductionCostPerTick;
-
+  }
+  if (organism.isCampNom() && perceptor.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f) {
+    bytesDue = std::max<std::uint32_t>(
+        1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(bytesDue) *
+                                                     perceptor.coordinatorDutyScale)));
   }
 
   if (perceptor.store.size() < bytesDue) {

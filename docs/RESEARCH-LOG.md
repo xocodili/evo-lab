@@ -4,6 +4,28 @@
 **Status:** Active exploratory / engineering research  
 **Working title:** *Distributed metabolic regulation in a minimal aquatic artificial organism (CAMP camper)*
 
+### 2026-08-30 — Symmetric food choice + stem-cell Hz coordinator
+
+**Observation (live runs):** When energon is roughly equidistant / symmetric around a camper, heading wanders — matches nursery-blind homing but visible in open field. Root cause in sim: M taste **vector-sums** salience-weighted directions → zero bearing when symmetric; tumble suppression treats |bearing|≤0.25 as “tracking” → straight run with no break.
+
+**Literature (puppy / two-bowl analogue):**
+- **E. coli dual gradients:** Decision uses **Tar/Tsr receptor ratio** as internal bias, not pure geometry ([Kalinin et al. 2010, JB](https://journals.asm.org/doi/10.1128/jb.01507-09); [PRX Life 2024](https://doi.org/10.1103/prxlife.2.013001) — phenotypic variability → “bet hedging”).
+- **No gradient / flat field:** Berg run-and-tumble — **stochastic tumbles** break symmetry; temporal ΔC when field is not static.
+- **Multichoice spatial decisions:** Vector averaging fails; brains use **serial binary bifurcations** ([PNAS 2021 geometry paper](https://www.pnas.org/doi/10.1073/pnas.2102157118)).
+- **Equal-alternative forced choice:** **Idiosyncratic bias** emerges from neural noise without external reason ([Nature Human Behaviour 2019](https://www.nature.com/articles/s41562-019-0682-7)).
+
+**Sim mitigations (2026-08-30):** `mouthTasteSymmetricAmbiguity` when vector cancels + flat Δ; **idiosyncratic bearing bias** per mouth node; **tumble boost** (`kMouthTasteSymmetryTumbleBoost`) so campers don’t lock straight.
+
+**Coarse taste sensory layer (2026-08-30):** Separate **256×256** byte-density map over world extent (`EnergonTasteSensoryGrid`, rebuilt each tick with spatial queries). Mouth taste steers toward the **peak coarse cell** within taste radius — clumping / mass-flux analogue, not per-blob vector sum. Fine P cone unchanged.
+
+**Population sync (2026-08-30, visual):** Multiple campers under the same sunfall / tide / patch geometry fall into **the same heading/tumble regime** — looks like cannibal lock-step but tracks **shared choice paralysis** (symmetric taste, run-and-tumble, REFUSE/chew FSA), not coordinated feeding on death emissions. Diagnose with per-Nom inspector + `V` neuron overlays before assuming social copying.
+
+**Mouth→C hub (2026-08-30):** When M wallet sits at the 32 B peripheral cap, further bites were **silently dropped** — energon vanished from the field but C hub never grew. Fix: overflow bytes route to C; tick order is chew → **digest** → M conveyance (DESIGN-NOTES order).
+
+**Feedbag oracle birth (2026-08-30):** Oracle uses the same ε structural morphogenesis as natural parthenogenesis (chaos preserved). Spawn gate is `campGenotypeValid` (P+M+C+A floor + legal axons), not full `isCampNom()` — inspector labels non-canonical topology **freak**. A lone **M** label usually means P/C/A died post-spawn (fuel), not a single-neuron birth: deletion cannot remove the last neuron of each type.
+
+**Stem-cell Hz coordinator (precursor C):** `NeuronCoordinator.cpp` — every node runs local pattern match (4-byte register) over fuel + sense + Δ → `coordinatorDutyScale`. Full C neuron composes dispatch gain × duty (recursive mini-C inside C). Tick: after M taste, before advect. Constants: `kCoordinator*` in `CellConstants.hpp`.
+
 ---
 
 ## 1. Research frame

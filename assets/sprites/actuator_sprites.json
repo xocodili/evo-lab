@@ -1,0 +1,15 @@
+{
+  "image": "actuator_sprites.png",
+  "clips": {
+    "flagella_idle": {
+      "fps": 4,
+      "loop": "loop",
+      "frames": [[0, 0, 16, 16]]
+    },
+    "flagella_stroke": {
+      "fps": 14,
+      "loop": "loop",
+      "frames": [[16, 0, 16, 16], [32, 0, 16, 16], [48, 0, 16, 16], [32, 0, 16, 16]]
+    }
+  }
+}

@@ -193,7 +193,7 @@ TEST_CASE("feed trust strengthens when axon transfer delivers bytes", "[neuron_t
   evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.alive = true;
 
-  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 3);
+  evolab::NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
   REQUIRE(mToA != nullptr);
   mToA->trustFeed = evolab::kTrustBaseline;
   mToA->etaEnergy = 1.0f;
@@ -201,14 +201,14 @@ TEST_CASE("feed trust strengthens when axon transfer delivers bytes", "[neuron_t
   const std::uint16_t before = mToA->trustFeed;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
-  evolab::SkeletonNode* actuator = organism.findNode(3);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
   REQUIRE(mouth != nullptr);
   REQUIRE(actuator != nullptr);
   for (int i = 0; i < 40; ++i) {
-    evolab::neuronStorePush(*mouth, 1);
+    evolab::neuronStorePush(organism, *mouth, 1);
   }
   actuator->store.clear();
 
-  evolab::conveyCampEnergon(organism, field, 42);
+  evolab::conveyMouthDownstream(organism, field, 42);
   REQUIRE(mToA->trustFeed > before);
 }

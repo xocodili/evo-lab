@@ -4,6 +4,7 @@
 #include "sim/CellConstants.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/Organism.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/TideAdvection.hpp"
@@ -100,7 +101,7 @@ evolab::Organism makeWetCampNom(float wx, float wz) {
 }
 
 void primeMateReady(evolab::Organism& organism, std::uint64_t simTick) {
-  organism.bodyStorage.assign(evolab::kComputerHubStoreMaxBytes, 1);
+  evolab::assignComputerHubFuel(organism, evolab::kComputerHubStoreMaxBytes, 1);
   organism.createdAtTick = 0;
   evolab::SkeletonNode* mouth = organism.findNode(2);
   evolab::SkeletonNode* perceptor = organism.findNode(1);

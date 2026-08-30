@@ -23,11 +23,22 @@ inline constexpr std::size_t kCampDevelopmentalAxonCount = sizeof(kCampDevelopme
 
 bool organismHasCampTopology(const Organism& organism);
 
+// All twelve CAMP developmental axon edges present between canonical node ids.
+bool organismHasCampDevelopmentalAxons(const Organism& organism);
+
+bool isCampDevelopmentalAxonEdge(std::uint32_t srcId, std::uint32_t dstId);
+
+// Hub (C) has a skeletal link to each live P, M, and A arm.
+bool organismHasCampHubArms(const Organism& organism);
+
 // At least one live P, M, C, and A (topology may be non-canonical).
 bool organismHasCampNeuronFloor(const Organism& organism);
 
 // Run CAMP neuron tick phases (perceive, camp feed intent, digest, computer, convey).
 bool organismUsesCampNeuronPhases(const Organism& organism);
+
+// Four-node hub-and-spoke camp skeleton (muscle arms), including degraded campers.
+bool organismUsesCampSkeletonVisual(const Organism& organism);
 
 // Ordered genotype label over live nodes (e.g. "PMCA", "PPMCAA").
 std::string campGenotypeLabel(const Organism& organism);

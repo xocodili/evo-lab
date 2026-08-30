@@ -1,0 +1,15 @@
+{
+  "image": "mouth_sprites.png",
+  "clips": {
+    "mouth_idle": {
+      "fps": 6,
+      "loop": "loop",
+      "frames": [[0, 0, 16, 16], [16, 0, 16, 16]]
+    },
+    "mouth_eating": {
+      "fps": 10,
+      "loop": "loop",
+      "frames": [[32, 0, 16, 16], [48, 0, 16, 16]]
+    }
+  }
+}

@@ -38,16 +38,29 @@ void reconcileMouthChewFill(SkeletonNode& mouth);
 
 void creditMouthChew(SkeletonNode& mouth, std::uint32_t netBytes);
 
+// Decay chew occupancy when not biting; reconcile chew vs wallet after basal drain.
+void tickMouthChewMetabolism(SkeletonNode& mouth, bool ateThisTick);
+
 // Update mouth diet EMA after a successful bite (origin + cloaca band when applicable).
 void recordMouthDietBite(SkeletonNode& mouth, EnergonOrigin origin, CloacaBand cloacaBand);
 
 // M→* outbound: fuel/satiation modulated by postingestive diet (gag reflex on distress cloaca).
 std::uint8_t mouthOutboundConfidence(const SkeletonNode& mouth);
 
+// M→A vestigial taste bud broadcast: current salience + temporal Δ (Berg analogue), when hungry.
+std::uint8_t mouthTasteApproachConfidence(const SkeletonNode& mouth);
+
+// Per-link outbound: satiation to P/C; taste approach to A when hungry.
+std::uint8_t mouthOutboundConfidenceForDst(const SkeletonNode& mouth, NeuronType dst);
+
+// M energon dispatch priority from wallet fill (distinct from chew satiation broadcast).
+std::uint8_t mouthEnergonDispatchConfidence(const Organism& organism, const SkeletonNode& mouth,
+                                            NeuronType dst);
+
 // A outbound: 0 = idle flagella, 7 = full stroke (scales with stroke bytes paid).
 std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeBytesPaid);
 
-// C hub outbound: 0 = starving hub, 7 = satiated bodyStorage.
+// C hub outbound: 0 = starving hub, 7 = satiated computer store.
 std::uint8_t hubFuelConfidence(std::size_t hubBytes,
                                std::uint32_t fullBytes = kComputerHubStoreMaxBytes);
 

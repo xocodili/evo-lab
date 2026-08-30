@@ -6,6 +6,7 @@ struct InputFrame {
   bool quit = false;
   bool keyR = false;
   bool keySpace = false;
+  bool keyV = false;
   int scrollDelta = 0;
   bool mouseLeftDown = false;
   float moveForward = 0.0f;

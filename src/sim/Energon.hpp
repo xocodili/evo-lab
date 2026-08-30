@@ -17,8 +17,11 @@ namespace evolab {
 
 
 class BarrenWorld;
-
 class EnergonSpatialIndex;
+class EnergonTasteSensoryGrid;
+class Organism;
+
+struct EnergonTasteSensoryPeak;
 
 
 
@@ -107,6 +110,22 @@ struct EnergonBiteResult {
 
 
 
+struct EnergonMouthAnchor {
+
+  std::uint32_t blobId = 0;
+
+  std::uint32_t organismId = 0;
+
+  std::uint32_t mouthNodeId = 0;
+
+  // Parametric position tail→head where the string is pinned to the mouth.
+
+  float anchorT = 0.0f;
+
+};
+
+
+
 class EnergonField {
 
 public:
@@ -142,11 +161,47 @@ public:
 
   void injectBlob(EnergonBlob blob);
 
+  std::uint32_t injectBlobReturnId(EnergonBlob blob);
+
 
 
   // Bite one byte at the mouth position along the string (may snip into two blobs).
 
   EnergonBiteResult biteAt(std::uint32_t blobId, float mouthX, float mouthZ);
+
+
+
+  // Pin a grounded string to a mouth at the nearest point (consumption/contact).
+
+  void setMouthAnchor(std::uint32_t blobId, std::uint32_t organismId, std::uint32_t mouthNodeId,
+
+                      float mouthX, float mouthZ);
+
+
+
+  // Move mouth-anchored strings after organism advection; skips tide drift while anchored.
+
+  void syncMouthAttachments(const std::vector<Organism>& organisms, const BarrenWorld& world,
+
+                            float cellSize, float heightScale);
+
+
+
+  // Anchor grounded wet strings within stickyRadius of any live mouth (segment distance).
+
+  void applyMouthStickiness(const std::vector<Organism>& organisms, float stickyRadius);
+
+
+
+  void pruneMouthAnchors(const std::vector<Organism>& organisms, float stickyRadius);
+
+
+
+  bool blobHasMouthAnchor(std::uint32_t blobId) const;
+
+
+
+  const std::vector<EnergonMouthAnchor>& mouthAnchors() const { return mouthAnchors_; }
 
 
 
@@ -162,13 +217,17 @@ public:
 
   // Rebuild the spatial index before feed/perceive queries for the current tick.
 
-  void prepareSpatialQueries(float gridCellSize, float worldHalfExtent);
+  void prepareSpatialQueries(float gridCellSize, float worldHalfExtent,
+                             const BarrenWorld& world);
 
 
 
   void forEachBlobNear(float x, float z, float radius,
 
                        const std::function<void(const EnergonBlob&)>& fn) const;
+
+  // Coarse zoomed-out taste map rebuilt with prepareSpatialQueries; mouth steers to peak cell.
+  EnergonTasteSensoryPeak queryTasteSensoryPeak(float x, float z, float radius) const;
 
   // Nursery / oracle: keep the eternal cornucopia blob glued to a world anchor (e.g. mouth).
   void anchorCornucopiaBlob(float x, float z, float y);
@@ -196,7 +255,25 @@ private:
 
   std::vector<EnergonBlob> blobs_;
 
+  std::vector<EnergonMouthAnchor> mouthAnchors_;
+
   std::unique_ptr<EnergonSpatialIndex> spatialIndex_;
+  std::unique_ptr<EnergonTasteSensoryGrid> tasteSensoryGrid_;
+
+
+
+  void releaseAnchorsForBlob(std::uint32_t blobId);
+
+  void releaseMouthAnchorsExcept(std::uint32_t organismId, std::uint32_t mouthNodeId,
+                                 std::uint32_t blobId);
+
+  void remapAnchorsOnSnip(std::uint32_t tailBlobId, std::uint32_t headBlobId, float splitT);
+
+  void splitSegmentAt(EnergonBlob& blob, int index, std::uint8_t eatenByte, float splitT);
+
+  EnergonBlob* findBlob(std::uint32_t blobId);
+
+  const EnergonBlob* findBlob(std::uint32_t blobId) const;
 
 };
 

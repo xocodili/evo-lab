@@ -23,6 +23,7 @@ public:
   void shutdown();
 
   void poll(InputFrame& input, bool mouseLeftHeld);
+  void pollMovementKeys(InputFrame& input);
   void pumpEvents();
   void swap();
   void windowSize(int& width, int& height) const;
@@ -37,6 +38,10 @@ private:
   void* glContext_ = nullptr;
   bool sdlInitialized_ = false;
   bool shouldClose_ = false;
+  bool keyWHeld_ = false;
+  bool keyAHeld_ = false;
+  bool keySHeld_ = false;
+  bool keyDHeld_ = false;
   std::vector<SDL_Event> pendingEvents_;
 };
 

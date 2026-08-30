@@ -104,7 +104,8 @@ void SessionDebugLog::writeOrganismRecord(const Organism& organism, bool oracleD
 
   out_ << "  org id=" << organism.id << " alive=" << (organism.alive ? 1 : 0)
        << " oracle=" << (organism.feedbagOracle ? 1 : 0)
-       << " hub=" << organism.bodyStorage.size() << " P=" << nodeStoreBytes(organism, NeuronType::Perceptor)
+       << " total=" << organism.totalFuelBytes() << " hub=" << organism.computerHubFuelBytes()
+       << " P=" << nodeStoreBytes(organism, NeuronType::Perceptor)
        << " M=" << nodeStoreBytes(organism, NeuronType::Mouth)
        << " A=" << nodeStoreBytes(organism, NeuronType::Actuator) << " heading="
        << std::fixed << std::setprecision(3) << organism.heading << " offspring="

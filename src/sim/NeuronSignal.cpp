@@ -1,6 +1,8 @@
 #include "sim/NeuronSignal.hpp"
 
+#include "sim/CampNeuronGating.hpp"
 #include "sim/CloacaSignal.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/Organism.hpp"
 
 #include <algorithm>
@@ -32,6 +34,15 @@ void reconcileMouthChewFill(SkeletonNode& mouth) {
   if (mouth.mouthChewFill > cap) {
     mouth.mouthChewFill = cap;
   }
+}
+
+void tickMouthChewMetabolism(SkeletonNode& mouth, bool ateThisTick) {
+  if (!ateThisTick && mouth.mouthChewFill > 0) {
+    const std::uint32_t decay =
+        std::min(kMouthChewDecayPerTick, mouth.mouthChewFill);
+    mouth.mouthChewFill -= decay;
+  }
+  reconcileMouthChewFill(mouth);
 }
 
 void creditMouthChew(SkeletonNode& mouth, std::uint32_t netBytes) {
@@ -145,6 +156,51 @@ std::uint8_t mouthOutboundConfidence(const SkeletonNode& mouth) {
       std::lround(std::clamp(unit, 0.0f, 1.0f) * static_cast<float>(kNeuronConfidenceMax)));
 }
 
+std::uint8_t mouthTasteApproachConfidence(const SkeletonNode& mouth) {
+  if (!mouth.mouthTasteSampleValid && mouth.mouthTasteSalience <= 1.0e-4f) {
+    return kNeuronConfidenceNeutral;
+  }
+
+  const float hunger = campHungerFromMouthUnit(confidenceToUnit(mouthFuelConfidence(mouth)));
+  if (hunger <= kOrganismCampReflexMinValence) {
+    return kNeuronConfidenceNeutral;
+  }
+
+  const float tasteUnit =
+      std::clamp(mouth.mouthTasteSalience * 0.55f +
+                     std::max(0.0f, mouth.mouthTasteGradient) * kMouthTasteTemporalGain * 0.45f,
+                 0.0f, 1.0f);
+  const float outbound = kNeuronConfidenceNeutral +
+                         tasteUnit * static_cast<float>(kNeuronConfidenceMax - kNeuronConfidenceNeutral);
+  return static_cast<std::uint8_t>(std::lround(std::clamp(outbound, 0.0f,
+                                                         static_cast<float>(kNeuronConfidenceMax))));
+}
+
+std::uint8_t mouthOutboundConfidenceForDst(const SkeletonNode& mouth, NeuronType dst) {
+  if (dst == NeuronType::Actuator) {
+    const std::uint8_t taste = mouthTasteApproachConfidence(mouth);
+    if (taste > kNeuronConfidenceNeutral) {
+      return taste;
+    }
+  }
+  return mouthOutboundConfidence(mouth);
+}
+
+std::uint8_t mouthEnergonDispatchConfidence(const Organism& organism, const SkeletonNode& mouth,
+                                            NeuronType dst) {
+  const std::size_t cap = peripheralStoreCapBytes(organism);
+  const std::size_t walletBytes = std::min(mouth.store.size(), cap);
+  const std::uint8_t walletConf = fuelStoreToConfidence(walletBytes, static_cast<std::uint32_t>(cap));
+  if (dst == NeuronType::Actuator) {
+    const std::uint8_t taste = mouthTasteApproachConfidence(mouth);
+    if (taste > kNeuronConfidenceNeutral) {
+      return static_cast<std::uint8_t>(
+          std::max(static_cast<int>(walletConf), static_cast<int>(taste)));
+    }
+  }
+  return walletConf;
+}
+
 std::uint8_t hubFuelConfidence(std::size_t hubBytes, std::uint32_t fullBytes) {
   return fuelStoreToConfidence(hubBytes, fullBytes);
 }
@@ -159,7 +215,8 @@ std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType
     case NeuronType::Actuator:
       return actuatorActivityConfidence(organism.lastStrokePaid, organism.lastStrokeBytesPaid);
     case NeuronType::Computer:
-      return hubFuelConfidence(organism.bodyStorage.size());
+      return hubFuelConfidence(computerHubFuelBytes(organism),
+                               static_cast<std::uint32_t>(hubStoreCapBytes(organism)));
     default:
       return kNeuronConfidenceNeutral;
   }

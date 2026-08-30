@@ -3,6 +3,7 @@
 #include "sim/CellConstants.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/OrganismNeuron.hpp"
 #include "sim/PerceptorFocus.hpp"
@@ -73,8 +74,9 @@ void formatAxonConfidence(char* buffer, std::size_t bufferSize, std::uint8_t byt
 
 std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint64_t simTick) {
   char buffer[2048];
-  const std::size_t nodeFuel = totalNodeFuel(organism);
-  const float daysRemaining = daysOfEnergon(nodeFuel + organism.bodyStorage.size());
+  const std::size_t totalFuel = organism.totalFuelBytes();
+  const std::size_t hubFuel = organism.computerHubFuelBytes();
+  const float daysRemaining = daysOfEnergon(totalFuel);
 
   if (!organism.hasMouthNeurons() && !organism.hasActuatorNeurons()) {
     if (organism.hasPerceptorNeurons()) {
@@ -86,7 +88,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                     "Type: partial chain — M/A lost, not a stem cell\n"
                     "Nodes: %zu  Links: %zu  Axons: %zu\n"
                     "Fuel: P %zu (%s)  M %zu (%s)  A %zu (%s)\n"
-                    "Body storage: %zu bytes (unused on intact Nom)\n"
+                    "Total fuel: %zu B  C hub: %zu B\n"
                     "Land-adjacent: %s  tick %llu  %s",
                     organism.id, organism.nodes.size(), organism.links.size(),
                     organism.neuralAxons.size(),
@@ -96,7 +98,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                     neuronAliveFlag(organism, NeuronType::Mouth),
                     actuatorNode != nullptr ? actuatorNode->store.size() : 0,
                     neuronAliveFlag(organism, NeuronType::Actuator),
-                    organism.bodyStorage.size(), organism.landAdjacent ? "yes" : "no",
+                    totalFuel, hubFuel, organism.landAdjacent ? "yes" : "no",
                     static_cast<unsigned long long>(simTick), organism.alive ? "alive" : "dead");
       return buffer;
     }
@@ -110,7 +112,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   "Created: tick %llu\n"
                   "Status: %s",
                   organism.id, organism.nodes.size(), organism.links.size(),
-                  organism.bodyStorage.size(), daysRemaining,
+                  totalFuel, daysRemaining,
                   organism.landAdjacent ? "yes" : "no",
                   static_cast<unsigned long long>(organism.createdAtTick),
                   organism.alive ? "alive" : "dead");
@@ -160,11 +162,11 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   "Nom #%u\n"
                   "Type: CAMP %s%s%s\n"
                   "Nodes: %zu  Links: %zu  Axons: %zu\n"
-                  "Heading: %.0f deg  senseR: %.2f cells\n"
+                  "Heading: %.0f deg  senseR: %.2f cells  wallet caps P×%.2f C×%.2f\n"
                   "Energon (tick %llu):\n"
                   "  P [sense]:  %zu B  %s  scan: %s (%u B)\n"
-                  "  M [mouth]:  %zu B  %s  ate: %s  drive: %.0f%%  inhibit: %s\n"
-                  "  C [hub]:    %zu B  match: %.0f%%  dispatch: %.0f%%\n"
+                  "  M [mouth]:  %zu B  chew %u/32  %s  ate: %s  drive: %.0f%%  inhibit: %s\n"
+                  "  C [hub]:    %zu/%zu B  surplus %zu  vent: %s  match: %.0f%%  dispatch: %.0f%%\n"
                   "  A [motor]:  %zu B  %s\n"
                   "Focus (last tick):\n"
                   "  kind: %s  confidence: %u/7  bearing: %+.0f deg  range: %.0f%%\n"
@@ -178,16 +180,20 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   organism.feedbagOracle ? " (feedbag reproduction oracle)" : "",
                   organism.nodes.size(), organism.links.size(), organism.neuralAxons.size(),
                   organism.heading * 180.0f / 3.14159265f, organism.senseRadiusFactor,
+                  organism.peripheralStoreCapFactor, organism.hubStoreCapFactor,
                   static_cast<unsigned long long>(simTick != 0 ? simTick : organism.createdAtTick),
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   perceptorNode != nullptr && perceptorNode->alive ? "alive" : "dead",
                   organism.lastPerceptScanPaid ? "paid" : "skipped", organism.lastPerceptBytesPaid,
                   mouthNode != nullptr ? mouthNode->store.size() : 0,
+                  mouthNode != nullptr ? mouthNode->mouthChewFill : 0,
                   mouthNode != nullptr && mouthNode->alive ? "alive" : "dead",
                   mouthNode != nullptr && mouthNode->alive && mouthNode->ateThisTick ? "yes" : "no",
                   organism.lastMouthBiteDrive * 100.0f,
                   organism.lastMouthFeedSuppressed ? "yes (interoception)" : "no",
-                  organism.bodyStorage.size(), organism.lastComputerMatchScore * 100.0f,
+                  hubFuel, hubStoreCapBytes(organism), hubStoreSurplus(organism),
+                  organism.lastHubSignalExpelledThisTick ? "yes" : "no",
+                  organism.lastComputerMatchScore * 100.0f,
                   organism.computerFeedGain * 100.0f,
                   actuatorNode != nullptr ? actuatorNode->store.size() : 0,
                   actuatorNode != nullptr && actuatorNode->alive ? "alive" : "dead",
@@ -229,7 +235,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   "Land-adjacent: %s\n"
                   "Created: tick %llu\n"
                   "Status: %s",
-                  organism.id, organism.bodyStorage.size(), daysRemaining,
+                  organism.id, totalFuel, daysRemaining,
                   organism.heading * 180.0f / 3.14159265f, organism.lastDisplacement,
                   organism.lastIntendedThrust, organism.lastMechanicalThrust,
                   kActuatorTranslationEta * 100.0f, organism.lastStrokeBytesPaid,
@@ -268,7 +274,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                   "Axon M1->M2 feed:%d%% believe:%d%% last:0x%02X recv:%s\n"
                   "Axon M2->M1 feed:%d%% believe:%d%% last:0x%02X recv:%s\n"
                   "Land-adjacent: %s  tick %llu  %s",
-                  organism.id, organism.heading * 180.0f / 3.14159265f, organism.bodyStorage.size(),
+                  organism.id, organism.heading * 180.0f / 3.14159265f, hubFuel,
                   daysRemaining, localBytes,
                   axon12 != nullptr ? trustDisplayPercent(axon12->trustFeed) : 0,
                   axon12 != nullptr ? trustDisplayPercent(evolab::axonMaxBelieveTrust(*axon12)) : 0,
@@ -292,7 +298,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
                 "Created: tick %llu\n"
                 "Status: %s",
                 organism.id, organism.mouthCount(), organism.nodes.size(), organism.links.size(),
-                organism.heading * 180.0f / 3.14159265f, organism.bodyStorage.size(),
+                organism.heading * 180.0f / 3.14159265f, totalFuel,
                 daysRemaining, localBytes, organism.landAdjacent ? "yes" : "no",
                 static_cast<unsigned long long>(organism.createdAtTick),
                 organism.alive ? "alive" : "dead");
@@ -317,7 +323,7 @@ std::string formatOrganismHoverSummary(const Organism& organism) {
                   organism.feedbagOracle ? " [feedbag oracle]" : "",
                   perceptorNode != nullptr ? perceptorNode->store.size() : 0,
                   mouthNode != nullptr ? mouthNode->store.size() : 0,
-                  organism.bodyStorage.size(),
+                  organism.computerHubFuelBytes(),
                   actuatorNode != nullptr ? actuatorNode->store.size() : 0, senseSummary);
   } else if (organism.hasActuatorNeurons() && !organism.hasMouthNeurons()) {
     std::snprintf(buffer, sizeof(buffer), "Hover: Nom #%u actuator (d=%.3f, stroke %s)",

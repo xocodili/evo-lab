@@ -2,7 +2,9 @@
 #include "sim/CellConstants.hpp"
 #include "sim/CellPopulation.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/Organism.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -57,6 +59,28 @@ TEST_CASE("chaos initial storage stays in one to three day band", "[chaos]") {
     REQUIRE(bytes >= evolab::kTicksPerStemCellDay);
     REQUIRE(bytes <= evolab::kStemCellStorageMaxBytes);
   }
+}
+
+TEST_CASE("wallet cap factors jitter at spawn and inherit on reproduction", "[chaos]") {
+  std::mt19937 rng(8080);
+  evolab::Organism parent =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  parent.finalizeSpawn(rng);
+  REQUIRE(parent.peripheralStoreCapFactor >= evolab::kWalletCapFactorMin);
+  REQUIRE(parent.peripheralStoreCapFactor <= evolab::kWalletCapFactorMax);
+  REQUIRE(parent.hubStoreCapFactor >= evolab::kWalletCapFactorMin);
+  REQUIRE(parent.hubStoreCapFactor <= evolab::kWalletCapFactorMax);
+  REQUIRE(evolab::peripheralStoreCapBytes(parent) >= evolab::kMouthConveyReserveBytes);
+
+  evolab::Organism child = parent;
+  child.peripheralStoreCapFactor = parent.peripheralStoreCapFactor;
+  child.hubStoreCapFactor = parent.hubStoreCapFactor;
+  child.peripheralStoreCapFactor =
+      evolab::clampWalletCapFactor(evolab::chaosJitterFloat(child.peripheralStoreCapFactor, rng));
+  child.hubStoreCapFactor =
+      evolab::clampWalletCapFactor(evolab::chaosJitterFloat(child.hubStoreCapFactor, rng));
+  REQUIRE(child.peripheralStoreCapFactor >= evolab::kWalletCapFactorMin);
+  REQUIRE(child.hubStoreCapFactor <= evolab::kWalletCapFactorMax);
 }
 
 TEST_CASE("bone length receives a single chaos jitter at spawn", "[chaos]") {

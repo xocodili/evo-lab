@@ -6,6 +6,7 @@
 
 namespace evolab {
 
+class EnergonField;
 class Organism;
 struct SkeletonNode;
 
@@ -17,6 +18,8 @@ struct MouthInteroception {
   float perceptorSalience = 0.0f;
   bool perceptorLocked = false;
   PerceptFocusKind focusKind = PerceptFocusKind::None;
+  float tasteSalience = 0.0f;
+  float tasteGradient = 0.0f;
 };
 
 struct FeedIntent {
@@ -29,5 +32,8 @@ MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint3
                                             const SkeletonNode& mouth, std::uint64_t simTick);
 
 FeedIntent computeCampFeedIntent(const MouthInteroception& interoception, bool& mouthChewPaused);
+
+void runMouthTastePhase(Organism& organism, const EnergonField& energon, float cellSize,
+                        std::uint64_t simTick);
 
 }  // namespace evolab

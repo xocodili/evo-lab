@@ -1,4 +1,5 @@
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/DayCycle.hpp"
@@ -7,6 +8,7 @@
 #include "sim/EnergonString.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
+#include "sim/Tide.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -18,6 +20,19 @@ TEST_CASE("day cycle sun intensity is zero at night", "[energon]") {
   const float night = day.sunIntensity(270);
   REQUIRE(noon > 0.5f);
   REQUIRE(night == Catch::Approx(0.0f).margin(1e-3f));
+}
+
+TEST_CASE("day cycle clock advances forward", "[energon]") {
+  evolab::DayCycle day(360.0f);
+  int h0 = 0;
+  int m0 = 0;
+  int h1 = 0;
+  int m1 = 0;
+  day.clockTime(270, h0, m0);
+  day.clockTime(271, h1, m1);
+  const int mins0 = h0 * 60 + m0;
+  const int mins1 = h1 * 60 + m1;
+  REQUIRE(mins1 > mins0);
 }
 
 TEST_CASE("rain cycle budget is f(population) times entropy", "[energon]") {
@@ -149,6 +164,49 @@ TEST_CASE("injectBlob enforces maxBlobs for cloaca vents", "[energon]") {
   REQUIRE(field.activeCount() == config.maxBlobs);
 }
 
+TEST_CASE("sunfall evicts cloaca waste when field is at cap", "[energon]") {
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonConfig config;
+  config.maxBlobs = 32;
+  config.spawnRateMax = 4.0f;
+  config.populationScaledRain = false;
+  evolab::EnergonField field(42, config);
+
+  for (int i = 0; i < config.maxBlobs; ++i) {
+    evolab::EnergonBlob blob;
+    blob.id = static_cast<std::uint32_t>(i + 1);
+    blob.data = 0x01010101;
+    blob.remaining = 1;
+    blob.initialBytes = 1;
+    blob.origin = evolab::EnergonOrigin::Cloaca;
+    blob.x = static_cast<float>(i);
+    blob.z = 0.0f;
+    blob.y = 1.0f;
+    blob.grounded = true;
+    blob.onWet = true;
+    blob.ttl = 100.0f;
+    field.injectBlob(blob);
+  }
+  REQUIRE(field.activeCount() == config.maxBlobs);
+
+  int sunfallCount = 0;
+  for (int i = 0; i < 120; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+    sunfallCount = 0;
+    for (const evolab::EnergonBlob& blob : field.blobs()) {
+      if (blob.origin == evolab::EnergonOrigin::Sunfall) {
+        ++sunfallCount;
+      }
+    }
+    if (sunfallCount > 0) {
+      break;
+    }
+  }
+
+  REQUIRE(sunfallCount > 0);
+}
+
 TEST_CASE("corpse release packs up to eight bytes per blob", "[energon]") {
   evolab::EnergonField field(1, {});
   evolab::SkeletonNode node;
@@ -251,4 +309,216 @@ TEST_CASE("barren world height at world coordinates clamps to grid", "[energon]"
   const float hFar = world.heightAtWorld(9999.0f, -9999.0f, evolab::kWorldCellSize);
   REQUIRE(h0 == Catch::Approx(world.heightAt(7, 7)).margin(1e-3f));
   REQUIRE(hFar == Catch::Approx(world.heightAt(15, 0)).margin(1e-3f));
+}
+
+namespace {
+
+evolab::EnergonBlob makeAttachedTestBlob(float x, float z, std::uint32_t id) {
+  evolab::EnergonBlob blob;
+  blob.id = id;
+  blob.initialBytes = 4;
+  blob.remaining = 4;
+  blob.data = 0x01020304;
+  blob.x = x;
+  blob.z = z;
+  blob.y = 1.0f;
+  blob.grounded = true;
+  blob.onWet = true;
+  blob.ttl = 40.0f;
+  blob.tailX = x - 1.0f;
+  blob.tailZ = z;
+  blob.headX = x + 1.0f;
+  blob.headZ = z;
+  return blob;
+}
+
+}  // namespace
+
+TEST_CASE("mouth contact attaches energon string at consumption point", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+
+  field.injectBlob(makeAttachedTestBlob(mouth->worldX, mouth->worldZ, 9));
+  const std::uint32_t blobId = field.blobs().front().id;
+
+  camper.feed(field, evolab::kWorldCellSize, 0);
+  REQUIRE(field.mouthAnchors().size() == 1);
+  REQUIRE(field.mouthAnchors().front().blobId == blobId);
+  REQUIRE(field.mouthAnchors().front().mouthNodeId == evolab::kCampMouthId);
+
+  const float startTailX = field.blobs().front().tailX;
+  for (evolab::SkeletonNode& node : camper.nodes) {
+    node.worldX += 0.2f;
+    node.worldZ -= 0.1f;
+  }
+
+  field.syncMouthAttachments({camper}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  REQUIRE(field.blobs().front().tailX == Catch::Approx(startTailX + 0.2f).margin(1e-3f));
+}
+
+TEST_CASE("mouth sticky zone anchors without long-range co-advect", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+
+  const float contactRadius = evolab::kWorldCellSize * evolab::kMouthContactRadiusFactor;
+  const float stickyRadius = evolab::kWorldCellSize * evolab::kMouthStickyRadiusFactor;
+  const float offset = contactRadius + (stickyRadius - contactRadius) * 0.5f;
+  REQUIRE(offset > contactRadius);
+  REQUIRE(offset < stickyRadius);
+
+  evolab::EnergonBlob blob = makeAttachedTestBlob(mouth->worldX + offset, mouth->worldZ, 13);
+  field.injectBlob(blob);
+  const std::uint32_t blobId = field.blobs().front().id;
+
+  field.prepareSpatialQueries(evolab::kWorldCellSize, 64.0f, world);
+  field.applyMouthStickiness({camper}, stickyRadius);
+  REQUIRE(field.mouthAnchors().size() == 1);
+  REQUIRE(field.mouthAnchors().front().blobId == blobId);
+
+  const float tailBefore = field.blobs().front().tailX;
+  field.syncMouthAttachments({camper}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  REQUIRE(field.blobs().front().tailX == Catch::Approx(tailBefore).margin(1e-3f));
+
+  mouth->worldX = field.blobs().front().tailX;
+  mouth->worldZ = field.blobs().front().tailZ;
+  field.syncMouthAttachments({camper}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  float t = 0.0f;
+  const float distSqAfter = evolab::energonPointSegmentDistanceSq(
+      mouth->worldX, mouth->worldZ, field.blobs().front(), t);
+  REQUIRE(distSqAfter <= contactRadius * contactRadius * 1.25f);
+}
+
+TEST_CASE("mouth sticky attaches to closest string only", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+
+  const float stickyRadius = evolab::kWorldCellSize * evolab::kMouthStickyRadiusFactor;
+  field.injectBlob(makeAttachedTestBlob(mouth->worldX + 1.0f, mouth->worldZ, 21));
+  field.injectBlob(makeAttachedTestBlob(mouth->worldX + 2.0f, mouth->worldZ, 22));
+
+  field.prepareSpatialQueries(evolab::kWorldCellSize, 64.0f, world);
+  field.applyMouthStickiness({camper}, stickyRadius);
+
+  REQUIRE(field.mouthAnchors().size() == 1);
+  REQUIRE(field.mouthAnchors().front().mouthNodeId == evolab::kCampMouthId);
+  REQUIRE(field.mouthAnchors().front().blobId == 21);
+}
+
+TEST_CASE("multiple campers pin same string at different mouths", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism starA =
+      evolab::makeStarMouthOrganism(1, -2.0f, 0.0f, 1.0f, 120, 0, 2, evolab::kWorldCellSize * 0.45f);
+  evolab::Organism starB =
+      evolab::makeStarMouthOrganism(2, 2.0f, 0.0f, 1.0f, 120, 0, 2, evolab::kWorldCellSize * 0.45f);
+  starA.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  starB.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  evolab::SkeletonNode* mouthA = starA.findNode(2);
+  evolab::SkeletonNode* mouthB = starB.findNode(2);
+  REQUIRE(mouthA != nullptr);
+  REQUIRE(mouthB != nullptr);
+
+  evolab::EnergonBlob blob = makeAttachedTestBlob(0.0f, 0.0f, 23);
+  blob.tailX = -2.5f;
+  blob.headX = 2.5f;
+  field.injectBlob(blob);
+  const std::uint32_t blobId = field.blobs().front().id;
+
+  field.setMouthAnchor(blobId, starA.id, mouthA->id, mouthA->worldX, mouthA->worldZ);
+  field.setMouthAnchor(blobId, starB.id, mouthB->id, mouthB->worldX, mouthB->worldZ);
+  REQUIRE(field.mouthAnchors().size() == 2);
+  REQUIRE(field.mouthAnchors().front().blobId == blobId);
+  REQUIRE(field.mouthAnchors().back().blobId == blobId);
+}
+
+TEST_CASE("multi-mouth freak pins string at both contact points", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism star =
+      evolab::makeStarMouthOrganism(2, 0.0f, 0.0f, 1.0f, 120, 0, 2, evolab::kWorldCellSize * 0.45f);
+  star.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  evolab::SkeletonNode* mouthA = star.findNode(2);
+  evolab::SkeletonNode* mouthB = star.findNode(3);
+  REQUIRE(mouthA != nullptr);
+  REQUIRE(mouthB != nullptr);
+
+  const float midX = (mouthA->worldX + mouthB->worldX) * 0.5f;
+  const float midZ = (mouthA->worldZ + mouthB->worldZ) * 0.5f;
+  field.injectBlob(makeAttachedTestBlob(midX, midZ, 11));
+
+  mouthA->worldX -= 0.05f;
+  mouthB->worldX += 0.05f;
+  const std::uint32_t blobId = field.blobs().front().id;
+  field.setMouthAnchor(blobId, star.id, mouthA->id, mouthA->worldX, mouthA->worldZ);
+  field.setMouthAnchor(blobId, star.id, mouthB->id, mouthB->worldX, mouthB->worldZ);
+  REQUIRE(field.mouthAnchors().size() == 2);
+
+  const float tailBefore = field.blobs().front().tailX;
+  const float headBefore = field.blobs().front().headX;
+  for (evolab::SkeletonNode& node : star.nodes) {
+    node.worldX += 0.2f;
+  }
+
+  field.syncMouthAttachments({star}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  REQUIRE(field.blobs().front().tailX == Catch::Approx(tailBefore + 0.2f).margin(1e-3f));
+  REQUIRE(field.blobs().front().headX == Catch::Approx(headBefore + 0.2f).margin(1e-3f));
+}
+
+TEST_CASE("anchored strings skip independent tidal advection", "[energon][attach]") {
+  evolab::TideConfig tideConfig;
+  tideConfig.amplitude = 8.0f;
+  evolab::BarrenWorld world(31, 32, evolab::Tide(tideConfig));
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+
+  field.injectBlob(makeAttachedTestBlob(mouth->worldX, mouth->worldZ, 12));
+  camper.feed(field, evolab::kWorldCellSize, 0);
+  REQUIRE(field.blobHasMouthAnchor(field.blobs().front().id));
+
+  const float anchoredX = field.blobs().front().x;
+  for (int i = 0; i < 40; ++i) {
+    world.tick();
+    field.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  }
+  REQUIRE(field.blobs().front().x == Catch::Approx(anchoredX).margin(1e-3f));
 }

@@ -9,6 +9,11 @@ namespace evolab {
 
 // ε-chaos rates (DESIGN-NOTES §4.4). Jitter is ±kChaosJitterRate multiplicative.
 inline constexpr float kChaosJitterRate = 0.03f;
+// Heritable wallet-cap multipliers (± jitter at spawn / reproduction).
+inline constexpr float kWalletCapFactorMin = 0.5f;
+inline constexpr float kWalletCapFactorMax = 2.0f;
+inline constexpr float kDefaultPeripheralStoreCapFactor = 1.0f;
+inline constexpr float kDefaultHubStoreCapFactor = 1.0f;
 inline constexpr float kEpsilonRandomChild = 0.03f;
 inline constexpr float kEpsilonRandomMate = 0.05f;
 inline constexpr float kMigrationRate = 0.01f;
@@ -51,6 +56,8 @@ float chaosJitterHeading(float headingRadians, std::mt19937_64& rng);
 
 // 1–3 fuel-days at baseline, then ±3% jitter (clamped to valid storage band).
 std::uint32_t chaosInitialStorage(std::mt19937& rng);
+
+float clampWalletCapFactor(float factor);
 
 float nominalBoneLength(float cellSize);
 

@@ -23,6 +23,11 @@ inline constexpr std::uint32_t kBiteNetYieldBytes = kEnergonUnitsPerByte - kBite
 // Empty-string contact: same tax, paid from organism body storage.
 inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
 inline constexpr std::uint32_t kNeuronStoreMaxBytes = kMouthLocalStoreMaxBytes;
+// Chew-buffer drain per tick when not biting (satiation broadcast tracks live mouth state).
+inline constexpr std::uint32_t kMouthChewDecayPerTick = 2u;
+// Mouth wallet kept local for basal + chew; remainder conveyed downstream each tick.
+inline constexpr std::uint32_t kMouthConveyReserveBytes = 8u;
+inline constexpr std::uint32_t kMouthConveyanceMaxPerTick = 12u;
 // Universal axon analog byte (all neuron types): 0–7 on the believe channel.
 // Semantics depend on source neuron — see NeuronSignal.hpp.
 inline constexpr std::uint8_t kNeuronConfidenceMax = 7u;
@@ -38,6 +43,8 @@ inline constexpr std::uint8_t kMouthChewResumeActuatorConfidence = 3u;
 inline constexpr float kMouthChewRefuseMaxApproach = 0.15f;
 // CAMP horror-crawl baseline when hungry and mouth is not signaling satiation.
 inline constexpr float kActuatorBaselineCrawlDrive = 0.35f;
+// A modulates crawl from M satiation Δ (rising satiation trims crawl; falling restores it).
+inline constexpr float kActuatorMouthSignalGradientGain = 0.85f;
 inline constexpr float kMouthBaselineFeedDrive = 0.35f;
 inline constexpr float kMouthFeedIntentMinBite = 0.08f;
 // Mouth diet EMA: postingestive palatability / gag reflex (CTA analogue — see EVOLUTION.md §1.3).
@@ -87,7 +94,7 @@ inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
 // Chemotaxis horizon in multiples of cellSize (~nom body scale). Analogue: E. coli run-and-tumble
 // bias over ~10–20 body lengths (Berg & Purcell 1977; Dusenbery 1998), not mile-scale absolute
 // chemoreception (debunked shark trope; Gardiner & Atema 2010, Hueter et al. 2004 JEB).
-inline constexpr float kPerceptorSenseRadiusFactor = 10.0f;
+inline constexpr float kPerceptorSenseRadiusFactor = 10.0f / 3.0f;
 inline constexpr float kPerceptorFocusLockThreshold = 0.05f;
 inline constexpr float kPerceptorFocusReleaseThreshold = 0.02f;
 // Berg-style run bias: outbound confidence nudged by Δ food Go/NoGo score vs prior paid scan.
@@ -126,8 +133,42 @@ inline constexpr std::uint32_t kParthenogenesisCelebrationTicks = 180u;
 inline constexpr std::uint32_t kFeedbagOracleParthenogenesisMinAgeTicks = 120u;
 inline constexpr std::uint32_t kParthenogenesisRefractoryTicks = 3600u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
-// XZ overlap radius as a fraction of world cell size.
+// XZ overlap radius as a fraction of world cell size (strict bite / chew contact).
 inline constexpr float kMouthContactRadiusFactor = 0.65f;
+// Short-range adhesion analogue (van der Waals, mucus, pili): anchor and co-advect within this
+// radius. Match neuron billboard diameter on screen (~8px); was 3.5× cellSize and hoovered patches.
+// Slightly wider than bite contact so near-misses latch; see docs/ART-STYLE.md.
+inline constexpr float kMouthStickyRadiusFactor = 0.75f;
+// Co-advect pinned strings while chewing (tide / feedbag latch); wider than sticky discovery
+// but only when lastMouthHadFoodContact — avoids crawl-phase hoover that cleared energon patches.
+inline constexpr float kMouthChewCoAdvectRadiusFactor = 3.5f;
+// Extra-oral taste buds: omnidirectional chemo sampling at the mouth (barbel / olfaction
+// analogue). Horizon matches the prior perceptor cone reach (~10× cellSize); dissolved
+// trails extend well beyond vision but no longer dwarf the focus wedge on screen.
+inline constexpr float kMouthTasteRadiusFactor = kPerceptorSenseRadiusFactor * 3.0f;
+inline constexpr float kMouthTasteSalienceFloor = 0.25f;
+// Berg-style temporal ΔC bias on run/tumble when P has no lock.
+inline constexpr float kMouthTasteTemporalGain = 3.0f;
+inline constexpr float kMouthTasteTumbleSuppressGain = 0.55f;
+inline constexpr float kMouthTasteApproachGain = 0.45f;
+inline constexpr float kMouthTasteTurnGain = 0.35f;
+// Vestigial M→A believe gain — evolved weaker than P; dominance emerges via trust × valence.
+inline constexpr float kMouthTasteSignalGain = 0.32f;
+// When omnidirectional taste vectors cancel (symmetric food ring), resultant bearing is ambiguous.
+inline constexpr float kMouthTasteSymmetryVectorEpsilonSq = 0.04f;
+inline constexpr float kMouthTasteSymmetryTumbleBoost = 1.75f;
+// Coarse chemo map for extra-oral taste: world-spanning byte-density field (clumping / mass flux).
+inline constexpr int kMouthTasteSensoryGridResolution = 256;
+
+// Stem-cell Hz coordinator (precursor C): per-node activity throttle from pattern match + delta.
+inline constexpr std::size_t kCoordinatorRegisterBytes = 4u;
+inline constexpr float kCoordinatorMinDutyScale = 0.08f;
+inline constexpr float kCoordinatorMaxDutyScale = 1.0f;
+inline constexpr float kCoordinatorBaselineDutyScale = 0.55f;
+inline constexpr float kCoordinatorExcitationGain = 0.45f;
+inline constexpr float kCoordinatorDeltaGain = 0.25f;
+inline constexpr float kCoordinatorSatiationBrake = 0.35f;
+inline constexpr float kCoordinatorStarvationBoost = 0.4f;
 
 // Skeleton yaw: max turn per tick (radians) toward flow / nearby food.
 inline constexpr float kOrganismMaxTurnPerTick = 0.22f;

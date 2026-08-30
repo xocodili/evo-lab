@@ -32,6 +32,9 @@ add_executable(evo-lab-tests
   unit/test_parthenogenesis.cpp
   unit/test_debug_session.cpp
   unit/test_cornucopia_chemotaxis.cpp
+  unit/test_mouth_taste.cpp
+  unit/test_coordinator.cpp
+  unit/test_sprite_animator.cpp
   unit/test_nursery_mutant.cpp
   unit/test_chaos.cpp
   unit/test_tide_advection.cpp

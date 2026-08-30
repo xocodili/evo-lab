@@ -21,6 +21,7 @@ add_library(evolab_sim STATIC
   sim/Energon.cpp
   sim/EnergonString.cpp
   sim/EnergonSpatialIndex.cpp
+  sim/EnergonTasteSensory.cpp
   sim/EnergonStats.cpp
   sim/SimDiagnostics.cpp
   sim/SimConfig.cpp
@@ -39,6 +40,7 @@ add_library(evolab_sim STATIC
   sim/NeuronMusculature.cpp
   sim/EnergonConveyance.cpp
   sim/OrganismComputer.cpp
+  sim/NeuronCoordinator.cpp
   sim/OrganismKinematics.cpp
   sim/OrganismFactories.cpp
   sim/NeuronTick.cpp
@@ -73,7 +75,26 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${CMAKE_SOURCE_DIR}/assets/fonts/LexendDeca-Regular.ttf"
           "$<TARGET_FILE_DIR:evo-lab>/assets/fonts/LexendDeca-Regular.ttf"
-  COMMENT "Copy Lexend Deca font next to evo-lab.exe"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:evo-lab>/resources/sprites"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/mouth_sprites.json"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/mouth_sprites.json"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/mouth_sprites.png"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/mouth_sprites.png"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/perceptor_sprites.json"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/perceptor_sprites.json"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/perceptor_sprites.png"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/perceptor_sprites.png"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/actuator_sprites.json"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/actuator_sprites.json"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${CMAKE_SOURCE_DIR}/resources/sprites/actuator_sprites.png"
+          "$<TARGET_FILE_DIR:evo-lab>/resources/sprites/actuator_sprites.png"
+  COMMENT "Copy UI font and sprite resources next to evo-lab.exe"
 )
 
 if(WIN32)

@@ -7,6 +7,7 @@
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuronStem.hpp"
+#include "sim/NeuronCoordinator.hpp"
 #include "sim/NeuronTrust.hpp"
 #include "sim/OrganismNeuron.hpp"
 
@@ -17,29 +18,21 @@ namespace evolab {
 
 namespace {
 
-int confidenceMatchScore(std::uint8_t observed, std::uint8_t expected) {
-  if (!isNeuronConfidenceByte(observed) || !isNeuronConfidenceByte(expected)) {
-    return 0;
-  }
-  return static_cast<int>(kNeuronConfidenceMax) -
-         std::abs(static_cast<int>(observed) - static_cast<int>(expected));
-}
-
 float computeComputerMatchScore(const ComputerInteroception& interoception,
                                 const std::array<std::uint8_t, kComputerRegisterBytes>& reg) {
   const int matchTotal =
-      confidenceMatchScore(interoception.fromPerceptor, reg[0]) +
-      confidenceMatchScore(interoception.fromMouth, reg[1]) +
-      confidenceMatchScore(interoception.fromActuator, reg[2]);
+      neuronConfidenceMatchScore(interoception.fromPerceptor, reg[0]) +
+      neuronConfidenceMatchScore(interoception.fromMouth, reg[1]) +
+      neuronConfidenceMatchScore(interoception.fromActuator, reg[2]);
   const int matchMax = static_cast<int>(kNeuronConfidenceMax) * 3;
   return matchMax > 0 ? static_cast<float>(matchTotal) / static_cast<float>(matchMax) : 0.0f;
 }
 
 float computeComputerFeedGain(const Organism& organism, float matchScore, float ctaPe) {
-  const float hubUnit = confidenceToUnit(hubFuelConfidence(organism.bodyStorage.size()));
+  const float hubUnit = confidenceToUnit(hubFuelConfidence(computerHubFuelBytes(organism)));
   const float matchGo = matchScore;
   const float reserveNoGo =
-      organism.bodyStorage.size() <= kComputerHubReserveBytes ? (1.0f - matchGo) : 0.0f;
+      computerHubFuelBytes(organism) <= kComputerHubReserveBytes ? (1.0f - matchGo) : 0.0f;
   const float repleteNoGo = campHubRepleteNoGo(hubUnit);
   const float ctaNoGo = clamp01(std::abs(ctaPe) * kComputerCtaDisagreementGain);
   const float dispatchDrive = clamp01(matchGo - reserveNoGo - repleteNoGo * 0.35f - ctaNoGo);
@@ -57,6 +50,8 @@ void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& f
   computer.lastComputerPredictionError = ctaPe;
   computer.computerFeedGain =
       computeComputerFeedGain(organism, computer.lastComputerMatchScore, ctaPe);
+  computer.computerFeedGain =
+      applyMiniCToComputerDispatch(computer.computerFeedGain, computer.coordinatorDutyScale);
 
   if (allowCloacaExpulsion) {
     organism.lastHubSignalExpelledThisTick = false;
@@ -116,9 +111,10 @@ float campComputerCtaPredictionError(const ComputerInteroception& interoception)
 }
 
 void initComputerNodeRegister(SkeletonNode& computer) {
-  computer.computerRegister = {kNeuronConfidenceNeutral,
-                               kNeuronConfidenceNeutral,
-                               kNeuronConfidenceNeutral,
+  const std::uint8_t proto = computer.coordinatorRegister[0];
+  computer.computerRegister = {proto,
+                               proto,
+                               proto,
                                kNeuronConfidenceNeutral,
                                1u,
                                1u,
@@ -184,8 +180,9 @@ void digestMouthToComputer(Organism& organism) {
       continue;
     }
 
+    const std::size_t peripheralCap = peripheralStoreCapBytes(organism);
     const std::size_t mouthSurplus =
-        mouth.store.size() > kNeuronStoreMaxBytes ? mouth.store.size() - kNeuronStoreMaxBytes : 0;
+        mouth.store.size() > peripheralCap ? mouth.store.size() - peripheralCap : 0;
     const std::size_t moveCount = std::min(mouthSurplus, hubStoreAcceptanceRemaining(organism));
     for (std::size_t i = 0; i < moveCount; ++i) {
       std::uint8_t byte = 0;

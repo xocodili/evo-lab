@@ -36,6 +36,22 @@ void energonBlobSyncCenter(EnergonBlob& blob) {
   blob.z = (blob.headZ + blob.tailZ) * 0.5f;
 }
 
+void energonTranslateBlob(EnergonBlob& blob, float dx, float dz) {
+  blob.headX += dx;
+  blob.headZ += dz;
+  blob.tailX += dx;
+  blob.tailZ += dz;
+  energonBlobSyncCenter(blob);
+}
+
+float energonAnchorWorldX(const EnergonBlob& blob, float anchorT) {
+  return blob.tailX + anchorT * (blob.headX - blob.tailX);
+}
+
+float energonAnchorWorldZ(const EnergonBlob& blob, float anchorT) {
+  return blob.tailZ + anchorT * (blob.headZ - blob.tailZ);
+}
+
 std::uint8_t energonByteAt(const EnergonBlob& blob, int index) {
   if (index < 0 || index >= blob.remaining) {
     return 0;

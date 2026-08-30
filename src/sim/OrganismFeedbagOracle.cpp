@@ -1,8 +1,10 @@
 #include "sim/OrganismFeedbagOracle.hpp"
 
 #include "sim/CellConstants.hpp"
+#include "sim/Chaos.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuronStem.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
 
 namespace evolab {
@@ -39,6 +41,23 @@ bool mouthHasFoodInRange(const EnergonField& field, float wx, float wz, float ra
   return found;
 }
 
+float feedbagOracleMinHubCapFactor() {
+  const std::size_t targetHubBytes =
+      estimateParthenogenesisRequiredHubBytes() + kTicksPerStemCellDay;
+  return clampWalletCapFactor(static_cast<float>(targetHubBytes) /
+                              static_cast<float>(kComputerHubStoreMaxBytes));
+}
+
+void ensureFeedbagOracleHubSolvent(Organism& organism) {
+  const std::size_t required = estimateParthenogenesisRequiredHubBytes();
+  if (computerHubFuelBytes(organism) >= required) {
+    return;
+  }
+  const std::size_t target =
+      std::min(hubStoreCapBytes(organism), required + kTicksPerStemCellDay);
+  assignComputerHubFuel(organism, target, 1);
+}
+
 }  // namespace
 
 void prepareFeedbagOracleAxons(Organism& organism) {
@@ -63,10 +82,24 @@ void installFeedbagReproductionOracle(Organism& organism, std::uint64_t simTick)
   }
   organism.feedbagOracle = true;
   organism.createdAtTick = simTick;
-  organism.bodyStorage.assign(estimateParthenogenesisRequiredHubBytes() + kTicksPerStemCellDay, 1);
+  organism.hubStoreCapFactor =
+      clampWalletCapFactor(std::max(organism.hubStoreCapFactor, feedbagOracleMinHubCapFactor()));
+  const std::size_t targetHubBytes =
+      estimateParthenogenesisRequiredHubBytes() + kTicksPerStemCellDay;
   for (SkeletonNode& node : organism.nodes) {
+    if (node.neuron == NeuronType::Computer) {
+      continue;
+    }
     node.store.assign(kNeuronStoreMaxBytes, 1);
     node.basalArrearsTicks = 0;
+  }
+  SkeletonNode* computer = findComputerHubNode(organism);
+  if (computer != nullptr) {
+    initComputerHubStore(*computer, targetHubBytes, organism);
+    for (std::uint8_t& byte : computer->store) {
+      byte = 1;
+    }
+    computer->basalArrearsTicks = 0;
   }
   organism.computerFeedGain = 1.0f;
   prepareFeedbagOracleAxons(organism);
@@ -81,6 +114,7 @@ bool tickFeedbagOracleHooks(Organism& organism, EnergonField& energon, float cel
     ensureAbundantFoodAtMouth(energon, *mouth, cellSize);
   }
   organism.computerFeedGain = 1.0f;
+  ensureFeedbagOracleHubSolvent(organism);
   return true;
 }
 

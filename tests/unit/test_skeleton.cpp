@@ -167,9 +167,9 @@ TEST_CASE("axon link transfers rim store toward root body", "[skeleton]") {
     }
   }
 
-  const std::size_t bodyBefore = organism.bodyStorage.size();
+  const std::size_t bodyBefore = organism.findNode(organism.rootNodeId)->store.size();
   organism.transferEnergy(field, evolab::kWorldCellSize);
-  REQUIRE(organism.bodyStorage.size() > bodyBefore);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() > bodyBefore);
 }
 
 TEST_CASE("middle bite snips one energon string into two fragments", "[mouth]") {

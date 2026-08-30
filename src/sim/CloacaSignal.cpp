@@ -74,7 +74,7 @@ CloacaBand cloacaBandFromBlob(const EnergonBlob& blob) {
 }
 
 bool campDistressPredicate(const Organism& organism) {
-  if (organism.bodyStorage.size() < kComputerHubReserveBytes) {
+  if (computerHubFuelBytes(organism) < kComputerHubReserveBytes) {
     return true;
   }
   for (const SkeletonNode& node : organism.nodes) {
@@ -82,14 +82,14 @@ bool campDistressPredicate(const Organism& organism) {
       return true;
     }
   }
-  return hubFuelConfidence(organism.bodyStorage.size()) < 3u;
+  return hubFuelConfidence(computerHubFuelBytes(organism)) < 3u;
 }
 
 bool campMateReadyPredicate(const Organism& organism, std::uint64_t simTick) {
   if (!organism.isCampNom() || !organism.alive) {
     return false;
   }
-  if (hubFuelConfidence(organism.bodyStorage.size()) < kComputerSatiationConfidence) {
+  if (hubFuelConfidence(computerHubFuelBytes(organism)) < kComputerSatiationConfidence) {
     return false;
   }
   const SkeletonNode* mouth = findNeuronNode(organism, NeuronType::Mouth);
@@ -117,21 +117,21 @@ bool campMateReadyPredicate(const Organism& organism, std::uint64_t simTick) {
   if (age < kMateMinAgeTicks) {
     return false;
   }
-  return organism.bodyStorage.size() >= kComputerHubReserveBytes + kCloacaVentCostMate;
+  return computerHubFuelBytes(organism) >= kComputerHubReserveBytes + kCloacaVentCostMate;
 }
 
 CloacaBand chooseCloacaBand(const Organism& organism, std::uint64_t simTick) {
   if (campDistressPredicate(organism) &&
-      organism.bodyStorage.size() >= kCloacaVentCostDistress) {
+      computerHubFuelBytes(organism) >= kCloacaVentCostDistress) {
     return CloacaBand::Distress;
   }
   if (campMateReadyPredicate(organism, simTick)) {
     return CloacaBand::Mate;
   }
   const float satiation =
-      confidenceToUnit(hubFuelConfidence(organism.bodyStorage.size()));
+      confidenceToUnit(hubFuelConfidence(computerHubFuelBytes(organism)));
   if (satiation >= confidenceToUnit(kComputerSatiationConfidence) &&
-      organism.bodyStorage.size() >= kComputerHubReserveBytes + kCloacaVentCostBaseline) {
+      computerHubFuelBytes(organism) >= kComputerHubReserveBytes + kCloacaVentCostBaseline) {
     return CloacaBand::Baseline;
   }
   return CloacaBand::None;

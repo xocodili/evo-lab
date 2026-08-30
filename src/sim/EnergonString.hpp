@@ -20,6 +20,12 @@ void energonBlobInitPoint(EnergonBlob& blob);
 void energonBlobLayoutSegment(EnergonBlob& blob, float cellSize, float headingRadians);
 void energonBlobSyncCenter(EnergonBlob& blob);
 
+void energonTranslateBlob(EnergonBlob& blob, float dx, float dz);
+
+float energonAnchorWorldX(const EnergonBlob& blob, float anchorT);
+
+float energonAnchorWorldZ(const EnergonBlob& blob, float anchorT);
+
 std::uint8_t energonByteAt(const EnergonBlob& blob, int index);
 std::uint64_t energonPackBytes(const EnergonBlob& blob, int startIndex, int count);
 std::uint64_t energonPackRawBytes(const std::uint8_t* bytes, int count);

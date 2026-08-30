@@ -41,7 +41,7 @@ DeathFeastScenario makeDeathFeastRubScenario() {
   scenario.dying = makeCampAt(0.0f, 0.0f, 1, 64);
   scenario.immortal = makeCampAt(0.0f, 0.0f, 2, evolab::kStemCellStorageMaxBytes);
 
-  scenario.dying.bodyStorage.clear();
+  evolab::assignComputerHubFuel(scenario.dying, 0);
   for (evolab::SkeletonNode& node : scenario.dying.nodes) {
     node.store.clear();
   }
@@ -62,7 +62,7 @@ DeathFeastScenario makeDeathFeastRubScenario() {
       scenario.dying.neuralAxons.end());
   REQUIRE(scenario.dying.neuralAxons.size() == 1);
 
-  scenario.immortal.bodyStorage.assign(evolab::kStemCellStorageMaxBytes, 1);
+  evolab::assignComputerHubFuel(scenario.immortal, evolab::kStemCellStorageMaxBytes, 1);
   evolab::SkeletonNode* immortalP = scenario.immortal.findNode(evolab::kCampPerceptorId);
   evolab::SkeletonNode* immortalM = scenario.immortal.findNode(evolab::kCampMouthId);
   REQUIRE(immortalP != nullptr);

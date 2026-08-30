@@ -1,14 +1,17 @@
 #include "game/GameRenderer.hpp"
 
 #include "engine/gl/GlContext.hpp"
+#include "engine/gfx/sprites/SpriteAtlasLibrary.hpp"
 #include "game/GameShaders.hpp"
 #include "game/OrganismDrawer.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
+#include "sim/WorldConstants.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <vector>
 
 namespace evolab::game {
@@ -140,7 +143,7 @@ GameRenderer::GameRenderer() = default;
 
 GameRenderer::~GameRenderer() { shutdown(); }
 
-bool GameRenderer::init(const std::function<void()>& heartbeat) {
+bool GameRenderer::init(const std::function<void()>& heartbeat, const std::string& exeBasePath) {
   if (initialized_) {
     return true;
   }
@@ -160,6 +163,10 @@ bool GameRenderer::init(const std::function<void()>& heartbeat) {
   cellProgram_ = engine::gfx::ShaderProgram::create(kCellVert, kCellFrag);
   beat();
 
+  if (!spriteRenderer_.init()) {
+    std::cerr << "WARNING: sprite renderer init failed\n";
+  }
+
   engine::gl::GlContext& g = engine::gl::gl();
   g.genVertexArrays(1, &terrainVao_);
   g.genBuffers(1, &terrainVbo_);
@@ -170,6 +177,28 @@ bool GameRenderer::init(const std::function<void()>& heartbeat) {
   g.genBuffers(1, &energonVbo_);
   g.genVertexArrays(1, &cellVao_);
   g.genBuffers(1, &cellVbo_);
+
+  if (!exeBasePath.empty()) {
+    const bool mouthLoaded = spriteLibrary_.loadAtlas(
+        "mouth", engine::gfx::sprites::kDefaultMouthSpriteManifestRelPath, exeBasePath);
+    const bool perceptorLoaded = spriteLibrary_.loadAtlas(
+        "perceptor", engine::gfx::sprites::kDefaultPerceptorSpriteManifestRelPath, exeBasePath);
+    const bool actuatorLoaded = spriteLibrary_.loadAtlas(
+        "actuator", engine::gfx::sprites::kDefaultActuatorSpriteManifestRelPath, exeBasePath);
+    spritesLoaded_ = mouthLoaded || perceptorLoaded || actuatorLoaded;
+    if (spritesLoaded_) {
+      spriteLibrary_.uploadAll();
+    }
+    if (!mouthLoaded) {
+      std::cerr << "WARNING: mouth sprite atlas failed to load — mouths render as solid circles\n";
+    }
+    if (!perceptorLoaded) {
+      std::cerr << "WARNING: perceptor sprite atlas failed to load\n";
+    }
+    if (!actuatorLoaded) {
+      std::cerr << "WARNING: actuator sprite atlas failed to load\n";
+    }
+  }
 
   initialized_ = true;
   return true;
@@ -217,6 +246,9 @@ void GameRenderer::shutdown() {
     g.deleteVertexArrays(1, &cellVao_);
     cellVao_ = 0;
   }
+  spriteRenderer_.shutdown();
+  spriteLibrary_.shutdown();
+  spritesLoaded_ = false;
 
   terrainProgram_ = engine::gfx::ShaderProgram{};
   waterProgram_ = engine::gfx::ShaderProgram{};
@@ -372,7 +404,7 @@ void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engi
 
 void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
                                  const engine::OrbitCamera& camera, int viewportW, int viewportH,
-                                 std::uint64_t simTick) {
+                                 std::uint64_t simTick, float fixedSimHz) {
   if (!initialized_ || organisms.empty()) {
     return;
   }
@@ -383,8 +415,9 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   camera.eyePosition(eyeX, eyeY, eyeZ);
 
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
-  const OrganismDrawBatch batch =
-      buildOrganismDrawBatch(organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH, simTick);
+  const OrganismDrawBatch batch = buildOrganismDrawBatch(
+      organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH, simTick, fixedSimHz, kWorldCellSize,
+      showNeuronDiagnostics_);
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.viewport(0, 0, viewportW, viewportH);
@@ -437,6 +470,19 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     cellProgram_.use();
     cellProgram_.setMat4("uMvp", mvp);
     g.drawArrays(engine::gl::GlEnum::kTriangles, 0, cellVertexCount_);
+  }
+
+  if (spritesLoaded_ && !batch.spriteInstances.empty()) {
+    std::vector<engine::gfx::sprites::SpriteRenderRequest> spriteRequests;
+    spriteRequests.reserve(batch.spriteInstances.size());
+    for (const OrganismSpriteInstance& instance : batch.spriteInstances) {
+      engine::gfx::sprites::SpriteRenderRequest req;
+      req.atlasId = instance.atlasId != nullptr ? instance.atlasId : "";
+      req.clipName = instance.clipName != nullptr ? instance.clipName : "";
+      req.draw = instance.draw;
+      spriteRequests.push_back(std::move(req));
+    }
+    spriteRenderer_.draw(spriteLibrary_, spriteRequests, mvp, eyeX, eyeY, eyeZ);
   }
 
   g.enable(engine::gl::GlEnum::kDepthTest);

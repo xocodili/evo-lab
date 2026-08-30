@@ -19,13 +19,13 @@ TEST_CASE("undifferentiated organism basal metabolism consumes one byte per tick
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   organism.tickNeuronViability(energon);
   REQUIRE(organism.alive);
-  REQUIRE(organism.bodyStorage.size() == 9);
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.size() == 9);
 
-  organism.bodyStorage.resize(1);
+  organism.findNode(organism.rootNodeId)->store.resize(1);
   organism.metabolise(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   organism.tickNeuronViability(energon);
   REQUIRE(organism.alive);
-  REQUIRE(organism.bodyStorage.empty());
+  REQUIRE(organism.findNode(organism.rootNodeId)->store.empty());
 
   for (std::uint32_t i = 0; i < evolab::kNeuronBasalGraceTicks; ++i) {
     organism.tickNeuronViability(energon);
@@ -70,8 +70,8 @@ TEST_CASE("stem cells spawn with one to three days of storage", "[stemcell]") {
   const auto& organisms = population.organisms();
   REQUIRE(!organisms.empty());
   for (const evolab::Organism& organism : organisms) {
-    REQUIRE(organism.bodyStorage.size() >= evolab::kTicksPerStemCellDay);
-    REQUIRE(organism.bodyStorage.size() <= evolab::kStemCellStorageMaxBytes);
+    REQUIRE(organism.findNode(organism.rootNodeId)->store.size() >= evolab::kTicksPerStemCellDay);
+    REQUIRE(organism.findNode(organism.rootNodeId)->store.size() <= evolab::kStemCellStorageMaxBytes);
     REQUIRE(organism.alive);
   }
 }
@@ -96,7 +96,7 @@ TEST_CASE("population tick removes dead organisms after metabolism", "[stemcell]
 
   for (evolab::Organism& organism :
        const_cast<std::vector<evolab::Organism>&>(population.organisms())) {
-    organism.bodyStorage.resize(1);
+    organism.findNode(organism.rootNodeId)->store.resize(1);
   }
 
   for (int i = 0; i < static_cast<int>(evolab::kNeuronBasalGraceTicks) + 4; ++i) {

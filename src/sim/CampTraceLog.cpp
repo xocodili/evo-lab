@@ -106,7 +106,7 @@ void CampTraceLog::recordTick(std::uint64_t simTick, const Organism& organism, f
        << " stroke=" << (organism.lastStrokePaid ? 1 : 0)
        << " stroke_paid=" << organism.lastStrokeBytesPaid << " in_water="
        << (organism.lastInWater ? 1 : 0) << " disp=" << organism.lastDisplacement
-       << " hub=" << organism.bodyStorage.size()
+       << " total=" << organism.totalFuelBytes() << " hub=" << organism.computerHubFuelBytes()
        << " bite=" << (organism.lastMouthHadFoodContact ? 1 : 0) << '\n';
   out_.flush();
 }

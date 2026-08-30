@@ -1,5 +1,6 @@
 #include "sim/NeuralAxon.hpp"
 
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/NeuronSignal.hpp"
@@ -78,6 +79,9 @@ bool axonSignalGateOpen(const NeuralAxon& axon) {
 }
 
 bool axonMarkedForPruning(const NeuralAxon& axon) {
+  if (isCampDevelopmentalAxonEdge(axon.srcNodeId, axon.dstNodeId)) {
+    return false;
+  }
   return (axonBelieveChannelDead(axon) && axon.trustFeed == 0) ||
          axonMarkedForTransitPrune(axon);
 }

@@ -1,10 +1,14 @@
 #include "sim/Energon.hpp"
+#include "sim/EnergonTasteSensory.hpp"
+#include "sim/CellConstants.hpp"
 
 #include "sim/BarrenWorld.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/EnergonRain.hpp"
 #include "sim/EnergonSpatialIndex.hpp"
 #include "sim/EnergonString.hpp"
+#include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WaterColumn.hpp"
 
@@ -45,12 +49,29 @@ std::uint64_t randomData(std::mt19937_64& rng, std::uint8_t byteCount) {
   return data;
 }
 
+bool isMouthStickyFoodBlob(const EnergonBlob& blob) {
+  if (!blob.grounded || !blob.onWet || blob.remaining == 0) {
+    return false;
+  }
+  switch (blob.origin) {
+    case EnergonOrigin::Waste:
+    case EnergonOrigin::Cloaca:
+    case EnergonOrigin::Signal:
+      return false;
+    case EnergonOrigin::Sunfall:
+    case EnergonOrigin::Fragment:
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 int energonEvictionScore(const EnergonBlob& blob) {
+  // Lower score evicts first: shed cloaca/waste before sunfall food.
   int originRank = 0;
   switch (blob.origin) {
-    case EnergonOrigin::Sunfall:
+    case EnergonOrigin::Cloaca:
       originRank = 0;
       break;
     case EnergonOrigin::Waste:
@@ -62,7 +83,7 @@ int energonEvictionScore(const EnergonBlob& blob) {
     case EnergonOrigin::Signal:
       originRank = 3;
       break;
-    case EnergonOrigin::Cloaca:
+    case EnergonOrigin::Sunfall:
       originRank = 4;
       break;
   }
@@ -94,6 +115,7 @@ bool EnergonField::evictOneBlob() {
     return false;
   }
 
+  releaseAnchorsForBlob(blobs_[evictIndex].id);
   blobs_.erase(blobs_.begin() + static_cast<std::ptrdiff_t>(evictIndex));
   return true;
 }
@@ -118,13 +140,256 @@ void EnergonField::setSeed(std::uint64_t seed) {
 
 void EnergonField::clear() {
   blobs_.clear();
+  mouthAnchors_.clear();
   nextId_ = 1;
 }
 
+EnergonBlob* EnergonField::findBlob(std::uint32_t blobId) {
+  for (EnergonBlob& blob : blobs_) {
+    if (blob.id == blobId) {
+      return &blob;
+    }
+  }
+  return nullptr;
+}
+
+const EnergonBlob* EnergonField::findBlob(std::uint32_t blobId) const {
+  for (const EnergonBlob& blob : blobs_) {
+    if (blob.id == blobId) {
+      return &blob;
+    }
+  }
+  return nullptr;
+}
+
+void EnergonField::releaseAnchorsForBlob(std::uint32_t blobId) {
+  mouthAnchors_.erase(std::remove_if(mouthAnchors_.begin(), mouthAnchors_.end(),
+                                     [blobId](const EnergonMouthAnchor& anchor) {
+                                       return anchor.blobId == blobId;
+                                     }),
+                      mouthAnchors_.end());
+}
+
+void EnergonField::releaseMouthAnchorsExcept(std::uint32_t organismId, std::uint32_t mouthNodeId,
+                                             std::uint32_t blobId) {
+  mouthAnchors_.erase(
+      std::remove_if(mouthAnchors_.begin(), mouthAnchors_.end(),
+                     [&](const EnergonMouthAnchor& anchor) {
+                       return anchor.organismId == organismId && anchor.mouthNodeId == mouthNodeId &&
+                              anchor.blobId != blobId;
+                     }),
+      mouthAnchors_.end());
+}
+
+void EnergonField::remapAnchorsOnSnip(std::uint32_t tailBlobId, std::uint32_t headBlobId,
+                                      float splitT) {
+  const float clampedSplit = std::clamp(splitT, 1.0e-4f, 1.0f - 1.0e-4f);
+  for (EnergonMouthAnchor& anchor : mouthAnchors_) {
+    if (anchor.blobId != tailBlobId) {
+      continue;
+    }
+    if (anchor.anchorT <= clampedSplit) {
+      anchor.anchorT = anchor.anchorT / clampedSplit;
+    } else {
+      anchor.blobId = headBlobId;
+      anchor.anchorT = (anchor.anchorT - clampedSplit) / (1.0f - clampedSplit);
+    }
+  }
+}
+
+bool EnergonField::blobHasMouthAnchor(std::uint32_t blobId) const {
+  for (const EnergonMouthAnchor& anchor : mouthAnchors_) {
+    if (anchor.blobId == blobId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void EnergonField::setMouthAnchor(std::uint32_t blobId, std::uint32_t organismId,
+                                  std::uint32_t mouthNodeId, float mouthX, float mouthZ) {
+  const EnergonBlob* blob = findBlob(blobId);
+  if (blob == nullptr || !blob->grounded || blob->remaining == 0) {
+    return;
+  }
+
+  float anchorT = 0.0f;
+  energonPointSegmentDistanceSq(mouthX, mouthZ, *blob, anchorT);
+
+  releaseMouthAnchorsExcept(organismId, mouthNodeId, blobId);
+
+  for (EnergonMouthAnchor& anchor : mouthAnchors_) {
+    if (anchor.blobId == blobId && anchor.organismId == organismId &&
+        anchor.mouthNodeId == mouthNodeId) {
+      anchor.anchorT = anchorT;
+      return;
+    }
+  }
+
+  EnergonMouthAnchor anchor;
+  anchor.blobId = blobId;
+  anchor.organismId = organismId;
+  anchor.mouthNodeId = mouthNodeId;
+  anchor.anchorT = anchorT;
+  mouthAnchors_.push_back(anchor);
+}
+
+void EnergonField::applyMouthStickiness(const std::vector<Organism>& organisms,
+                                        float stickyRadius) {
+  if (stickyRadius <= 0.0f) {
+    return;
+  }
+
+  const float stickyRadiusSq = stickyRadius * stickyRadius;
+  for (const Organism& organism : organisms) {
+    if (!organism.alive) {
+      continue;
+    }
+
+    for (const SkeletonNode& node : organism.nodes) {
+      if (!node.alive || node.neuron != NeuronType::Mouth) {
+        continue;
+      }
+
+      std::uint32_t closestBlobId = 0;
+      float closestDistSq = stickyRadiusSq;
+
+      forEachBlobNear(node.worldX, node.worldZ, stickyRadius,
+                      [&](const EnergonBlob& blob) {
+                        if (!isMouthStickyFoodBlob(blob)) {
+                          return;
+                        }
+
+                        float t = 0.0f;
+                        const float distSq =
+                            energonPointSegmentDistanceSq(node.worldX, node.worldZ, blob, t);
+                        if (distSq > closestDistSq) {
+                          return;
+                        }
+
+                        closestDistSq = distSq;
+                        closestBlobId = blob.id;
+                      });
+
+      if (closestBlobId != 0) {
+        setMouthAnchor(closestBlobId, organism.id, node.id, node.worldX, node.worldZ);
+      }
+    }
+  }
+}
+
+void EnergonField::syncMouthAttachments(const std::vector<Organism>& organisms,
+                                        const BarrenWorld& world, float cellSize,
+                                        float heightScale) {
+  if (mouthAnchors_.empty()) {
+    return;
+  }
+
+  for (EnergonBlob& blob : blobs_) {
+    if (!blob.grounded || blob.remaining == 0) {
+      continue;
+    }
+
+    float dxSum = 0.0f;
+    float dzSum = 0.0f;
+    int pinCount = 0;
+
+    for (const EnergonMouthAnchor& anchor : mouthAnchors_) {
+      if (anchor.blobId != blob.id) {
+        continue;
+      }
+
+      const Organism* organism = nullptr;
+      for (const Organism& candidate : organisms) {
+        if (candidate.id == anchor.organismId && candidate.alive) {
+          organism = &candidate;
+          break;
+        }
+      }
+      if (organism == nullptr) {
+        continue;
+      }
+
+      const SkeletonNode* mouth = organism->findNode(anchor.mouthNodeId);
+      if (mouth == nullptr || !mouth->alive || mouth->neuron != NeuronType::Mouth) {
+        continue;
+      }
+
+      const float coAdvectRadius =
+          cellSize * (organism->lastMouthHadFoodContact ? kMouthChewCoAdvectRadiusFactor
+                                                        : kMouthContactRadiusFactor);
+      const float coAdvectRadiusSq = coAdvectRadius * coAdvectRadius;
+      float nearestT = 0.0f;
+      const float distSq = energonPointSegmentDistanceSq(mouth->worldX, mouth->worldZ, blob,
+                                                         nearestT);
+      if (distSq > coAdvectRadiusSq) {
+        continue;
+      }
+
+      const float anchorX = energonAnchorWorldX(blob, anchor.anchorT);
+      const float anchorZ = energonAnchorWorldZ(blob, anchor.anchorT);
+      dxSum += mouth->worldX - anchorX;
+      dzSum += mouth->worldZ - anchorZ;
+      ++pinCount;
+    }
+
+    if (pinCount <= 0) {
+      continue;
+    }
+
+    energonTranslateBlob(blob, dxSum / static_cast<float>(pinCount),
+                         dzSum / static_cast<float>(pinCount));
+
+    const WaterColumn column = sampleWaterColumn(world, blob.x, blob.z, cellSize, heightScale);
+    blob.onWet = column.wet;
+    blob.y = column.wet ? column.surfaceY + kEnergonSurfaceClearance
+                        : placementY(column, NomHabitat::Benthic);
+  }
+}
+
+void EnergonField::pruneMouthAnchors(const std::vector<Organism>& organisms,
+                                     float contactRadius) {
+  const float radiusSq = contactRadius * contactRadius;
+  mouthAnchors_.erase(
+      std::remove_if(mouthAnchors_.begin(), mouthAnchors_.end(),
+                     [&](const EnergonMouthAnchor& anchor) {
+                       const EnergonBlob* blob = findBlob(anchor.blobId);
+                       if (blob == nullptr || blob->remaining == 0 || !blob->grounded) {
+                         return true;
+                       }
+
+                       const Organism* organism = nullptr;
+                       for (const Organism& candidate : organisms) {
+                         if (candidate.id == anchor.organismId && candidate.alive) {
+                           organism = &candidate;
+                           break;
+                         }
+                       }
+                       if (organism == nullptr) {
+                         return true;
+                       }
+
+                       const SkeletonNode* mouth = organism->findNode(anchor.mouthNodeId);
+                       if (mouth == nullptr || !mouth->alive || mouth->neuron != NeuronType::Mouth) {
+                         return true;
+                       }
+
+                       float t = 0.0f;
+                       const float distSq =
+                           energonPointSegmentDistanceSq(mouth->worldX, mouth->worldZ, *blob, t);
+                       return distSq > radiusSq;
+                     }),
+      mouthAnchors_.end());
+}
+
 void EnergonField::injectBlob(EnergonBlob blob) {
+  (void)injectBlobReturnId(std::move(blob));
+}
+
+std::uint32_t EnergonField::injectBlobReturnId(EnergonBlob blob) {
   while (static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
     if (!evictOneBlob()) {
-      return;
+      return 0;
     }
   }
   if (blob.id == 0) {
@@ -133,18 +398,16 @@ void EnergonField::injectBlob(EnergonBlob blob) {
   if (blob.headX == 0.0f && blob.headZ == 0.0f && blob.tailX == 0.0f && blob.tailZ == 0.0f) {
     energonBlobInitPoint(blob);
   }
+  const std::uint32_t id = blob.id;
   blobs_.push_back(blob);
+  return id;
 }
 
-namespace {
-
-void splitSegmentAt(EnergonBlob& blob, int index, EnergonField& field, std::uint8_t eatenByte) {
+void EnergonField::splitSegmentAt(EnergonBlob& blob, int index, std::uint8_t eatenByte, float splitT) {
   (void)eatenByte;
   const int tailCount = index;
   const int headCount = static_cast<int>(blob.remaining) - index - 1;
 
-  const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining) - 1));
-  const float splitT = static_cast<float>(index) / last;
   const float splitX = blob.tailX + (blob.headX - blob.tailX) * splitT;
   const float splitZ = blob.tailZ + (blob.headZ - blob.tailZ) * splitT;
 
@@ -166,6 +429,7 @@ void splitSegmentAt(EnergonBlob& blob, int index, EnergonField& field, std::uint
     headPart.tailZ = splitZ;
   }
 
+  const std::uint32_t tailBlobId = blob.id;
   if (tailCount > 0) {
     blob.data = energonPackBytes(blob, 0, tailCount);
     blob.remaining = static_cast<std::uint16_t>(tailCount);
@@ -177,11 +441,10 @@ void splitSegmentAt(EnergonBlob& blob, int index, EnergonField& field, std::uint
   }
 
   if (headCount > 0) {
-    field.injectBlob(headPart);
+    const std::uint32_t headBlobId = injectBlobReturnId(headPart);
+    remapAnchorsOnSnip(tailBlobId, headBlobId, splitT);
   }
 }
-
-}  // namespace
 
 EnergonBiteResult EnergonField::biteAt(std::uint32_t blobId, float mouthX, float mouthZ) {
   EnergonBiteResult result;
@@ -230,7 +493,9 @@ EnergonBiteResult EnergonField::biteAt(std::uint32_t blobId, float mouthX, float
     result.byte = energonByteAt(blob, index);
     result.tookByte = true;
     result.snipped = true;
-    splitSegmentAt(blob, index, *this, result.byte);
+    const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining) - 1));
+    const float splitT = static_cast<float>(index) / last;
+    splitSegmentAt(blob, index, result.byte, splitT);
     return result;
   }
   return result;
@@ -246,16 +511,35 @@ EnergonBiteResult EnergonField::biteOneByte(std::uint32_t blobId) {
 }
 
 void EnergonField::purgeDepletedBlobs() {
-  blobs_.erase(std::remove_if(blobs_.begin(), blobs_.end(),
-                              [](const EnergonBlob& blob) { return blob.remaining == 0; }),
-                blobs_.end());
+  for (auto it = blobs_.begin(); it != blobs_.end();) {
+    if (it->remaining == 0) {
+      releaseAnchorsForBlob(it->id);
+      it = blobs_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
-void EnergonField::prepareSpatialQueries(float gridCellSize, float worldHalfExtent) {
+void EnergonField::prepareSpatialQueries(float gridCellSize, float worldHalfExtent,
+                                         const BarrenWorld& world) {
   if (!spatialIndex_) {
     spatialIndex_ = std::make_unique<EnergonSpatialIndex>();
   }
   spatialIndex_->rebuild(blobs_, gridCellSize, worldHalfExtent);
+
+  if (!tasteSensoryGrid_) {
+    tasteSensoryGrid_ = std::make_unique<EnergonTasteSensoryGrid>();
+  }
+  tasteSensoryGrid_->rebuild(blobs_, worldHalfExtent, kMouthTasteSensoryGridResolution, &world,
+                             gridCellSize);
+}
+
+EnergonTasteSensoryPeak EnergonField::queryTasteSensoryPeak(float x, float z, float radius) const {
+  if (!tasteSensoryGrid_) {
+    return {};
+  }
+  return tasteSensoryGrid_->peakInRadius(x, z, radius);
 }
 
 void EnergonField::forEachBlobNear(float x, float z, float radius,
@@ -268,7 +552,7 @@ void EnergonField::forEachBlobNear(float x, float z, float radius,
 
 void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
                                  float cellSize, int liveOrganismCount) {
-  if (sunIntensity <= 0.0f || static_cast<int>(blobs_.size()) >= config_.maxBlobs) {
+  if (sunIntensity <= 0.0f) {
     return;
   }
 
@@ -294,7 +578,17 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
     ++spawnCount;
   }
 
+  while (spawnCount > 0 && static_cast<int>(blobs_.size()) + spawnCount > config_.maxBlobs) {
+    if (!evictOneBlob()) {
+      break;
+    }
+  }
+
   spawnCount = std::min(spawnCount, config_.maxBlobs - static_cast<int>(blobs_.size()));
+  if (spawnCount <= 0) {
+    return;
+  }
+
   std::uniform_real_distribution<float> posDist(-half, half);
 
   for (int i = 0; i < spawnCount; ++i) {
@@ -343,17 +637,19 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
   } else {
     blob.onWet = column.wet;
     blob.y = landingY;
-    const float oldX = blob.x;
-    const float oldZ = blob.z;
-    const AdvectionVelocity velocity =
-        shoreAdvection(world, blob.x, blob.z, cellSize, halfExtent);
-    applyShoreAdvection(blob.x, blob.z, velocity, halfExtent, cellSize * 0.25f);
-    const float dx = blob.x - oldX;
-    const float dz = blob.z - oldZ;
-    blob.headX += dx;
-    blob.headZ += dz;
-    blob.tailX += dx;
-    blob.tailZ += dz;
+    if (!blobHasMouthAnchor(blob.id)) {
+      const float oldX = blob.x;
+      const float oldZ = blob.z;
+      const AdvectionVelocity velocity =
+          shoreAdvection(world, blob.x, blob.z, cellSize, halfExtent);
+      applyShoreAdvection(blob.x, blob.z, velocity, halfExtent, cellSize * 0.25f);
+      const float dx = blob.x - oldX;
+      const float dz = blob.z - oldZ;
+      blob.headX += dx;
+      blob.headZ += dz;
+      blob.tailX += dx;
+      blob.tailZ += dz;
+    }
 
     const float decayPerTick =
         (column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
@@ -383,8 +679,6 @@ void EnergonField::anchorCornucopiaBlob(float x, float z, float y) {
 
 void EnergonField::tick(const BarrenWorld& world, float sunIntensity, float cellSize,
                          float heightScale, int liveOrganismCount) {
-  spawnSunfall(world, sunIntensity, cellSize, liveOrganismCount);
-
   blobs_.erase(
       std::remove_if(blobs_.begin(), blobs_.end(),
                      [&](EnergonBlob& blob) {
@@ -395,6 +689,9 @@ void EnergonField::tick(const BarrenWorld& world, float sunIntensity, float cell
                        return blob.ttl <= 0.0f || blob.remaining == 0;
                      }),
       blobs_.end());
+  trimToCap();
+
+  spawnSunfall(world, sunIntensity, cellSize, liveOrganismCount);
   trimToCap();
 }
 

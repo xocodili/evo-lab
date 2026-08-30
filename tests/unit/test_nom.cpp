@@ -5,6 +5,7 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/CampNeuronGating.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/CellPopulation.hpp"
@@ -144,7 +145,7 @@ bool findWetSiteWithDryAhead(const evolab::BarrenWorld& world, float cellSize, f
 TEST_CASE("camp factory builds P-M-C-A chain with axons and split fuel", "[nom]") {
   evolab::Organism organism = evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.2f);
   REQUIRE(organism.isCampNom());
-  REQUIRE(organism.bodyStorage.size() == 66);
+  REQUIRE(organism.computerHubFuelBytes() == 66);
   REQUIRE(organism.nodes.size() == 4);
   REQUIRE(organism.links.size() == 3);
   REQUIRE(organism.neuralAxons.size() == 12);
@@ -262,7 +263,7 @@ TEST_CASE("camp stroke moves root along heading not A-arm bearing", "[nom][muscu
   REQUIRE(moveHeading == Catch::Approx(organism.heading).margin(0.2f));
 }
 
-TEST_CASE("high mouth satiation suppresses actuator stroke via interoception", "[nom]") {
+TEST_CASE("high mouth chew fill does not latch actuator inhibit", "[nom]") {
   evolab::BarrenWorld world(7, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
@@ -273,21 +274,24 @@ TEST_CASE("high mouth satiation suppresses actuator stroke via interoception", "
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
 
-  evolab::NeuralAxon* mouthToActuator = organism.findNeuralAxon(2, 4);
-  REQUIRE(mouthToActuator != nullptr);
-  mouthToActuator->lastReceived.valid = true;
-  mouthToActuator->lastReceived.byte = evolab::kMouthInhibitActuatorConfidence;
-  mouthToActuator->lastReceived.tick = world.tickCount();
+  evolab::SkeletonNode* mouth = organism.findNode(2);
+  evolab::SkeletonNode* actuator = organism.findNode(4);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(actuator != nullptr);
+  mouth->mouthChewFill = evolab::kMouthLocalStoreMaxBytes;
+  actuator->store.assign(evolab::kActuatorStrokeCostPerTick * 4, 1);
+  organism.actuatorMouthInboundPriorUnit =
+      evolab::confidenceToUnit(evolab::kNeuronConfidenceMax);
+  organism.actuatorMouthInboundPriorValid = true;
 
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
                       worldHalfExtent(world, evolab::kWorldCellSize));
 
-  REQUIRE(organism.lastActuatorInhibited);
-  REQUIRE(!organism.lastStrokePaid);
-  REQUIRE(organism.lastStrokeBytesPaid == 0);
+  REQUIRE(organism.lastStrokePaid);
+  REQUIRE(!organism.lastActuatorInhibited);
 }
 
-TEST_CASE("strong P and M together suppress stroke while eating at food", "[nom]") {
+TEST_CASE("rising mouth satiation gradient trims actuator drive", "[nom]") {
   evolab::BarrenWorld world(7, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;
@@ -317,11 +321,17 @@ TEST_CASE("strong P and M together suppress stroke while eating at food", "[nom]
   mToA->lastReceived.byte = 6;
   mToA->lastReceived.tick = tick;
 
+  evolab::SkeletonNode* actuator = organism.findNode(4);
+  REQUIRE(actuator != nullptr);
+  actuator->store.assign(evolab::kActuatorStrokeCostPerTick * 4, 1);
+  organism.actuatorMouthInboundPriorUnit = evolab::confidenceToUnit(2);
+  organism.actuatorMouthInboundPriorValid = true;
+
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
                       worldHalfExtent(world, evolab::kWorldCellSize));
 
-  REQUIRE(organism.lastActuatorInhibited);
-  REQUIRE(!organism.lastStrokePaid);
+  REQUIRE(organism.lastActuatorInteroception.mouthSignalDelta > 0.0f);
+  REQUIRE(organism.lastActuatorNetDrive < 1.0f);
 }
 
 TEST_CASE("strong P with low M allows full actuator stroke", "[nom]") {
@@ -731,6 +741,18 @@ TEST_CASE("starved actuator neuron dies and releases energon", "[nom]") {
   REQUIRE(evolab::axonIsDangling(*mToA));
   REQUIRE(mToA->uncappedNodeId == 4);
   REQUIRE(organism.alive);
+  REQUIRE(!organism.isCampNom());
+  REQUIRE(evolab::organismUsesCampSkeletonVisual(organism));
+
+  evolab::engine::OrbitCamera camera;
+  camera.distance = 140.0f;
+  const evolab::engine::Mat4 proj =
+      evolab::engine::mat4Perspective(60.0f * 3.1415926535f / 180.0f, 1280.0f / 720.0f, 0.1f, 800.0f);
+  const evolab::engine::Mat4 mvp =
+      evolab::engine::mat4Multiply(proj, camera.viewMatrix());
+  const evolab::game::OrganismDrawBatch degradedBatch = evolab::game::buildOrganismDrawBatch(
+      {organism}, 0.0f, 80.0f, 120.0f, mvp, 1280, 720);
+  REQUIRE(degradedBatch.cellVerts.size() >= 18);
 }
 
 TEST_CASE("camp nom signal phase does not flood red feed fragments", "[nom]") {
@@ -774,7 +796,7 @@ TEST_CASE("camp spawn splits fuel between hub and peripheral wallets", "[nom]") 
   const std::size_t total = evolab::kTicksPerStemCellDay * 2;
   const std::size_t peripheral = total / 2;
   const std::size_t mouthReserve = peripheral / 3;
-  REQUIRE(organism.bodyStorage.size() == total / 2 + mouthReserve);
+  REQUIRE(organism.computerHubFuelBytes() == total / 2 + mouthReserve);
   REQUIRE(perceptor->store.size() == peripheral / 3);
   REQUIRE(mouth->store.size() == 0);
   REQUIRE(actuator->store.size() == peripheral / 3);

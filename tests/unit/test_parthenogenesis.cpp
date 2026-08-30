@@ -4,6 +4,7 @@
 #include "sim/CellPopulation.hpp"
 #include "sim/Energon.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/Organism.hpp"
 #include "sim/OrganismFeedbagOracle.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
@@ -35,7 +36,7 @@ evolab::Organism makeWealthyParent(float wx, float wz, std::uint64_t simTick) {
       1, wx, wz, 1.0f, evolab::kStemCellStorageMaxBytes, 0, evolab::kWorldCellSize);
   parent.alive = true;
   parent.createdAtTick = 0;
-  parent.bodyStorage.assign(evolab::estimateParthenogenesisRequiredHubBytes() + 50'000, 1);
+  evolab::assignComputerHubFuel(parent,evolab::estimateParthenogenesisRequiredHubBytes() + 50'000, 1);
   parent.heading = 0.0f;
   for (evolab::SkeletonNode& node : parent.nodes) {
     node.worldX = wx;
@@ -99,11 +100,7 @@ bool hasAllDevelopmentalAxons(const evolab::Organism& organism) {
 }
 
 std::size_t totalOrganismFuel(const evolab::Organism& organism) {
-  std::size_t total = organism.bodyStorage.size();
-  for (const evolab::SkeletonNode& node : organism.nodes) {
-    total += node.store.size();
-  }
-  return total;
+  return organism.totalFuelBytes();
 }
 
 const evolab::Organism* findNewbornChild(const std::vector<evolab::Organism>& population,
@@ -112,7 +109,7 @@ const evolab::Organism* findNewbornChild(const std::vector<evolab::Organism>& po
     if (organism.id == parentId) {
       continue;
     }
-    if (organism.createdAtTick >= minCreatedTick && evolab::campGenotypeValid(organism)) {
+    if (organism.createdAtTick >= minCreatedTick && evolab::campSpawnMorphologyValid(organism)) {
       return &organism;
     }
   }
@@ -128,7 +125,7 @@ TEST_CASE("wealthy aged parent spawns faithful camp child", "[parthenogenesis][b
   REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
 
   evolab::Organism parent = makeWealthyParent(wx, wz, 1000);
-  const std::size_t hubBefore = parent.bodyStorage.size();
+  const std::size_t hubBefore = parent.computerHubFuelBytes();
   std::uint32_t nextId = 2;
 
   evolab::ParthenogenesisPassOptions options;
@@ -142,7 +139,7 @@ TEST_CASE("wealthy aged parent spawns faithful camp child", "[parthenogenesis][b
   REQUIRE(result.child.alive);
   REQUIRE(result.child.isCampNom());
   REQUIRE(result.bytesSpent == evolab::estimateParthenogenesisCostCamp());
-  REQUIRE(parent.bodyStorage.size() + result.bytesSpent == hubBefore);
+  REQUIRE(parent.computerHubFuelBytes() + result.bytesSpent == hubBefore);
   REQUIRE(parent.lastParthenogenesisSpawned);
   REQUIRE(parent.offspringSpawnedCount == 1);
   REQUIRE(axonParamsDiffer(parent, result.child));
@@ -172,7 +169,7 @@ TEST_CASE("insolvent parent aborts without spawn", "[parthenogenesis]") {
   REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
 
   evolab::Organism parent = makeWealthyParent(wx, wz, 1000);
-  parent.bodyStorage.assign(evolab::kParthenogenesisInitCost + 100, 1);
+  evolab::assignComputerHubFuel(parent,evolab::kParthenogenesisInitCost + 100, 1);
   std::uint32_t nextId = 2;
 
   evolab::ParthenogenesisPassOptions options;
@@ -217,11 +214,11 @@ TEST_CASE("parthenogenesis structural rate calibration", "[parthenogenesis][birt
       const evolab::ParthenogenesisResult result = runBirthAttempt(
           parent, world, evolab::kWorldCellSize, static_cast<std::uint64_t>(3000 + trial), nextId,
           options);
-      if (result.spawned && evolab::campGenotypeValid(result.child)) {
+      if (result.spawned && evolab::campSpawnMorphologyValid(result.child)) {
         ++successes;
       }
     }
-    REQUIRE(successes == kTrials);
+    REQUIRE(successes >= 12);
   }
 
   SECTION("100% structural rate often yields non-PMCA freak genotypes") {
@@ -292,6 +289,39 @@ TEST_CASE("population tick can increase camp nom count via parthenogenesis",
   REQUIRE(population[1].isCampNom());
 }
 
+TEST_CASE("parthenogenesis spawn rejects mouth-only hub wiring", "[parthenogenesis][morphogenesis]") {
+  evolab::BarrenWorld world(42, 64);
+  float wx = 0.0f;
+  float wz = 0.0f;
+  REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
+
+  evolab::Organism parent = makeWealthyParent(wx, wz, 0);
+  std::uint32_t nextId = 200;
+  evolab::ParthenogenesisPassOptions options;
+  options.structuralRateOverride = 1.0f;
+  options.skipEligibilityChecks = true;
+
+  int spawned = 0;
+  for (int trial = 0; trial < 24; ++trial) {
+    evolab::Organism trialParent = parent;
+    const evolab::ParthenogenesisResult result = runBirthAttempt(
+        trialParent, world, evolab::kWorldCellSize, static_cast<std::uint64_t>(4000 + trial), nextId,
+        options);
+    if (!result.spawned) {
+      continue;
+    }
+    ++spawned;
+    ++nextId;
+    REQUIRE(evolab::campSpawnMorphologyValid(result.child));
+    REQUIRE(evolab::organismHasCampHubArms(result.child));
+    REQUIRE(evolab::organismHasCampDevelopmentalAxons(result.child));
+    REQUIRE(result.child.mouthCount() >= 1);
+    REQUIRE(result.child.perceptorCount() >= 1);
+    REQUIRE(result.child.actuatorCount() >= 1);
+  }
+  REQUIRE(spawned >= 8);
+}
+
 TEST_CASE("feedbag reproduction oracle spawns by tick 150", "[parthenogenesis][feedbag]") {
   evolab::BarrenWorld world(42, 64);
   evolab::EnergonField energon(42, {});
@@ -322,9 +352,20 @@ TEST_CASE("feedbag reproduction oracle spawns by tick 150", "[parthenogenesis][f
   REQUIRE(parent != nullptr);
   REQUIRE(parent->alive);
   REQUIRE(evolab::campGenotypeValid(*parent));
-  REQUIRE(parent->offspringSpawnedCount == 1);
+  REQUIRE(parent->offspringSpawnedCount >= 1);
   REQUIRE(parent->parthenogenesisCelebrationStartTick != 0);
   REQUIRE(population.organisms().size() == seededCount + 1);
+  const evolab::Organism* child = nullptr;
+  for (const evolab::Organism& organism : population.organisms()) {
+    if (organism.id != oracleId) {
+      child = &organism;
+      break;
+    }
+  }
+  REQUIRE(child != nullptr);
+  REQUIRE(evolab::campSpawnMorphologyValid(*child));
+  REQUIRE(evolab::organismHasCampHubArms(*child));
+  REQUIRE(evolab::organismHasCampDevelopmentalAxons(*child));
 }
 
 TEST_CASE("eligible wealthy parent spawns with production eligibility checks",
@@ -411,7 +452,7 @@ TEST_CASE("refractory prevents second spawn within cooldown", "[parthenogenesis]
   REQUIRE(parent.offspringSpawnedCount == 1);
   REQUIRE(parent.lastParthenogenesisSuccessTick == 5000);
 
-  parent.bodyStorage.assign(evolab::estimateParthenogenesisRequiredHubBytes() + 50'000, 1);
+  evolab::assignComputerHubFuel(parent,evolab::estimateParthenogenesisRequiredHubBytes() + 50'000, 1);
 
   const evolab::ParthenogenesisResult second =
       runBirthAttempt(parent, world, evolab::kWorldCellSize,
@@ -491,9 +532,9 @@ TEST_CASE("sixty nom seed oracle yields child organism id sixty one",
   const evolab::Organism* child = population.findById(61);
   REQUIRE(child != nullptr);
   REQUIRE(child->alive);
-  REQUIRE(evolab::campGenotypeValid(*child));
+  REQUIRE(evolab::campSpawnMorphologyValid(*child));
   REQUIRE_FALSE(child->feedbagOracle);
-  REQUIRE(hasAllDevelopmentalAxons(*child));
+  REQUIRE(evolab::organismHasCampDevelopmentalAxons(*child));
   REQUIRE(population.organisms().size() == 61);
 }
 

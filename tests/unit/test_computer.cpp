@@ -5,6 +5,7 @@
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/OrganismComputer.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -68,7 +69,7 @@ TEST_CASE("camp factory builds P-M-C-A chain with hub and register", "[camp][com
   REQUIRE(organism.findNode(2)->neuron == evolab::NeuronType::Mouth);
   REQUIRE(organism.findNode(3)->neuron == evolab::NeuronType::Computer);
   REQUIRE(organism.findNode(4)->neuron == evolab::NeuronType::Actuator);
-  REQUIRE(organism.bodyStorage.size() == 80);
+  REQUIRE(organism.computerHubFuelBytes() == 80);
   REQUIRE(organism.findNode(3)->computerRegister[0] == evolab::kNeuronConfidenceNeutral);
 }
 
@@ -78,11 +79,11 @@ TEST_CASE("digest moves mouth surplus into computer hub", "[camp][computer]") {
   evolab::SkeletonNode* mouth = organism.findNode(2);
   REQUIRE(mouth != nullptr);
   mouth->store.assign(evolab::kNeuronStoreMaxBytes + 10, 1);
-  organism.bodyStorage.clear();
+  evolab::assignComputerHubFuel(organism, 0);
 
   evolab::digestMouthToComputer(organism);
   REQUIRE(mouth->store.size() == evolab::kNeuronStoreMaxBytes);
-  REQUIRE(organism.bodyStorage.size() == 10);
+  REQUIRE(organism.computerHubFuelBytes() == 10);
 }
 
 TEST_CASE("computer pattern match sets feed gain", "[camp][computer]") {
@@ -165,14 +166,14 @@ TEST_CASE("replete computer expels green baseline cloaca byte", "[camp][computer
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
-  organism.bodyStorage.assign(evolab::kComputerHubStoreMaxBytes, 1);
+  evolab::assignComputerHubFuel(organism, evolab::kComputerHubStoreMaxBytes, 1);
   organism.createdAtTick = 0;
 
-  const std::size_t hubBefore = organism.bodyStorage.size();
+  const std::size_t hubBefore = organism.computerHubFuelBytes();
   const int blobsBefore = field.activeCount();
   evolab::tickComputerPhase(organism, field, 1);
   REQUIRE(field.activeCount() > blobsBefore);
-  REQUIRE(organism.bodyStorage.size() == hubBefore - evolab::kCloacaVentCostBaseline);
+  REQUIRE(organism.computerHubFuelBytes() == hubBefore - evolab::kCloacaVentCostBaseline);
   REQUIRE(organism.lastCloacaBandExpelled == evolab::CloacaBand::Baseline);
   REQUIRE(organism.lastHubSignalExpelledThisTick);
 
@@ -186,7 +187,7 @@ TEST_CASE("mate-ready computer expels red cloaca trail", "[camp][computer][cloac
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
-  organism.bodyStorage.assign(evolab::kComputerHubStoreMaxBytes, 1);
+  evolab::assignComputerHubFuel(organism, evolab::kComputerHubStoreMaxBytes, 1);
   organism.createdAtTick = 0;
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -199,10 +200,10 @@ TEST_CASE("mate-ready computer expels red cloaca trail", "[camp][computer][cloac
   perceptor->store.assign(evolab::kPerceptorScanCostPerTick + 4, 1);
   actuator->store.assign(evolab::kActuatorStrokeCostPerTick + 4, 1);
 
-  const std::size_t hubBefore = organism.bodyStorage.size();
+  const std::size_t hubBefore = organism.computerHubFuelBytes();
   evolab::tickComputerPhase(organism, field, evolab::kMateMinAgeTicks + 10);
   REQUIRE(organism.lastCloacaBandExpelled == evolab::CloacaBand::Mate);
-  REQUIRE(organism.bodyStorage.size() == hubBefore - evolab::kCloacaVentCostMate);
+  REQUIRE(organism.computerHubFuelBytes() == hubBefore - evolab::kCloacaVentCostMate);
 
   const evolab::EnergonBlob& blob = field.blobs().back();
   REQUIRE(blob.origin == evolab::EnergonOrigin::Cloaca);
@@ -214,7 +215,7 @@ TEST_CASE("distressed computer expels blue cloaca alarm", "[camp][computer][cloa
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
-  organism.bodyStorage.assign(evolab::kComputerHubReserveBytes + 5, 1);
+  evolab::assignComputerHubFuel(organism, evolab::kComputerHubReserveBytes + 5, 1);
   organism.findNode(1)->basalArrearsTicks = 1;
 
   evolab::tickComputerPhase(organism, field, 1);

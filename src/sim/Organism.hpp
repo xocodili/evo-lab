@@ -73,6 +73,16 @@ struct SkeletonNode {
   float mouthDietCloacaBaselineEma = 0.0f;
   float mouthDietCloacaMateEma = 0.0f;
 
+  // Extra-oral taste buds: omnidirectional food sampling + temporal gradient (Berg analogue).
+  float mouthTasteSalience = 0.0f;
+  float mouthTasteBearing = 0.0f;
+  float mouthTastePriorSalience = 0.0f;
+  float mouthTasteGradient = 0.0f;
+  bool mouthTasteSampleValid = false;
+  bool mouthTastePriorValid = false;
+  // True when weighted taste vectors cancel (equidistant food ring — Berg / choice bias analogue).
+  bool mouthTasteSymmetricAmbiguity = false;
+
   std::uint8_t lastEmittedByte = 0;
 
   // Local perceptor focus (valid when neuron == Perceptor).
@@ -95,6 +105,13 @@ struct SkeletonNode {
   float lastComputerMatchScore = 0.0f;
   float lastComputerPredictionError = 0.0f;
   float computerFeedGain = 1.0f;
+
+  // Stem-cell Hz coordinator (every node; recursive mini-C inside full C neurons).
+  std::array<std::uint8_t, kCoordinatorRegisterBytes> coordinatorRegister{};
+  float coordinatorDutyScale = 1.0f;
+  float coordinatorPriorExcitation = 0.0f;
+  float coordinatorLastExcitation = 0.0f;
+  float coordinatorLastDelta = 0.0f;
 
 };
 
@@ -151,8 +168,6 @@ public:
 
   std::vector<ColonyAxon> colonyAxons;
 
-  std::vector<std::uint8_t> bodyStorage;
-
   bool landAdjacent = false;
 
   bool alive = true;
@@ -161,6 +176,9 @@ public:
 
   // Heritable sensory phenotype (jittered once at spawn).
   float senseRadiusFactor = kPerceptorSenseRadiusFactor;
+  // Heritable mitochondrial wallet nominal caps (± jitter at spawn / reproduction).
+  float peripheralStoreCapFactor = kDefaultPeripheralStoreCapFactor;
+  float hubStoreCapFactor = kDefaultHubStoreCapFactor;
 
   // Proprioception (A neuron / pre-P): did the last stroke move us?
   float lastDisplacement = 0.0f;
@@ -172,11 +190,17 @@ public:
   std::uint32_t lastStrokeBytesFromActuatorStore = 0;
   bool lastActuatorInhibited = false;
   float lastActuatorNetDrive = 0.0f;
+  float actuatorMouthInboundPriorUnit = 0.0f;
+  bool actuatorMouthInboundPriorValid = false;
   ActuatorInteroception lastActuatorInteroception;
   MotorIntent lastMotorIntent;
   float lastMouthBiteDrive = 0.0f;
   bool lastMouthFeedSuppressed = false;
   bool lastMouthHadFoodContact = false;
+  float lastMouthTasteSalience = 0.0f;
+  float lastMouthTasteGradient = 0.0f;
+  float lastMouthTasteBearing = 0.0f;
+  bool lastMouthTasteSymmetricAmbiguity = false;
   std::uint8_t lastActuatorOutboundSignal = 0;
   bool lastInWater = false;
   float lastTideDelta = 0.0f;
@@ -212,6 +236,9 @@ public:
   float lastComputerMatchScore = 0.0f;
   float lastComputerPredictionError = 0.0f;
   float computerFeedGain = 1.0f;
+  float coordinatorDutyScale = 1.0f;
+  float coordinatorMinNodeDuty = 1.0f;
+  float coordinatorMaxNodeDuty = 1.0f;
   bool lastHubSignalExpelledThisTick = false;
   CloacaBand lastCloacaBandExpelled = CloacaBand::None;
   std::uint32_t computerNodeId = 0;
@@ -301,6 +328,9 @@ public:
 
   bool allLocalStoresEmpty() const;
 
+  std::size_t totalFuelBytes() const;
+  std::size_t computerHubFuelBytes() const;
+
 };
 
 
@@ -314,6 +344,8 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
 
 Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
                              std::uint64_t createdAtTick, float boneLength);
+
+void ensureCampDevelopmentalAxons(Organism& organism);
 
 // PMCCAM chain: two computers sharing one hub, for multi-C pattern/dispatch tests.
 Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, float wy,

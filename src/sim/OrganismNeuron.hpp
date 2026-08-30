@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronSignal.hpp"
 #include "sim/Organism.hpp"
 #include "sim/PerceptorFocus.hpp"
 
@@ -14,6 +15,21 @@ namespace evolab {
 // Shared math and axon helpers for all neuron types (stem metabolism lives in OrganismDetail).
 
 inline float clamp01(float value) { return std::clamp(value, 0.0f, 1.0f); }
+
+// Shared believe-byte pattern distance (mini-C + full C organ).
+inline int neuronConfidenceMatchScore(std::uint8_t observed, std::uint8_t expected) {
+  if (!isNeuronConfidenceByte(observed) || !isNeuronConfidenceByte(expected)) {
+    return 0;
+  }
+  return static_cast<int>(kNeuronConfidenceMax) -
+         std::abs(static_cast<int>(observed) - static_cast<int>(expected));
+}
+
+inline float neuronConfidenceMatchUnit(std::uint8_t observed, std::uint8_t expected) {
+  const int matchMax = static_cast<int>(kNeuronConfidenceMax);
+  const int score = neuronConfidenceMatchScore(observed, expected);
+  return matchMax > 0 ? static_cast<float>(score) / static_cast<float>(matchMax) : 0.0f;
+}
 
 const SkeletonNode* findFirstNeuronNode(const Organism& organism, NeuronType type,
                                         bool requireAlive = true);

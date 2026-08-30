@@ -8,6 +8,11 @@ add_library(evolab_engine STATIC
   src/gfx/UiFont.cpp
   src/gfx/TextOverlay.cpp
   src/gfx/TextPanel.cpp
+  src/gfx/sprites/SpriteAnimator.cpp
+  src/gfx/sprites/SpriteAtlas.cpp
+  src/gfx/sprites/SpriteBillboardBuilder.cpp
+  src/gfx/sprites/SpriteAtlasLibrary.cpp
+  src/gfx/sprites/SpriteRenderer.cpp
   src/kinematics/KinematicSkeleton.cpp
 )
 

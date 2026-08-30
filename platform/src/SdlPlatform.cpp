@@ -61,7 +61,36 @@ void SdlPlatform::shutdown() {
     sdlInitialized_ = false;
   }
   shouldClose_ = false;
+  keyWHeld_ = false;
+  keyAHeld_ = false;
+  keySHeld_ = false;
+  keyDHeld_ = false;
   pendingEvents_.clear();
+}
+
+void SdlPlatform::pollMovementKeys(InputFrame& input) {
+  SDL_PumpEvents();
+  const Uint8* keys = SDL_GetKeyboardState(nullptr);
+  if (keys != nullptr) {
+    keyWHeld_ = keyWHeld_ || keys[SDL_SCANCODE_W];
+    keyAHeld_ = keyAHeld_ || keys[SDL_SCANCODE_A];
+    keySHeld_ = keySHeld_ || keys[SDL_SCANCODE_S];
+    keyDHeld_ = keyDHeld_ || keys[SDL_SCANCODE_D];
+  }
+  input.moveForward = 0.0f;
+  input.moveRight = 0.0f;
+  if (keyWHeld_) {
+    input.moveForward += 1.0f;
+  }
+  if (keySHeld_) {
+    input.moveForward -= 1.0f;
+  }
+  if (keyDHeld_) {
+    input.moveRight += 1.0f;
+  }
+  if (keyAHeld_) {
+    input.moveRight -= 1.0f;
+  }
 }
 
 void SdlPlatform::handleEvent(const SDL_Event& event, InputFrame& input, bool mouseLeftHeld) {
@@ -81,6 +110,42 @@ void SdlPlatform::handleEvent(const SDL_Event& event, InputFrame& input, bool mo
         input.keyR = true;
       } else if (event.key.keysym.sym == SDLK_SPACE) {
         input.keySpace = true;
+      } else if (event.key.keysym.sym == SDLK_v) {
+        input.keyV = true;
+      }
+      switch (event.key.keysym.scancode) {
+        case SDL_SCANCODE_W:
+          keyWHeld_ = true;
+          break;
+        case SDL_SCANCODE_A:
+          keyAHeld_ = true;
+          break;
+        case SDL_SCANCODE_S:
+          keySHeld_ = true;
+          break;
+        case SDL_SCANCODE_D:
+          keyDHeld_ = true;
+          break;
+        default:
+          break;
+      }
+      break;
+    case SDL_KEYUP:
+      switch (event.key.keysym.scancode) {
+        case SDL_SCANCODE_W:
+          keyWHeld_ = false;
+          break;
+        case SDL_SCANCODE_A:
+          keyAHeld_ = false;
+          break;
+        case SDL_SCANCODE_S:
+          keySHeld_ = false;
+          break;
+        case SDL_SCANCODE_D:
+          keyDHeld_ = false;
+          break;
+        default:
+          break;
       }
       break;
     case SDL_MOUSEWHEEL:
@@ -123,6 +188,7 @@ void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
   input.quit = false;
   input.keyR = false;
   input.keySpace = false;
+  input.keyV = false;
   input.scrollDelta = 0;
   input.moveForward = 0.0f;
   input.moveRight = 0.0f;
@@ -137,22 +203,7 @@ void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
     handleEvent(event, input, mouseLeftHeld);
   }
 
-  SDL_PumpEvents();
-  const Uint8* keys = SDL_GetKeyboardState(nullptr);
-  if (keys != nullptr) {
-    if (keys[SDL_SCANCODE_W]) {
-      input.moveForward += 1.0f;
-    }
-    if (keys[SDL_SCANCODE_S]) {
-      input.moveForward -= 1.0f;
-    }
-    if (keys[SDL_SCANCODE_D]) {
-      input.moveRight += 1.0f;
-    }
-    if (keys[SDL_SCANCODE_A]) {
-      input.moveRight -= 1.0f;
-    }
-  }
+  pollMovementKeys(input);
 
   int mx = 0;
   int my = 0;

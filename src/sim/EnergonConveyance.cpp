@@ -35,7 +35,7 @@ std::uint8_t routeSignalByte(const Organism& organism, const SkeletonNode& src) 
     case NeuronType::Actuator:
       return organism.lastActuatorOutboundSignal;
     case NeuronType::Computer:
-      return hubFuelConfidence(organism.bodyStorage.size());
+      return hubFuelConfidence(computerHubFuelBytes(organism));
     default:
       return kNeuronConfidenceNeutral;
   }
@@ -79,8 +79,7 @@ float feedRouteWeight(const Organism& organism, const NeuralAxon& axon, const Sk
   return believe * feed * static_cast<float>(bandwidth);
 }
 
-int collectOutboundRoutes(Organism& organism, const SkeletonNode& src, std::uint8_t signalByte,
-                          OutboundRoute* routes) {
+int collectOutboundRoutes(Organism& organism, const SkeletonNode& src, OutboundRoute* routes) {
   int routeCount = 0;
   for (NeuralAxon& axon : organism.neuralAxons) {
     if (axon.srcNodeId != src.id || routeCount >= kMaxOutboundRoutes ||
@@ -91,6 +90,9 @@ int collectOutboundRoutes(Organism& organism, const SkeletonNode& src, std::uint
     if (dst == nullptr || !dst->alive) {
       continue;
     }
+    const std::uint8_t signalByte =
+        src.neuron == NeuronType::Mouth ? mouthEnergonDispatchConfidence(organism, src, dst->neuron)
+                                        : routeSignalByte(organism, src);
     const float weight = feedRouteWeight(organism, axon, src, *dst, signalByte);
     if (weight <= 0.0f) {
       continue;
@@ -133,19 +135,27 @@ int conveyAlongAxon(Organism& organism, NeuralAxon& axon, SkeletonNode& src, Ske
   const int deliveredCount = applyHopLoss(payloadCount, axon.etaEnergy);
 
   for (int i = deliveredCount; i < payloadCount; ++i) {
-    neuronStorePush(src, payload[static_cast<std::size_t>(i)]);
+    neuronStorePush(organism, src, payload[static_cast<std::size_t>(i)]);
   }
 
   int deliverable = 0;
   if (toMouth) {
     deliverable = deliveredCount;
-  } else {
-    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(dst)));
+  } else if (dst.neuron == NeuronType::Computer) {
+    deliverable = std::min(deliveredCount, static_cast<int>(hubStoreAcceptanceRemaining(organism)));
     for (int i = 0; i < deliverable; ++i) {
-      neuronStorePush(dst, payload[static_cast<std::size_t>(i)]);
+      hubStorePush(organism, payload[static_cast<std::size_t>(i)]);
     }
     for (int i = deliverable; i < deliveredCount; ++i) {
-      neuronStorePush(src, payload[static_cast<std::size_t>(i)]);
+      neuronStorePush(organism, src, payload[static_cast<std::size_t>(i)]);
+    }
+  } else {
+    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(organism, dst)));
+    for (int i = 0; i < deliverable; ++i) {
+      neuronStorePush(organism, dst, payload[static_cast<std::size_t>(i)]);
+    }
+    for (int i = deliverable; i < deliveredCount; ++i) {
+      neuronStorePush(organism, src, payload[static_cast<std::size_t>(i)]);
     }
   }
 
@@ -194,17 +204,17 @@ int conveyAlongAxonFromHub(Organism& organism, NeuralAxon& axon, SkeletonNode& s
 
   int deliverable = 0;
   if (toMouth) {
-    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(dst)));
+    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(organism, dst)));
     for (int i = 0; i < deliverable; ++i) {
-      neuronStorePush(dst, payload[static_cast<std::size_t>(i)]);
+      neuronStorePush(organism, dst, payload[static_cast<std::size_t>(i)]);
     }
     for (int i = deliverable; i < deliveredCount; ++i) {
       hubPushBack(organism, payload[static_cast<std::size_t>(i)]);
     }
   } else {
-    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(dst)));
+    deliverable = std::min(deliveredCount, static_cast<int>(neuronStoreAcceptanceRemaining(organism, dst)));
     for (int i = 0; i < deliverable; ++i) {
-      neuronStorePush(dst, payload[static_cast<std::size_t>(i)]);
+      neuronStorePush(organism, dst, payload[static_cast<std::size_t>(i)]);
     }
     for (int i = deliverable; i < deliveredCount; ++i) {
       hubPushBack(organism, payload[static_cast<std::size_t>(i)]);
@@ -219,14 +229,13 @@ int conveyAlongAxonFromHub(Organism& organism, NeuralAxon& axon, SkeletonNode& s
 }
 
 void conveyFromNode(Organism& organism, SkeletonNode& src, std::uint64_t simTick) {
-  const std::size_t surplus = neuronStoreSurplus(src);
+  const std::size_t surplus = neuronStoreSurplus(organism, src);
   if (surplus == 0) {
     return;
   }
 
   OutboundRoute routes[kMaxOutboundRoutes];
-  const int routeCount =
-      collectOutboundRoutes(organism, src, routeSignalByte(organism, src), routes);
+  const int routeCount = collectOutboundRoutes(organism, src, routes);
   if (routeCount <= 0) {
     return;
   }
@@ -257,6 +266,50 @@ void conveyFromNode(Organism& organism, SkeletonNode& src, std::uint64_t simTick
   }
 }
 
+void conveyFromMouthOperational(Organism& organism, SkeletonNode& mouth, std::uint64_t simTick) {
+  if (mouth.store.size() <= kMouthConveyReserveBytes) {
+    return;
+  }
+
+  const int available =
+      static_cast<int>(mouth.store.size() - static_cast<std::size_t>(kMouthConveyReserveBytes));
+  int budget = std::min(static_cast<int>(kMouthConveyanceMaxPerTick), available);
+  if (budget <= 0) {
+    return;
+  }
+
+  OutboundRoute routes[kMaxOutboundRoutes];
+  const int routeCount = collectOutboundRoutes(organism, mouth, routes);
+  if (routeCount <= 0) {
+    return;
+  }
+
+  float totalWeight = 0.0f;
+  for (int i = 0; i < routeCount; ++i) {
+    totalWeight += routes[i].weight;
+  }
+  if (totalWeight <= 0.0f) {
+    return;
+  }
+
+  int remaining = budget;
+  for (int i = 0; i < routeCount && remaining > 0; ++i) {
+    OutboundRoute& route = routes[i];
+    int share =
+        static_cast<int>(std::lround(static_cast<float>(budget) * (route.weight / totalWeight)));
+    if (i + 1 == routeCount) {
+      share = remaining;
+    }
+    share = std::clamp(share, 0, remaining);
+    share = std::min(share, route.bandwidth);
+    if (share <= 0) {
+      continue;
+    }
+    conveyAlongAxon(organism, *route.axon, mouth, *route.dst, share, simTick);
+    remaining -= share;
+  }
+}
+
 void conveyFromComputerHub(Organism& organism, SkeletonNode& computer, std::uint64_t simTick) {
   const std::size_t surplus = hubStoreSurplus(organism);
   if (surplus == 0) {
@@ -264,8 +317,7 @@ void conveyFromComputerHub(Organism& organism, SkeletonNode& computer, std::uint
   }
 
   OutboundRoute routes[kMaxOutboundRoutes];
-  const int routeCount =
-      collectOutboundRoutes(organism, computer, routeSignalByte(organism, computer), routes);
+  const int routeCount = collectOutboundRoutes(organism, computer, routes);
   if (routeCount <= 0) {
     return;
   }
@@ -310,7 +362,7 @@ bool organismHasConveySurplus(const Organism& organism) {
     return true;
   }
   for (const SkeletonNode& node : organism.nodes) {
-    if (node.alive && neuronStoreSurplus(node) > 0) {
+    if (node.alive && neuronStoreSurplus(organism, node) > 0) {
       return true;
     }
   }
@@ -318,6 +370,18 @@ bool organismHasConveySurplus(const Organism& organism) {
 }
 
 }  // namespace
+
+void conveyMouthDownstream(Organism& organism, EnergonField& field, std::uint64_t simTick) {
+  (void)field;
+  if (!organismUsesCampNeuronPhases(organism)) {
+    return;
+  }
+  SkeletonNode* mouth = findNeuron(organism, NeuronType::Mouth);
+  if (mouth == nullptr) {
+    return;
+  }
+  conveyFromMouthOperational(organism, *mouth, simTick);
+}
 
 void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t simTick) {
   (void)field;
@@ -334,7 +398,6 @@ void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t si
         case NeuronType::Computer:
           conveyFromComputerHub(organism, node, simTick);
           break;
-        case NeuronType::Mouth:
         case NeuronType::Perceptor:
         case NeuronType::Actuator:
           conveyFromNode(organism, node, simTick);

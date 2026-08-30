@@ -4,8 +4,10 @@
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/OrganismComputer.hpp"
+#include "sim/NeuronCoordinator.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
@@ -37,6 +39,7 @@ NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
 
 void initAllComputerNodeRegisters(Organism& organism) {
   for (SkeletonNode& node : organism.nodes) {
+    initCoordinatorNodeRegister(node);
     if (node.neuron == NeuronType::Computer) {
       initComputerNodeRegister(node);
     }
@@ -51,7 +54,6 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
   organism.id = id;
   organism.createdAtTick = createdAtTick;
   organism.rootNodeId = 1;
-  organism.bodyStorage.resize(storageBytes);
 
   SkeletonNode root;
   root.id = 1;
@@ -59,7 +61,9 @@ Organism makeUndifferentiatedOrganism(std::uint32_t id, float wx, float wz, floa
   root.worldX = wx;
   root.worldZ = wz;
   root.worldY = wy;
+  initStemNodeStore(root, storageBytes);
   organism.nodes.push_back(root);
+  initCoordinatorNodeRegister(organism.nodes.back());
   return organism;
 }
 
@@ -69,7 +73,6 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
   organism.id = id;
   organism.createdAtTick = createdAtTick;
   organism.rootNodeId = 1;
-  organism.bodyStorage.resize(storageBytes);
 
   SkeletonNode root;
   root.id = 1;
@@ -77,6 +80,7 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
   root.worldX = wx;
   root.worldZ = wz;
   root.worldY = wy;
+  initStemNodeStore(root, storageBytes);
   organism.nodes.push_back(root);
   return organism;
 }
@@ -110,7 +114,6 @@ Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
   computer.worldX = wx;
   computer.worldZ = wz;
   computer.worldY = wy;
-  initComputerNodeRegister(computer);
 
   SkeletonNode actuator;
   actuator.id = 4;
@@ -126,10 +129,10 @@ Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
   splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
   // Mouth wallet starts empty (hungry); its spawn fuel share remains in the hub until conveyed or
   // bitten food fills the chew buffer — operational reserves are not stomach satiation.
-  organism.bodyStorage.assign(hubBytes + mouthBytes, 0);
-  perceptor.store.assign(perceptorBytes, 0);
+  initComputerHubStore(computer, hubBytes + mouthBytes, organism);
+  initPeripheralNodeStore(perceptor, perceptorBytes, organism);
   mouth.store.clear();
-  actuator.store.assign(actuatorBytes, 0);
+  initPeripheralNodeStore(actuator, actuatorBytes, organism);
 
   organism.nodes.push_back(perceptor);
   organism.nodes.push_back(mouth);
@@ -155,6 +158,7 @@ Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
     organism.neuralAxons.push_back(makeDevelopmentalAxon(edge.first, edge.second));
   }
 
+  initAllComputerNodeRegisters(organism);
   organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
   return organism;
 }
@@ -210,10 +214,10 @@ Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, floa
   std::size_t mouthBytes = 0;
   std::size_t actuatorBytes = 0;
   splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
-  organism.bodyStorage.assign(hubBytes + mouthBytes, 0);
-  perceptor.store.assign(perceptorBytes, 0);
+  initComputerHubStore(computerForage, hubBytes + mouthBytes, organism);
+  initPeripheralNodeStore(perceptor, perceptorBytes, organism);
   mouth.store.clear();
-  actuator.store.assign(actuatorBytes, 0);
+  initPeripheralNodeStore(actuator, actuatorBytes, organism);
 
   organism.nodes.push_back(perceptor);
   organism.nodes.push_back(mouth);
@@ -246,6 +250,9 @@ Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, floa
   }
 
   organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
+  for (SkeletonNode& node : organism.nodes) {
+    initCoordinatorNodeRegister(node);
+  }
   guardComputerNodeRegister(computerForage);
   guardComputerNodeRegister(computerThreat);
   return organism;
@@ -320,7 +327,6 @@ Organism makeRandomCampMutant(std::uint32_t id, float wx, float wz, float wy,
     std::size_t mouthBytes = 0;
     std::size_t actuatorBytes = 0;
     splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
-    organism.bodyStorage.assign(hubBytes + mouthBytes, 0);
 
     int perceptorIdx = 0;
     int mouthIdx = 0;
@@ -329,10 +335,12 @@ Organism makeRandomCampMutant(std::uint32_t id, float wx, float wz, float wy,
     (void)mouthIdx;
     (void)actuatorIdx;
     for (SkeletonNode& node : organism.nodes) {
-      if (node.neuron == NeuronType::Perceptor) {
+      if (node.neuron == NeuronType::Computer) {
+        initComputerHubStore(node, hubBytes + mouthBytes, organism);
+      } else if (node.neuron == NeuronType::Perceptor) {
         const std::size_t share =
             perceptorBytes / static_cast<std::size_t>(std::max(1, perceptorCount));
-        node.store.assign(share, 0);
+        initPeripheralNodeStore(node, share, organism);
         ++perceptorIdx;
       } else if (node.neuron == NeuronType::Mouth) {
         (void)mouthIdx;
@@ -341,13 +349,16 @@ Organism makeRandomCampMutant(std::uint32_t id, float wx, float wz, float wy,
       } else if (node.neuron == NeuronType::Actuator) {
         const std::size_t share =
             actuatorBytes / static_cast<std::size_t>(std::max(1, actuatorCount));
-        node.store.assign(share, 0);
+        initPeripheralNodeStore(node, share, organism);
         ++actuatorIdx;
       }
     }
     initAllComputerNodeRegisters(organism);
   } else {
-    organism.bodyStorage.assign(storageBytes, 0);
+    SkeletonNode* root = organism.findNode(organism.rootNodeId);
+    if (root != nullptr) {
+      initStemNodeStore(*root, storageBytes);
+    }
   }
 
   organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
@@ -360,7 +371,6 @@ Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
   Organism organism;
   organism.id = id;
   organism.createdAtTick = createdAtTick;
-  organism.bodyStorage.resize(storageBytes);
 
   SkeletonNode root;
   root.id = 1;
@@ -368,8 +378,9 @@ Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
   root.worldX = wx;
   root.worldZ = wz;
   root.worldY = wy;
-  initComputerNodeRegister(root);
+  initComputerHubStore(root, storageBytes, organism);
   organism.rootNodeId = root.id;
+  organism.computerNodeId = root.id;
   organism.nodes.push_back(root);
 
   const int spokes = std::max(1, mouthCount);
@@ -390,6 +401,7 @@ Organism makeStarMouthOrganism(std::uint32_t id, float wx, float wz, float wy,
     organism.links.push_back(link);
   }
 
+  initAllComputerNodeRegisters(organism);
   return organism;
 }
 
@@ -402,4 +414,20 @@ bool organismLandAdjacent(const BarrenWorld& world, float wx, float wz, float ce
   const float eps = 0.05f;
   return terrainHeight >= waterLevel - eps;
 }
+
+void ensureCampDevelopmentalAxons(Organism& organism) {
+  if (!organismHasCampNeuronFloor(organism)) {
+    return;
+  }
+  for (const auto& edge : kCampDevelopmentalAxons) {
+    if (organism.findNeuralAxon(edge.first, edge.second) != nullptr) {
+      continue;
+    }
+    if (organism.neuralAxons.size() >= kAxonChannelCapacity) {
+      break;
+    }
+    organism.neuralAxons.push_back(makeDevelopmentalAxon(edge.first, edge.second));
+  }
+}
+
 }

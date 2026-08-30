@@ -24,6 +24,9 @@ struct ParthenogenesisResult {
 };
 
 bool campGenotypeValid(const Organism& organism);
+
+// Spawn gate: legal genotype + developmental axons + three hub muscle arms.
+bool campSpawnMorphologyValid(const Organism& organism);
 std::uint32_t estimateParthenogenesisCostCamp();
 std::uint32_t estimateParthenogenesisRequiredHubBytes();
 bool eligibleForParthenogenesis(const Organism& organism, const BarrenWorld& world,

@@ -5,6 +5,7 @@
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 #include "sim/OrganismInternal.hpp"
+#include "sim/OrganismMouth.hpp"
 #include "sim/TideAdvection.hpp"
 
 namespace evolab {
@@ -50,6 +51,7 @@ void runOrganismPreAdvectHooks(Organism& organism, const OrganismTickContext& ct
     return;
   }
   if (organismUsesCampNeuronPhases(organism)) {
+    runMouthTastePhase(organism, ctx.energon, ctx.cellSize, ctx.simTick);
     organism.emitPreAdvectSignals(ctx.simTick);
   }
   // Perceptor (P) pre-advect hooks register here.

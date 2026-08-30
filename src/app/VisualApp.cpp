@@ -188,7 +188,7 @@ int runVisualApp(const CliArgs& args) {
     }
     trace.step("first_clear");
 
-    if (!renderer.init([&]() { platform.pumpEvents(); })) {
+    if (!renderer.init([&]() { platform.pumpEvents(); }, platform.basePath())) {
       trace.step("renderer_init_failed");
       return 1;
     }
@@ -215,6 +215,7 @@ int runVisualApp(const CliArgs& args) {
   bool uiReady = false;
 
   bool pauseSim = false;
+  bool showNeuronDiagnostics = true;
   bool mouseDown = false;
   int frameIndex = 0;
   std::uint64_t visualSeed = config.seed;
@@ -238,7 +239,7 @@ int runVisualApp(const CliArgs& args) {
   }
 
   std::cout << "Phase 2.x — " << seedArchetypeLabel(config.archetype) << " Noms\n";
-  std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, Esc=quit\n";
+  std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, V=neuron overlays, Esc=quit\n";
   std::cout << "Hover a Nom to inspect architecture.\n";
   std::cout.flush();
   trace.step("ready");
@@ -289,6 +290,14 @@ int runVisualApp(const CliArgs& args) {
       std::cout.flush();
     }
 
+    if (input.keyV) {
+      showNeuronDiagnostics = !showNeuronDiagnostics;
+      renderer.setShowNeuronDiagnostics(showNeuronDiagnostics);
+      std::cout << (showNeuronDiagnostics ? "Neuron diagnostics ON (taste/sticky/bite rings, P focus arc)\n"
+                                          : "Neuron diagnostics OFF\n");
+      std::cout.flush();
+    }
+
     if (mouseDown) {
       camera.orbit(static_cast<float>(input.mouseDeltaX) * 0.005f,
                    static_cast<float>(input.mouseDeltaY) * 0.005f);
@@ -303,9 +312,13 @@ int runVisualApp(const CliArgs& args) {
     if (dt <= 0.0f) {
       dt = 1.0f / config.fixedSimHz;
     }
+    platform.pollMovementKeys(input);
     if (input.moveForward != 0.0f || input.moveRight != 0.0f) {
-      const float panSpeed = 52.0f;
-      camera.pan(input.moveRight * panSpeed * dt, input.moveForward * panSpeed * dt);
+      // Pan in world units per second; use real frame dt (cap spikes only) so speed
+      // does not scale with render FPS — sim ticks stay on fixedSimHz separately.
+      const float panSpeed = 26.0f;
+      const float panDt = std::min(dt, 0.05f);
+      camera.pan(input.moveRight * panSpeed * panDt, input.moveForward * panSpeed * panDt);
     }
     if (dt > 0.0f) {
       const float instantFps = 1.0f / dt;
@@ -386,7 +399,8 @@ int runVisualApp(const CliArgs& args) {
 
     if (frameIndex >= 1) {
       renderer.drawEnergon(energon.blobs(), camera, viewW, viewH);
-      renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH, world.tickCount());
+      renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH, world.tickCount(),
+                             config.fixedSimHz);
 
       const std::uint32_t hoveredId =
           game::pickOrganismAtScreen(cells.organisms(), camera, viewW, viewH, pickMouseX, pickMouseY);

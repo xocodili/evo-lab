@@ -3,6 +3,7 @@
 #include "engine/kinematics/ForwardKinematics.hpp"
 
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/CloacaSignal.hpp"
@@ -58,10 +59,6 @@ void removeNeuralAxonsForNode(Organism& organism, std::uint32_t nodeId) {
 }
 
 void releaseOrganismRemainder(Organism& organism, EnergonField& field) {
-  const SkeletonNode* anchor = organism.findNode(organism.rootNodeId);
-  if (anchor != nullptr && !organism.bodyStorage.empty()) {
-    releaseBytesAtNode(*anchor, field, organism.bodyStorage);
-  }
   for (SkeletonNode& node : organism.nodes) {
     if (!node.store.empty()) {
       releaseBytesAtNode(node, field, node.store);
@@ -127,11 +124,19 @@ void tickNeuronViability(Organism& organism, EnergonField& field) {
 
 SkeletonNode* findActuatorNode(Organism& organism);
 
-void creditMouthStore(SkeletonNode& node, EnergonField& field, std::uint8_t byte,
-                      std::uint32_t units) {
+void creditMouthStore(Organism& organism, SkeletonNode& node, EnergonField& field,
+                      std::uint8_t byte, std::uint32_t units) {
   (void)field;
   for (std::uint32_t i = 0; i < units; ++i) {
-    neuronStorePush(node, byte);
+    if (node.neuron == NeuronType::Mouth && organismUsesCampNeuronPhases(organism)) {
+      if (node.store.size() < peripheralStoreCapBytes(organism)) {
+        neuronStorePush(organism, node, byte);
+      } else if (hubStoreAcceptanceRemaining(organism) > 0) {
+        hubStorePush(organism, byte);
+      }
+      continue;
+    }
+    neuronStorePush(organism, node, byte);
   }
 }
 
@@ -159,21 +164,27 @@ MouthContact findMouthContact(const EnergonField& field, float wx, float wz, flo
   bool foundFood = false;
 
   field.forEachBlobNear(wx, wz, radius, [&](const EnergonBlob& blob) {
-    const float dx = blob.x - wx;
-    const float dz = blob.z - wz;
-    const float distSq = dx * dx + dz * dz;
-    if (blob.remaining > 0) {
-      if (!foundFood || distSq <= bestDistSq) {
-        bestDistSq = distSq;
-        best.kind = MouthContactKind::Food;
-        best.blobId = blob.id;
-        best.origin = blob.origin;
-        best.cloacaBand = cloacaBandFromBlob(blob);
-        foundFood = true;
-      }
+    if (!blob.grounded || !blob.onWet) {
       return;
     }
-    if (!foundFood && distSq <= bestDistSq) {
+
+    float t = 0.0f;
+    const float distSq = energonPointSegmentDistanceSq(wx, wz, blob, t);
+    if (distSq > bestDistSq) {
+      return;
+    }
+
+    if (blob.remaining > 0) {
+      bestDistSq = distSq;
+      best.kind = MouthContactKind::Food;
+      best.blobId = blob.id;
+      best.origin = blob.origin;
+      best.cloacaBand = cloacaBandFromBlob(blob);
+      foundFood = true;
+      return;
+    }
+
+    if (!foundFood) {
       bestDistSq = distSq;
       best.kind = MouthContactKind::EmptyString;
       best.blobId = blob.id;
@@ -184,35 +195,30 @@ MouthContact findMouthContact(const EnergonField& field, float wx, float wz, flo
 }
 
 bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
-  if (std::vector<std::uint8_t>* pool = evolab::neuronFuelPool(organism, node)) {
-    if (pool->size() >= kBiteCost) {
-      if (pool == &node.store) {
-        neuronConsumeBack(node, kBiteCost);
-      } else {
-        consumeBytes(*pool, kBiteCost);
-      }
-      return true;
-    }
+  if (node.store.size() >= kBiteCost) {
+    neuronConsumeBack(node, kBiteCost);
+    return true;
   }
-  if (!organism.isCampNom() && !organism.bodyStorage.empty()) {
-    consumeBytes(organism.bodyStorage, kBiteCost);
+  if (!organism.isCampNom() && hubStoreConsumeBack(organism, kBiteCost)) {
     return true;
   }
   return false;
 }
 
-void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float radius,
-                   std::uint64_t simTick, const FeedIntent* pmaFeedIntent) {
+void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float contactWx,
+                   float contactWz, float radius, std::uint64_t simTick,
+                   const FeedIntent* pmaFeedIntent) {
   (void)simTick;
   if (!organism.alive || !node.alive || node.neuron != NeuronType::Mouth) {
     return;
   }
 
-  const MouthContact contact = findMouthContact(field, node.worldX, node.worldZ, radius);
+  const MouthContact contact = findMouthContact(field, contactWx, contactWz, radius);
   if (contact.kind == MouthContactKind::None) {
     return;
   }
   organism.lastMouthHadFoodContact = (contact.kind == MouthContactKind::Food);
+  field.setMouthAnchor(contact.blobId, organism.id, node.id, node.worldX, node.worldZ);
 
   if (pmaFeedIntent != nullptr && !pmaFeedIntent->allowFoodBite) {
     organism.lastMouthFeedSuppressed = true;
@@ -230,12 +236,13 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
   if (!bite.tookByte) {
     return;
   }
+  field.setMouthAnchor(contact.blobId, organism.id, node.id, node.worldX, node.worldZ);
 
   recordMouthDietBite(node, contact.origin, contact.cloacaBand);
 
   const std::uint32_t gross = kEnergonUnitsPerByte;
   const std::uint32_t net = gross > kBiteCost ? gross - kBiteCost : 0u;
-  creditMouthStore(node, field, bite.byte, net);
+  creditMouthStore(organism, node, field, bite.byte, net);
   creditMouthChew(node, net);
   node.ateThisTick = true;
 }
@@ -447,13 +454,11 @@ bool payActuatorStrokeCost(Organism& organism, std::uint32_t bytesRequested,
   if (bytesRequested != kActuatorStrokeCostPerTick) {
     return false;
   }
-  if (!organism.bodyStorage.empty()) {
-    const std::uint32_t taken =
-        std::min(kActuatorStrokeCostPerTick,
-                 static_cast<std::uint32_t>(organism.bodyStorage.size()));
-    consumeBytes(organism.bodyStorage, taken);
-    fromBody = taken;
-    return taken == kActuatorStrokeCostPerTick;
+  SkeletonNode* loneActuator = findActuatorNode(organism);
+  if (loneActuator != nullptr && loneActuator->store.size() >= bytesRequested) {
+    neuronConsumeBack(*loneActuator, bytesRequested);
+    fromBody = bytesRequested;
+    return true;
   }
   return false;
 }
@@ -525,8 +530,12 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
           interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food &&
           interoception.approach > kOrganismCampReflexMinValence &&
           std::abs(interoception.focusBearing) <= kOrganismCampFoodTumbleBearingRad;
+      const bool tasteTracking =
+          interoception.mouthTasteApproach > kOrganismCampReflexMinValence &&
+          !interoception.mouthTasteSymmetricAmbiguity &&
+          std::abs(interoception.mouthTasteBearing) <= kOrganismCampFoodTumbleBearingRad;
       const float effectiveTumbleRate = kActuatorTumbleRate * motorIntent.tumbleRateScale;
-      if (!foodTracking && chaosBernoulli(effectiveTumbleRate, rng)) {
+      if (!foodTracking && !tasteTracking && chaosBernoulli(effectiveTumbleRate, rng)) {
         const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
         organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
         organism.lastTumbled = true;
@@ -602,6 +611,10 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
 
   evolab::emitCampActuatorSignals(organism, simTick);
+
+  if (organism.isCampNom()) {
+    commitActuatorMouthInboundPrior(organism, interoception, simTick);
+  }
 
   if (!organism.isCampNom()) {
     const float dx = root->worldX - startX;

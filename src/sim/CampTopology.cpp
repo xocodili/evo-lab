@@ -55,6 +55,56 @@ bool organismHasCampNeuronFloor(const Organism& organism) {
   return hasPerceptor && hasMouth && hasComputer && hasActuator;
 }
 
+bool organismHasCampDevelopmentalAxons(const Organism& organism) {
+  for (const auto& edge : kCampDevelopmentalAxons) {
+    if (organism.findNeuralAxon(edge.first, edge.second) == nullptr) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isCampDevelopmentalAxonEdge(std::uint32_t srcId, std::uint32_t dstId) {
+  for (const auto& edge : kCampDevelopmentalAxons) {
+    if (edge.first == srcId && edge.second == dstId) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool organismHasCampHubArms(const Organism& organism) {
+  if (organism.rootNodeId == 0) {
+    return false;
+  }
+  bool hasPerceptorArm = false;
+  bool hasMouthArm = false;
+  bool hasActuatorArm = false;
+  for (const SkeletonLink& link : organism.links) {
+    if (link.parentNodeId != organism.rootNodeId) {
+      continue;
+    }
+    const SkeletonNode* child = organism.findNode(link.childNodeId);
+    if (child == nullptr || !child->alive) {
+      continue;
+    }
+    switch (child->neuron) {
+      case NeuronType::Perceptor:
+        hasPerceptorArm = true;
+        break;
+      case NeuronType::Mouth:
+        hasMouthArm = true;
+        break;
+      case NeuronType::Actuator:
+        hasActuatorArm = true;
+        break;
+      default:
+        break;
+    }
+  }
+  return hasPerceptorArm && hasMouthArm && hasActuatorArm;
+}
+
 bool organismUsesCampNeuronPhases(const Organism& organism) {
   if (!organism.alive || !organism.hasNeuralAxons()) {
     return false;
@@ -72,6 +122,27 @@ bool organismUsesCampNeuronPhases(const Organism& organism) {
     }
   }
   return false;
+}
+
+bool organismUsesCampSkeletonVisual(const Organism& organism) {
+  if (!organism.alive || organism.nodes.size() != 4) {
+    return false;
+  }
+  const SkeletonNode* hub = organism.findNode(organism.rootNodeId);
+  if (hub == nullptr || hub->neuron != NeuronType::Computer) {
+    return false;
+  }
+  int muscleArms = 0;
+  for (const SkeletonLink& link : organism.links) {
+    if (!link.muscleBundle || link.parentNodeId != organism.rootNodeId) {
+      continue;
+    }
+    if (link.childNodeId == kCampPerceptorId || link.childNodeId == kCampMouthId ||
+        link.childNodeId == kCampActuatorId) {
+      ++muscleArms;
+    }
+  }
+  return muscleArms >= 3;
 }
 
 std::string campGenotypeLabel(const Organism& organism) {

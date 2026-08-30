@@ -20,6 +20,12 @@ struct ActuatorInteroception {
   PerceptFocusKind focusKind = PerceptFocusKind::None;
   float focusBearing = 0.0f;
   float gazeHeading = 0.0f;
+  float mouthTasteApproach = 0.0f;
+  float mouthTasteBearing = 0.0f;
+  float mouthTasteGradient = 0.0f;
+  bool mouthTasteSymmetricAmbiguity = false;
+  // Temporal Δ of M→A satiation byte (unit space); A ignores absolute satiation level.
+  float mouthSignalDelta = 0.0f;
 };
 
 struct MotorIntent {
@@ -49,5 +55,9 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
 
 void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
                                const MotorIntent& intent);
+
+// Store M→A satiation sample for next tick's gradient (after advect).
+void commitActuatorMouthInboundPrior(Organism& organism, const ActuatorInteroception& interoception,
+                                     std::uint64_t simTick);
 
 }  // namespace evolab
