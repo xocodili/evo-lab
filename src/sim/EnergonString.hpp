@@ -31,6 +31,7 @@ std::uint64_t energonPackBytes(const EnergonBlob& blob, int startIndex, int coun
 std::uint64_t energonPackRawBytes(const std::uint8_t* bytes, int count);
 
 // Grounded TTL from origin / cloaca band (blue < green < red) and optional caller scale.
+float energonWetTtlScaleForBlob(const EnergonBlob& blob);
 float energonWetTtlSeconds(const EnergonBlob& blob, const EnergonConfig& config,
                            float ttlScale = 1.0f);
 float energonDryTtlSeconds(const EnergonBlob& blob, const EnergonConfig& config,

@@ -176,9 +176,19 @@ public:
 
   // Heritable sensory phenotype (jittered once at spawn).
   float senseRadiusFactor = kPerceptorSenseRadiusFactor;
+  // Heritable run-and-tumble phenotype (Berg analogue; jittered at spawn / reproduction).
+  float tumbleRateFactor = kDefaultTumbleRateFactor;
+  float tumbleTurnFactor = kDefaultTumbleTurnFactor;
+  // Signed bias: -1 prefers left tumbles, +1 prefers right (0 = fair coin).
+  float tumbleChiralityBias = kDefaultTumbleChiralityBias;
   // Heritable mitochondrial wallet nominal caps (± jitter at spawn / reproduction).
   float peripheralStoreCapFactor = kDefaultPeripheralStoreCapFactor;
   float hubStoreCapFactor = kDefaultHubStoreCapFactor;
+
+  // Heritable cloaca palette tiers (cool distress, mid baseline, warm mate; jittered at spawn).
+  std::uint8_t cloacaDistressByte = kEnergonPaletteDistress;
+  std::uint8_t cloacaBaselineByte = kEnergonPaletteBaseline;
+  std::uint8_t cloacaMateByte = kEnergonPaletteMate;
 
   // Proprioception (A neuron / pre-P): did the last stroke move us?
   float lastDisplacement = 0.0f;

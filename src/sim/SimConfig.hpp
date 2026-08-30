@@ -22,6 +22,8 @@ struct SimConfig {
   int designWidth = 1280;
   int designHeight = 720;
   float fixedSimHz = 60.0f;
+  // Visual frame cap (0 = uncapped). Sim ticks stay on fixedSimHz regardless.
+  float visualMaxFps = 60.0f;
   int maxSimStepsPerFrame = 5;
 };
 

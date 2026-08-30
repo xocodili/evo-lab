@@ -61,6 +61,11 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
   prior.focusBearing = percept.focusBearing;
   prior.gazeHeading = percept.gazeHeading;
 
+  const float mouthSignalGain =
+      (prior.perceptorLocked && prior.perceptorSalience >= kOrganismCampReflexMinValence)
+          ? kMouthTasteSignalGain * kMouthTasteVestigialGainWhenPerceptorLocked
+          : kMouthTasteSignalGain;
+
   float bestMSteerScore = 0.0f;
   float mouthInboundUnit = 0.0f;
   bool haveMouthInbound = false;
@@ -71,9 +76,9 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
     }
     if (inbound.src.neuron == NeuronType::Mouth) {
       const float bite =
-          approachContribution(inbound.axon.lastReceived.byte, inbound.weight, kMouthTasteSignalGain);
+          approachContribution(inbound.axon.lastReceived.byte, inbound.weight, mouthSignalGain);
       accumulateApproachFlee(prior.approach, prior.flee, inbound.axon.lastReceived.byte,
-                             inbound.weight, kMouthTasteSignalGain);
+                             inbound.weight, mouthSignalGain);
       if (bite > bestMSteerScore) {
         bestMSteerScore = bite;
         prior.mouthTasteApproach = bite;
@@ -108,6 +113,23 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
   prior.satiation = clamp01(prior.satiation);
   prior.mouthTasteApproach = clamp01(prior.mouthTasteApproach);
   return prior;
+}
+
+bool campLocomotionAnchored(const ActuatorInteroception& interoception) {
+  const float minValence = kOrganismCampReflexMinValence;
+  if (interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food &&
+      interoception.approach > minValence) {
+    return true;
+  }
+  if (interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Threat &&
+      interoception.flee > minValence) {
+    return true;
+  }
+  if (interoception.mouthTasteApproach > minValence &&
+      !interoception.mouthTasteSymmetricAmbiguity) {
+    return true;
+  }
+  return false;
 }
 
 void commitActuatorMouthInboundPrior(Organism& organism, const ActuatorInteroception& interoception,
@@ -145,12 +167,16 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
       std::max(interoception.approach, interoception.flee) *
       perceptorGain(interoception.perceptorLocked, interoception.perceptorSalience);
 
-  intent.tumbleRateScale = clamp01(1.0f - interoception.approach * 0.65f + interoception.flee * 0.45f +
-                                   interoception.hubSatiation * 0.25f +
-                                   std::max(0.0f, interoception.mouthSignalDelta) * 0.2f);
-  if (interoception.mouthTasteSymmetricAmbiguity) {
+  if (campLocomotionAnchored(interoception)) {
+    intent.tumbleRateScale = 0.0f;
+  } else {
     intent.tumbleRateScale =
-        clamp01(intent.tumbleRateScale * kMouthTasteSymmetryTumbleBoost);
+        clamp01(1.0f - interoception.approach * 0.65f + interoception.flee * 0.45f +
+                std::max(0.0f, interoception.mouthSignalDelta) * 0.2f);
+    if (interoception.mouthTasteSymmetricAmbiguity) {
+      intent.tumbleRateScale =
+          clamp01(intent.tumbleRateScale * kMouthTasteSymmetryTumbleBoost);
+    }
   }
 
   const bool hubBrakeActive = interoception.hubSatiation >= hubBrake;
@@ -204,13 +230,19 @@ void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception&
   }
 
   if (interoception.mouthTasteApproach > kOrganismCampReflexMinValence) {
+    const bool perceptorAnchored =
+        interoception.perceptorLocked &&
+        (interoception.approach > kOrganismCampReflexMinValence ||
+         interoception.flee > kOrganismCampReflexMinValence);
+    const float mouthTurnScale =
+        perceptorAnchored ? kMouthTasteVestigialTurnScale : 1.0f;
     const float blendDenom =
         std::max(interoception.approach + interoception.mouthTasteApproach, 1.0e-4f);
     const float mouthTurnWeight = interoception.mouthTasteApproach / blendDenom;
     const float tasteTurn =
         clamp01((interoception.mouthTasteApproach * kMouthTasteTurnGain +
                  std::max(0.0f, interoception.mouthTasteGradient) * 0.15f) *
-                mouthTurnWeight);
+                mouthTurnWeight * mouthTurnScale);
     const float targetHeading =
         normalizeAngle(organism.heading + interoception.mouthTasteBearing + fleeOffset);
     turnTowardTarget(organism, targetHeading, tasteTurn);

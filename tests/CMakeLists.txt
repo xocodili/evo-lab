@@ -18,12 +18,14 @@ add_executable(evo-lab-tests
   unit/test_engine_scaffold.cpp
   unit/test_kinematics.cpp
   unit/test_energon.cpp
+  unit/test_energon_information.cpp
   unit/test_stem_cell.cpp
   unit/test_skeleton.cpp
   unit/test_actuator.cpp
   unit/test_nom.cpp
   unit/test_computer.cpp
   unit/test_cloaca_perceptor.cpp
+  unit/test_cloaca_palette.cpp
   unit/test_neuron_signal.cpp
   unit/test_neuron_trust.cpp
   unit/test_energon_conveyance.cpp
@@ -34,6 +36,7 @@ add_executable(evo-lab-tests
   unit/test_cornucopia_chemotaxis.cpp
   unit/test_mouth_taste.cpp
   unit/test_coordinator.cpp
+  unit/test_camp_tumble.cpp
   unit/test_sprite_animator.cpp
   unit/test_nursery_mutant.cpp
   unit/test_chaos.cpp

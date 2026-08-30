@@ -9,6 +9,7 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/WaterColumn.hpp"
@@ -119,10 +120,19 @@ void jitterAxonGate2(NeuralAxon& axon, std::mt19937& rng) {
 
 void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt19937& rng) {
   organism.senseRadiusFactor = chaosJitterFloat(parent.senseRadiusFactor, rng);
+  organism.tumbleRateFactor = chaosJitterFloat(parent.tumbleRateFactor, rng);
+  organism.tumbleTurnFactor = chaosJitterFloat(parent.tumbleTurnFactor, rng);
+  organism.tumbleChiralityBias =
+      std::clamp(chaosJitterFloat(parent.tumbleChiralityBias, rng), -kTumbleChiralityBiasMax,
+                 kTumbleChiralityBiasMax);
   organism.peripheralStoreCapFactor =
       clampWalletCapFactor(chaosJitterFloat(parent.peripheralStoreCapFactor, rng));
   organism.hubStoreCapFactor =
       clampWalletCapFactor(chaosJitterFloat(parent.hubStoreCapFactor, rng));
+  organism.cloacaDistressByte = parent.cloacaDistressByte;
+  organism.cloacaBaselineByte = parent.cloacaBaselineByte;
+  organism.cloacaMateByte = parent.cloacaMateByte;
+  jitterCloacaPaletteBytes(organism, rng);
   organism.heading = chaosJitterHeading(parent.heading, rng);
   for (SkeletonNode& node : organism.nodes) {
     if (node.neuron != NeuronType::Computer) {
@@ -297,8 +307,14 @@ Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, flo
   child.computerNodeId = parent.computerNodeId;
   child.heading = parent.heading;
   child.senseRadiusFactor = parent.senseRadiusFactor;
+  child.tumbleRateFactor = parent.tumbleRateFactor;
+  child.tumbleTurnFactor = parent.tumbleTurnFactor;
+  child.tumbleChiralityBias = parent.tumbleChiralityBias;
   child.peripheralStoreCapFactor = parent.peripheralStoreCapFactor;
   child.hubStoreCapFactor = parent.hubStoreCapFactor;
+  child.cloacaDistressByte = parent.cloacaDistressByte;
+  child.cloacaBaselineByte = parent.cloacaBaselineByte;
+  child.cloacaMateByte = parent.cloacaMateByte;
   child.nodes = parent.nodes;
   child.links = parent.links;
   child.neuralAxons = parent.neuralAxons;

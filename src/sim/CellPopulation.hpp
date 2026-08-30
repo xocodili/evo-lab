@@ -43,6 +43,7 @@ public:
             float sunIntensity = 1.0f);
 
   const std::vector<Organism>& organisms() const { return organisms_; }
+  int liveCampNomCount() const;
   CellPopulationStats stats() const;
 
   const Organism* findById(std::uint32_t id) const;

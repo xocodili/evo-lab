@@ -1,6 +1,7 @@
 #include "sim/EnergonString.hpp"
 
 #include "sim/CloacaSignal.hpp"
+#include "sim/EnergonInformation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -110,6 +111,9 @@ void energonAssignGroundedTtl(EnergonBlob& blob, const EnergonConfig& config, bo
 }
 
 EnergonBlob makeCornucopiaBlob(float x, float z, std::uint8_t byte) {
+  if (byte == 0) {
+    byte = kEnergonPaletteMate;
+  }
   EnergonBlob blob;
   blob.data = byte;
   for (int i = 1; i < kEnergonMaxBytesPerBlob; ++i) {

@@ -82,7 +82,7 @@ int runHeadlessDebugSession(const CliArgs& args) {
   DayCycle dayCycle(kVisualDayCyclePeriodTicks);
   EnergonConfig energonConfig;
   energonConfig.populationScaledRain = true;
-  energonConfig.maxBlobs = std::max(2200, config.nomCount * 80);
+  energonConfig.maxBlobs = std::max(4000, config.nomCount * 100);
   EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
 

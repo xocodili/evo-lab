@@ -5,6 +5,7 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
+#include "sim/EnergonInformation.hpp"
 #include "sim/EnergonRain.hpp"
 #include "sim/EnergonSpatialIndex.hpp"
 #include "sim/EnergonString.hpp"
@@ -41,12 +42,11 @@ std::uint8_t randomByteCount(std::mt19937_64& rng) {
 }
 
 std::uint64_t randomData(std::mt19937_64& rng, std::uint8_t byteCount) {
-  std::uint64_t data = 0;
+  std::uint8_t bytes[kEnergonMaxBytesPerBlob]{};
   for (int i = 0; i < byteCount; ++i) {
-    std::uniform_int_distribution<int> dist(0, 255);
-    data |= static_cast<std::uint64_t>(dist(rng)) << (8 * i);
+    bytes[i] = energonRandomSunfallByte(rng);
   }
-  return data;
+  return energonPackRawBytes(bytes, byteCount);
 }
 
 bool isMouthStickyFoodBlob(const EnergonBlob& blob) {
@@ -63,6 +63,29 @@ bool isMouthStickyFoodBlob(const EnergonBlob& blob) {
       return true;
   }
   return false;
+}
+
+float mouthStickyRadiusForNode(float cellSize, const SkeletonNode& mouth) {
+  const float base = cellSize * kMouthStickyRadiusFactor;
+  if (mouth.mouthTasteSampleValid &&
+      mouth.mouthTasteSalience >= kMouthTasteSalienceFloor) {
+    return std::max(base, cellSize * kMouthTasteChemotaxisStickyRadiusFactor);
+  }
+  return base;
+}
+
+float mouthStickyPruneRadius(float cellSize) {
+  return cellSize * std::max(kMouthStickyRadiusFactor, kMouthTasteChemotaxisStickyRadiusFactor);
+}
+
+float mouthCoAdvectRadiusFactor(const Organism& organism) {
+  if (organism.lastMouthHadFoodContact) {
+    return kMouthChewCoAdvectRadiusFactor;
+  }
+  if (organism.lastMouthTasteSalience >= kMouthTasteSalienceFloor) {
+    return kMouthTasteChemotaxisStickyRadiusFactor;
+  }
+  return kMouthContactRadiusFactor;
 }
 
 }  // namespace
@@ -234,13 +257,11 @@ void EnergonField::setMouthAnchor(std::uint32_t blobId, std::uint32_t organismId
   mouthAnchors_.push_back(anchor);
 }
 
-void EnergonField::applyMouthStickiness(const std::vector<Organism>& organisms,
-                                        float stickyRadius) {
-  if (stickyRadius <= 0.0f) {
+void EnergonField::applyMouthStickiness(const std::vector<Organism>& organisms, float cellSize) {
+  if (cellSize <= 0.0f) {
     return;
   }
 
-  const float stickyRadiusSq = stickyRadius * stickyRadius;
   for (const Organism& organism : organisms) {
     if (!organism.alive) {
       continue;
@@ -251,6 +272,8 @@ void EnergonField::applyMouthStickiness(const std::vector<Organism>& organisms,
         continue;
       }
 
+      const float stickyRadius = mouthStickyRadiusForNode(cellSize, node);
+      const float stickyRadiusSq = stickyRadius * stickyRadius;
       std::uint32_t closestBlobId = 0;
       float closestDistSq = stickyRadiusSq;
 
@@ -315,9 +338,7 @@ void EnergonField::syncMouthAttachments(const std::vector<Organism>& organisms,
         continue;
       }
 
-      const float coAdvectRadius =
-          cellSize * (organism->lastMouthHadFoodContact ? kMouthChewCoAdvectRadiusFactor
-                                                        : kMouthContactRadiusFactor);
+      const float coAdvectRadius = cellSize * mouthCoAdvectRadiusFactor(*organism);
       const float coAdvectRadiusSq = coAdvectRadius * coAdvectRadius;
       float nearestT = 0.0f;
       const float distSq = energonPointSegmentDistanceSq(mouth->worldX, mouth->worldZ, blob,
@@ -347,8 +368,8 @@ void EnergonField::syncMouthAttachments(const std::vector<Organism>& organisms,
   }
 }
 
-void EnergonField::pruneMouthAnchors(const std::vector<Organism>& organisms,
-                                     float contactRadius) {
+void EnergonField::pruneMouthAnchors(const std::vector<Organism>& organisms, float cellSize) {
+  const float contactRadius = mouthStickyPruneRadius(cellSize);
   const float radiusSq = contactRadius * contactRadius;
   mouthAnchors_.erase(
       std::remove_if(mouthAnchors_.begin(), mouthAnchors_.end(),
@@ -566,10 +587,12 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
                                          kChaosSaltEnergonSunfall));
 
   float expected = 0.0f;
-  if (config_.populationScaledRain && liveOrganismCount >= 0) {
+  const float ambientFloor = config_.spawnRateMax * sunIntensity;
+  if (config_.populationScaledRain && liveOrganismCount > 0) {
     expected = expectedSunfallBlobsPerTick(liveOrganismCount, sunIntensity);
+    expected = std::max(expected, ambientFloor);
   } else {
-    expected = config_.spawnRateMax * sunIntensity;
+    expected = ambientFloor;
   }
 
   int spawnCount = static_cast<int>(expected);
@@ -580,6 +603,7 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
 
   while (spawnCount > 0 && static_cast<int>(blobs_.size()) + spawnCount > config_.maxBlobs) {
     if (!evictOneBlob()) {
+      spawnCount = std::max(0, config_.maxBlobs - static_cast<int>(blobs_.size()));
       break;
     }
   }
@@ -655,8 +679,27 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
         (column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
     if (blob.cornucopia) {
       blob.ttl = energonWetTtlSeconds(blob, config_);
-    } else if (decayPerTick > 0.0f) {
-      blob.ttl -= 1.0f / decayPerTick;
+    } else {
+      const float originScale = energonWetTtlScaleForBlob(blob);
+      int entropySteps = std::max(1, static_cast<int>(std::lround(1.0f / originScale)));
+      if (!column.wet) {
+        entropySteps = std::max(1, entropySteps / 2);
+      }
+      if (blob.origin == EnergonOrigin::Sunfall &&
+          (world.tickCount() + blob.id) % static_cast<std::uint32_t>(kSunfallEntropyPeriodTicks) !=
+              0) {
+        entropySteps = 0;
+      }
+      if (entropySteps > 0) {
+        energonEntropyDecayBlob(blob, entropySteps);
+      }
+      if (decayPerTick > 0.0f) {
+        blob.ttl -= 1.0f / decayPerTick;
+      }
+      if (blob.remaining > 0) {
+        const float mass = energonBlobInformationMass(blob);
+        blob.ttl = std::min(blob.ttl, std::max(1.0f, mass * config_.ttlWetSeconds));
+      }
     }
   }
 }

@@ -53,6 +53,9 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
 MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
                                   std::uint32_t actuatorFuelBytes);
 
+// Energon anchors locomotion: P food/threat lock or directional M taste suppress tumble.
+bool campLocomotionAnchored(const ActuatorInteroception& interoception);
+
 void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
                                const MotorIntent& intent);
 

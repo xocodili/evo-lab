@@ -1,6 +1,10 @@
 #include "sim/EnergonTasteSensory.hpp"
 
 #include "sim/BarrenWorld.hpp"
+#include "sim/CellConstants.hpp"
+#include "sim/CloacaSignal.hpp"
+#include "sim/EnergonInformation.hpp"
+#include "sim/EnergonString.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -12,16 +16,31 @@ bool energonBlobEligibleForMouthTaste(const EnergonBlob& blob) {
   if (blob.remaining == 0 || !blob.grounded || !blob.onWet) {
     return false;
   }
+  if (blob.cornucopia) {
+    return true;
+  }
   switch (blob.origin) {
     case EnergonOrigin::Waste:
-    case EnergonOrigin::Cloaca:
     case EnergonOrigin::Signal:
       return false;
     case EnergonOrigin::Sunfall:
     case EnergonOrigin::Fragment:
       return true;
+    case EnergonOrigin::Cloaca: {
+      switch (cloacaBandFromBlob(blob)) {
+        case CloacaBand::Distress:
+        case CloacaBand::Baseline:
+          return true;
+        default:
+          return false;
+      }
+    }
   }
-  return blob.cornucopia;
+  return false;
+}
+
+float mouthTasteGridByteWeight(const EnergonBlob& blob) {
+  return energonBlobEligibleForMouthTaste(blob) ? 1.0f : 0.0f;
 }
 
 void EnergonTasteSensoryGrid::clear() {
@@ -52,13 +71,16 @@ void EnergonTasteSensoryGrid::rebuild(const std::vector<EnergonBlob>& blobs,
 
     const float dx = blob.headX - blob.tailX;
     const float dz = blob.headZ - blob.tailZ;
-    const float segmentLen = std::sqrt(dx * dx + dz * dz);
-    const int steps =
-        std::max(1, static_cast<int>(segmentLen / std::max(cellSize_, 1.0e-4f)) + 1);
-    const float bytesPerStep = static_cast<float>(blob.remaining) / static_cast<float>(steps);
-    for (int step = 0; step <= steps; ++step) {
-      const float t = static_cast<float>(step) / static_cast<float>(steps);
-      depositBytes(blob.tailX + dx * t, blob.tailZ + dz * t, bytesPerStep);
+    const int lastIndex = std::max(0, static_cast<int>(blob.remaining) - 1);
+
+    for (int byteIndex = 0; byteIndex < blob.remaining; ++byteIndex) {
+      const float information = energonInformationValue(energonByteAt(blob, byteIndex));
+      if (information <= 0.0f) {
+        continue;
+      }
+      const float t = lastIndex > 0 ? static_cast<float>(byteIndex) / static_cast<float>(lastIndex)
+                                    : 0.5f;
+      depositBytes(blob.tailX + dx * t, blob.tailZ + dz * t, information);
     }
   }
 }

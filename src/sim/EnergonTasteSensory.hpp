@@ -17,6 +17,8 @@ struct EnergonTasteSensoryPeak {
 };
 
 bool energonBlobEligibleForMouthTaste(const EnergonBlob& blob);
+// Effective byte mass deposited into the taste grid (0 = invisible to M chemo).
+float mouthTasteGridByteWeight(const EnergonBlob& blob);
 
 class EnergonTasteSensoryGrid {
 public:

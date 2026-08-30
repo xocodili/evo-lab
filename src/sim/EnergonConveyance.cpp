@@ -2,6 +2,7 @@
 
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
+#include "sim/EnergonInformation.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
@@ -109,6 +110,14 @@ int applyHopLoss(int bytes, float eta) {
   return std::max(0, static_cast<int>(std::lround(static_cast<float>(bytes) * eta)));
 }
 
+void coolPayloadForHop(std::array<std::uint8_t, kAxonChannelCapacity>& payload, int count,
+                       float eta) {
+  for (int i = 0; i < count; ++i) {
+    payload[static_cast<std::size_t>(i)] =
+        energonHopCoolByte(payload[static_cast<std::size_t>(i)], eta);
+  }
+}
+
 int conveyAlongAxon(Organism& organism, NeuralAxon& axon, SkeletonNode& src, SkeletonNode& dst,
                     int bytesToSend, std::uint64_t simTick) {
   if (bytesToSend <= 0) {
@@ -133,6 +142,7 @@ int conveyAlongAxon(Organism& organism, NeuralAxon& axon, SkeletonNode& src, Ske
   }
 
   const int deliveredCount = applyHopLoss(payloadCount, axon.etaEnergy);
+  coolPayloadForHop(payload, deliveredCount, axon.etaEnergy);
 
   for (int i = deliveredCount; i < payloadCount; ++i) {
     neuronStorePush(organism, src, payload[static_cast<std::size_t>(i)]);
@@ -197,6 +207,7 @@ int conveyAlongAxonFromHub(Organism& organism, NeuralAxon& axon, SkeletonNode& s
   }
 
   const int deliveredCount = applyHopLoss(payloadCount, axon.etaEnergy);
+  coolPayloadForHop(payload, deliveredCount, axon.etaEnergy);
 
   for (int i = deliveredCount; i < payloadCount; ++i) {
     hubPushBack(organism, payload[static_cast<std::size_t>(i)]);

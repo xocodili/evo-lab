@@ -126,7 +126,7 @@ int runVisualApp(const CliArgs& args) {
   DayCycle dayCycle(kVisualDayCyclePeriodTicks);
   EnergonConfig energonConfig;
   energonConfig.populationScaledRain = true;
-  energonConfig.maxBlobs = std::max(2200, config.nomCount * 80);
+  energonConfig.maxBlobs = std::max(4000, config.nomCount * 100);
   EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
@@ -239,6 +239,12 @@ int runVisualApp(const CliArgs& args) {
   }
 
   std::cout << "Phase 2.x — " << seedArchetypeLabel(config.archetype) << " Noms\n";
+  if (config.visualMaxFps > 0.0f) {
+    std::cout << "Visual frame cap: " << config.visualMaxFps << " FPS (sim " << config.fixedSimHz
+              << " Hz)\n";
+  } else {
+    std::cout << "Visual frame cap: off (sim " << config.fixedSimHz << " Hz)\n";
+  }
   std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, V=neuron overlays, Esc=quit\n";
   std::cout << "Hover a Nom to inspect architecture.\n";
   std::cout.flush();
@@ -246,6 +252,7 @@ int runVisualApp(const CliArgs& args) {
   lastTime = std::chrono::steady_clock::now();
 
   while (!platform.shouldClose()) {
+    const auto frameStart = std::chrono::steady_clock::now();
     platform::InputFrame input;
     platform.poll(input, mouseDown);
     mouseDown = input.mouseLeftDown;
@@ -330,7 +337,7 @@ int runVisualApp(const CliArgs& args) {
       for (int i = 0; i < steps; ++i) {
         world.tick();
         const float sun = dayCycle.sunIntensity(world.tickCount());
-        const int rainPopulation = static_cast<int>(cells.organisms().size());
+        const int rainPopulation = cells.liveCampNomCount();
         energon.tick(world, sun, kWorldCellSize, kTerrainHeightScale, rainPopulation);
         cells.tick(world, energon, kWorldCellSize, kTerrainHeightScale, sun);
         if (debugLogPtr) {
@@ -424,6 +431,16 @@ int runVisualApp(const CliArgs& args) {
     platform.swap();
     platform.pumpEvents();
     ++frameIndex;
+
+    if (config.visualMaxFps > 0.0f) {
+      const float frameElapsed =
+          std::chrono::duration<float>(std::chrono::steady_clock::now() - frameStart).count();
+      const float minFrameSeconds = 1.0f / config.visualMaxFps;
+      if (frameElapsed < minFrameSeconds) {
+        std::this_thread::sleep_for(
+            std::chrono::duration<float>(minFrameSeconds - frameElapsed));
+      }
+    }
 
     if (frameIndex == 1) {
       trace.step("frame1");

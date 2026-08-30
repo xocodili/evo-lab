@@ -4,6 +4,18 @@
 **Status:** Active exploratory / engineering research  
 **Working title:** *Distributed metabolic regulation in a minimal aquatic artificial organism (CAMP camper)*
 
+### 2026-08-30 — Heritable tumble, energon anchor, pineal analogue
+
+**Sim changes:** Tumble is **heritable** (`tumbleRateFactor`, `tumbleTurnFactor`, `tumbleChiralityBias` — jittered at spawn / parthenogenesis). Tumble fires only when **unanchored**: no P food/threat lock, no directional M taste (symmetric ambiguity still tumbles — Lorenz orbit, not lock-on). Hub-satiation tumble boost removed. M→A gain and turn scale down when P locked (vestigial mouth chemo).
+
+**Biology note (user query — pituitary vs pineal):** The “deep buried photosensitive number co-opted for circadian control” story matches the **pineal** (epiphysis), not the **pituitary** (hypophysis — endocrine master gland, not a photoreceptor). Literature supports:
+- **Anamniotes / lamprey–fish–amphibian:** pineal is **directly photosensitive**; melatonin rhythms driven locally ([Falcón et al. 2007 PMC1693265](https://pmc.ncbi.nlm.nih.gov/articles/PMC1693265/); [J Pineal Res cross-species scRNA 2024](https://doi.org/10.1111/jpi.12927)).
+- **Mammals:** pinealocytes **lost direct photosensitivity**; light via **retina → SCN → sympathetic** innervation; gland co-opted for **neuroendocrine melatonin** ([ICB 1983 pineal photoperiod review](https://doi.org/10.1093/icb/23.3.597)).
+- **Parietal / “third eye”:** dorsal median photoreceptor in sauropsids; mammals retain condensed **pineal** without parietal opening ([“The lonely eye” PMC1772576](https://pmc.ncbi.nlm.nih.gov/articles/PMC1772576/)).
+- **Duplication / composite median eye:** recent work posits vertebrate retina repurposed from a **composite ancestral median eye** with ciliary + rhabdomeric modules ([Kafetzis et al. 2026 Current Biology preprint](https://badenlab.org/wp-content/uploads/2026/02/2026-Kafetzis-et-al-Current-Biology.pdf)).
+
+**Sim mapping:** **P** = lateral focal vision (dominant lock); **M** taste = vestigial omnidirectional chemo (pineal/barbel analogue) — full gain when P silent, damped when P locked. **A** tumble = Berg run-and-tumble on the **unanchored** Lorenz surface (EVOLUTION.md §2.3).
+
 ### 2026-08-30 — Symmetric food choice + stem-cell Hz coordinator
 
 **Observation (live runs):** When energon is roughly equidistant / symmetric around a camper, heading wanders — matches nursery-blind homing but visible in open field. Root cause in sim: M taste **vector-sums** salience-weighted directions → zero bearing when symmetric; tumble suppression treats |bearing|≤0.25 as “tracking” → straight run with no break.
@@ -15,6 +27,8 @@
 - **Equal-alternative forced choice:** **Idiosyncratic bias** emerges from neural noise without external reason ([Nature Human Behaviour 2019](https://www.nature.com/articles/s41562-019-0682-7)).
 
 **Sim mitigations (2026-08-30):** `mouthTasteSymmetricAmbiguity` when vector cancels + flat Δ; **idiosyncratic bearing bias** per mouth node; **tumble boost** (`kMouthTasteSymmetryTumbleBoost`) so campers don’t lock straight.
+
+**Taste grid weights (2026-08-30):** Coarse M layer now deposits **all wet grounded energon** with byte weights — sunfall/cornucopia **1.0**, fragment **0.85**, distress blue **0.12**, baseline green **0.05** (mate/waste/signal **0**). Peak cell picks highest weighted mass so fresh sunfall beats sparse blue; blue-only fields support cannibal homing without equating alarm to feast.
 
 **Coarse taste sensory layer (2026-08-30):** Separate **256×256** byte-density map over world extent (`EnergonTasteSensoryGrid`, rebuilt each tick with spatial queries). Mouth taste steers toward the **peak coarse cell** within taste radius — clumping / mass-flux analogue, not per-blob vector sum. Fine P cone unchanged.
 

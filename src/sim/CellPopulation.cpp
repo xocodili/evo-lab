@@ -275,12 +275,11 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   for (Organism& organism : organisms_) {
     tickFeedbagOracleHooks(organism, energon, cellSize);
   }
-  const float stickyRadius = cellSize * kMouthStickyRadiusFactor;
   for (Organism& organism : organisms_) {
     if (organism.feedbagOracle) {
       continue;
     }
-    energon.applyMouthStickiness({organism}, stickyRadius);
+    energon.applyMouthStickiness({organism}, cellSize);
   }
   energon.syncMouthAttachments(organisms_, world, cellSize, heightScale);
   for (Organism& organism : organisms_) {
@@ -320,7 +319,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
     }
   }
   energon.syncMouthAttachments(organisms_, world, cellSize, heightScale);
-  energon.pruneMouthAnchors(organisms_, stickyRadius);
+  energon.pruneMouthAnchors(organisms_, cellSize);
   for (Organism& organism : organisms_) {
     organism.metabolise(world, cellSize, heightScale);
   }
@@ -360,6 +359,16 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   organisms_.erase(std::remove_if(organisms_.begin(), organisms_.end(),
                                   [](const Organism& organism) { return !organism.alive; }),
                    organisms_.end());
+}
+
+int CellPopulation::liveCampNomCount() const {
+  int count = 0;
+  for (const Organism& organism : organisms_) {
+    if (organism.alive && organism.isCampNom()) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 CellPopulationStats CellPopulation::stats() const {

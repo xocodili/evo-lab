@@ -4,8 +4,9 @@
 #include "engine/gfx/sprites/SpriteAtlasLibrary.hpp"
 #include "game/GameShaders.hpp"
 #include "game/OrganismDrawer.hpp"
-#include "sim/CloacaSignal.hpp"
 #include "sim/Energon.hpp"
+#include "sim/EnergonInformation.hpp"
+#include "sim/EnergonString.hpp"
 #include "sim/Organism.hpp"
 #include "sim/WorldConstants.hpp"
 
@@ -45,52 +46,41 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
   const float byteNorm = sizeScale / 8.0f;
   const bool isSunfall = blob.origin == evolab::EnergonOrigin::Sunfall;
 
-  const std::uint8_t br = static_cast<std::uint8_t>((blob.data >> 0) & 0xFF);
-  const std::uint8_t bg = static_cast<std::uint8_t>((blob.data >> 8) & 0xFF);
-  const std::uint8_t bb = static_cast<std::uint8_t>((blob.data >> 16) & 0xFF);
+  const std::uint8_t tailByte =
+      blob.remaining > 0 ? evolab::energonByteAt(blob, 0)
+                         : static_cast<std::uint8_t>(blob.data & 0xFFu);
+  const std::uint8_t headByte =
+      blob.remaining > 0 ? evolab::energonByteAt(blob, std::max(0, blob.remaining - 1))
+                         : tailByte;
 
-  float r = 0.55f + 0.4f * (static_cast<float>(br) / 255.0f);
-  float g = 0.50f + 0.45f * (static_cast<float>(bg) / 255.0f);
-  float b = 0.20f + 0.35f * (static_cast<float>(bb) / 255.0f);
+  float tr = 0.0f;
+  float tg = 0.0f;
+  float tb = 0.0f;
+  float hr = 0.0f;
+  float hg = 0.0f;
+  float hb = 0.0f;
+  evolab::energonPaletteRgb(tailByte, tr, tg, tb);
+  evolab::energonPaletteRgb(headByte, hr, hg, hb);
+
+  float r = (tr + hr) * 0.5f;
+  float g = (tg + hg) * 0.5f;
+  float b = (tb + hb) * 0.5f;
 
   float alpha = std::min(1.0f, std::max(0.08f, blob.ttl / 50.0f));
   if (blob.origin == evolab::EnergonOrigin::Fragment) {
-    // M-cloaca spit — siren red (rejected / overflow byte).
-    r = 1.0f;
-    g = 0.10f;
-    b = 0.06f;
+    r = std::min(1.0f, r * 0.35f + 0.65f);
+    g *= 0.15f;
+    b *= 0.10f;
     alpha = std::min(1.0f, alpha + 0.35f);
-  } else if (blob.origin == evolab::EnergonOrigin::Cloaca) {
-    switch (evolab::cloacaBandFromBlob(blob)) {
-      case evolab::CloacaBand::Distress:
-        r = 0.15f;
-        g = 0.55f;
-        b = 1.0f;
-        alpha = std::min(1.0f, alpha + 0.25f);
-        break;
-      case evolab::CloacaBand::Baseline:
-        r = 0.20f;
-        g = 0.85f;
-        b = 0.35f;
-        break;
-      case evolab::CloacaBand::Mate:
-        r = 1.0f;
-        g = 0.12f;
-        b = 0.08f;
-        alpha = std::min(1.0f, alpha + 0.40f);
-        break;
-      default:
-        break;
-    }
   } else if (blob.grounded && !blob.onWet) {
     const float grey = 0.35f + 0.15f * byteNorm;
-    r = grey;
-    g = grey * 0.95f;
-    b = grey * 0.85f;
+    r = grey * 0.6f + r * 0.4f;
+    g = grey * 0.6f + g * 0.4f;
+    b = grey * 0.6f + b * 0.4f;
     alpha *= 0.65f;
   } else if (blob.onWet && blob.origin != evolab::EnergonOrigin::Fragment) {
-    r += 0.12f * byteNorm;
-    g += 0.10f * byteNorm;
+    r += 0.08f * byteNorm;
+    g += 0.06f * byteNorm;
     alpha = std::min(1.0f, alpha + 0.15f);
     if (isSunfall && blob.grounded) {
       alpha = std::max(0.45f, alpha);
@@ -100,10 +90,12 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
   if (!blob.grounded) {
     const float streak = isSunfall ? (2.0f + sizeScale * 3.0f) : (1.4f + sizeScale * 2.6f);
     pushEnergonVertex(verts, blob.x, blob.y, blob.z, r, g, b, alpha);
-    pushEnergonVertex(verts, blob.x, blob.y - streak, blob.z, r * 0.7f, g * 0.7f, b * 0.6f, 0.0f);
+    pushEnergonVertex(verts, blob.x, blob.y - streak, blob.z, tr * 0.7f, tg * 0.7f, tb * 0.6f,
+                      0.0f);
     const float w = 0.08f + byteNorm * 0.12f;
-    pushEnergonVertex(verts, blob.x + w, blob.y, blob.z, r, g, b, alpha * 0.85f);
-    pushEnergonVertex(verts, blob.x + w, blob.y - streak, blob.z, r * 0.7f, g * 0.7f, b * 0.6f, 0.0f);
+    pushEnergonVertex(verts, blob.x + w, blob.y, blob.z, hr, hg, hb, alpha * 0.85f);
+    pushEnergonVertex(verts, blob.x + w, blob.y - streak, blob.z, tr * 0.7f, tg * 0.7f, tb * 0.6f,
+                      0.0f);
   } else {
     const float pillar =
         isSunfall ? (1.15f + sizeScale * 0.95f) : (0.35f + sizeScale * 0.55f);
@@ -114,22 +106,19 @@ void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob
       const float arm = 0.35f + byteNorm * 0.55f;
       appendSunfallGroundPatch(verts, blob.x, blob.y, blob.z, arm, pillar, r, g, b, alpha);
     } else if (isSunfall && blob.onWet && hasSegment) {
-      pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, r, g, b, alpha);
-      pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, r * 1.05f, g * 1.02f, b * 0.95f,
-                        alpha * 0.9f);
+      pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, tr, tg, tb, alpha);
+      pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, hr, hg, hb, alpha * 0.9f);
       const float arm = 0.28f + byteNorm * 0.4f;
       appendSunfallGroundPatch(verts, blob.x, blob.y, blob.z, arm, pillar * 0.65f, r, g, b,
                                alpha * 0.85f);
     } else if (hasSegment) {
-      pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, r, g, b, alpha);
-      pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, r * 1.05f, g * 1.02f, b * 0.95f,
-                        alpha * 0.85f);
+      pushEnergonVertex(verts, blob.tailX, blob.y, blob.tailZ, tr, tg, tb, alpha);
+      pushEnergonVertex(verts, blob.headX, blob.y, blob.headZ, hr, hg, hb, alpha * 0.85f);
       pushEnergonVertex(verts, blob.x, blob.y, blob.z, r, g, b, alpha * 0.9f);
       pushEnergonVertex(verts, blob.x, blob.y + pillar * 0.5f, blob.z, r, g, b, alpha * 0.25f);
     } else {
       pushEnergonVertex(verts, blob.x, blob.y, blob.z, r, g, b, alpha);
-      pushEnergonVertex(verts, blob.x, blob.y + pillar, blob.z, r * 1.1f, g * 1.05f, b * 0.9f,
-                        alpha * 0.35f);
+      pushEnergonVertex(verts, blob.x, blob.y + pillar, blob.z, hr, hg, hb, alpha * 0.35f);
       const float w = 0.05f + byteNorm * 0.1f;
       pushEnergonVertex(verts, blob.x + w, blob.y, blob.z, r, g, b, alpha * 0.9f);
       pushEnergonVertex(verts, blob.x + w, blob.y + pillar * 0.7f, blob.z, r, g, b, alpha * 0.2f);

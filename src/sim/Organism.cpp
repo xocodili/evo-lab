@@ -318,9 +318,14 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
   heading = chaosJitterHeading(heading, rng);
 
   senseRadiusFactor = chaosJitterFloat(kPerceptorSenseRadiusFactor, rng);
+  tumbleRateFactor = chaosJitterFloat(kDefaultTumbleRateFactor, rng);
+  tumbleTurnFactor = chaosJitterFloat(kDefaultTumbleTurnFactor, rng);
+  tumbleChiralityBias = std::clamp(chaosJitterFloat(kDefaultTumbleChiralityBias, rng),
+                                   -kTumbleChiralityBiasMax, kTumbleChiralityBiasMax);
   peripheralStoreCapFactor =
       clampWalletCapFactor(chaosJitterFloat(kDefaultPeripheralStoreCapFactor, rng));
   hubStoreCapFactor = clampWalletCapFactor(chaosJitterFloat(kDefaultHubStoreCapFactor, rng));
+  jitterCloacaPaletteBytes(*this, rng);
 
   for (SkeletonLink& link : links) {
     link.restLength = chaosJitterFloat(link.restLength, rng);

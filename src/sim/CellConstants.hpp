@@ -139,6 +139,8 @@ inline constexpr float kMouthContactRadiusFactor = 0.65f;
 // radius. Match neuron billboard diameter on screen (~8px); was 3.5× cellSize and hoovered patches.
 // Slightly wider than bite contact so near-misses latch; see docs/ART-STYLE.md.
 inline constexpr float kMouthStickyRadiusFactor = 0.75f;
+// M taste homing extends mucus/adhesion reach before first bite (tide co-advect latch).
+inline constexpr float kMouthTasteChemotaxisStickyRadiusFactor = 2.25f;
 // Co-advect pinned strings while chewing (tide / feedbag latch); wider than sticky discovery
 // but only when lastMouthHadFoodContact — avoids crawl-phase hoover that cleared energon patches.
 inline constexpr float kMouthChewCoAdvectRadiusFactor = 3.5f;
@@ -154,11 +156,26 @@ inline constexpr float kMouthTasteApproachGain = 0.45f;
 inline constexpr float kMouthTasteTurnGain = 0.35f;
 // Vestigial M→A believe gain — evolved weaker than P; dominance emerges via trust × valence.
 inline constexpr float kMouthTasteSignalGain = 0.32f;
+// Pineal-analogue vestigial gain when P is locked (lateral eyes dominate).
+inline constexpr float kMouthTasteVestigialGainWhenPerceptorLocked = 0.18f;
+inline constexpr float kMouthTasteVestigialTurnScale = 0.22f;
 // When omnidirectional taste vectors cancel (symmetric food ring), resultant bearing is ambiguous.
 inline constexpr float kMouthTasteSymmetryVectorEpsilonSq = 0.04f;
 inline constexpr float kMouthTasteSymmetryTumbleBoost = 1.75f;
+// Coarse taste grid byte weights (sunfall ≫ distress blue — cannibal cue when nothing better).
+inline constexpr float kMouthTasteSunfallGridWeight = 1.0f;
+inline constexpr float kMouthTasteFragmentGridWeight = 0.85f;
+inline constexpr float kMouthTasteDistressCloacaGridWeight = 0.12f;
+inline constexpr float kMouthTasteBaselineCloacaGridWeight = 0.05f;
 // Coarse chemo map for extra-oral taste: world-spanning byte-density field (clumping / mass flux).
 inline constexpr int kMouthTasteSensoryGridResolution = 256;
+inline constexpr int kSunfallEntropyPeriodTicks = 3;
+
+// Ordinal classification for jittered cloaca palette bytes on the field.
+inline constexpr std::uint8_t kCloacaPaletteDistressCeiling = 96u;
+inline constexpr std::uint8_t kCloacaPaletteMateFloor = 192u;
+// Minimum separation between heritable band tiers after jitter.
+inline constexpr std::uint8_t kCloacaPaletteMinTierGap = 24u;
 
 // Stem-cell Hz coordinator (precursor C): per-node activity throttle from pattern match + delta.
 inline constexpr std::size_t kCoordinatorRegisterBytes = 4u;
@@ -187,6 +204,10 @@ inline constexpr float kActuatorThrustPerStrokeByte = 0.055f;
 inline constexpr float kActuatorTranslationEta = 0.12f;
 inline constexpr float kActuatorTumbleRate = 0.07f;
 inline constexpr float kActuatorTumbleTurn = 0.85f;
+inline constexpr float kDefaultTumbleRateFactor = 1.0f;
+inline constexpr float kDefaultTumbleTurnFactor = 1.0f;
+inline constexpr float kDefaultTumbleChiralityBias = 0.0f;
+inline constexpr float kTumbleChiralityBiasMax = 0.85f;
 // Horror crawl: basal + one stroke when fuel allows (stroke gate is >= stroke cost only).
 inline constexpr std::uint32_t kActuatorCrawlCostPerTick =
     kStemCellBasalCostPerTick + kActuatorStrokeCostPerTick;

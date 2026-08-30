@@ -276,9 +276,8 @@ void anchorCornucopiaToMouth(evolab::EnergonField& energon, const evolab::Organi
 
 void finishNurseryEnergonAttachments(evolab::Organism& organism, evolab::BarrenWorld& world,
                                      evolab::EnergonField& energon) {
-  const float stickyRadius = evolab::kWorldCellSize * evolab::kMouthStickyRadiusFactor;
   energon.syncMouthAttachments({organism}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  energon.pruneMouthAnchors({organism}, stickyRadius);
+  energon.pruneMouthAnchors({organism}, evolab::kWorldCellSize);
 }
 
 void prepareFeedbagOracleAxons(evolab::Organism& organism) {
@@ -291,8 +290,7 @@ void prepareFeedbagOracleAxons(evolab::Organism& organism) {
 
 void runMouthStickyBeforeFeed(evolab::Organism& organism, evolab::BarrenWorld& world,
                               evolab::EnergonField& energon, float cellSize, float heightScale) {
-  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
-  energon.applyMouthStickiness({organism}, stickyRadius);
+  energon.applyMouthStickiness({organism}, cellSize);
   energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
 }
 
@@ -300,7 +298,6 @@ void tickSingleCamperFeedbagGraze(evolab::Organism& organism, evolab::BarrenWorl
                                  evolab::EnergonField& energon, float cellSize,
                                  float heightScale, float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
-  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
   energon.prepareSpatialQueries(cellSize, halfExtent, world);
   if (!organism.disableNurseryLocomotion) {
     organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
@@ -328,14 +325,13 @@ void tickSingleCamperFeedbagGraze(evolab::Organism& organism, evolab::BarrenWorl
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
   energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
-  energon.pruneMouthAnchors({organism}, stickyRadius);
+  energon.pruneMouthAnchors({organism}, cellSize);
 }
 
 void tickSingleCamper(evolab::Organism& organism, evolab::BarrenWorld& world,
                       evolab::EnergonField& energon, float cellSize, float heightScale,
                       float sunIntensity) {
   const float halfExtent = worldHalfExtent(world, cellSize);
-  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
   energon.prepareSpatialQueries(cellSize, halfExtent, world);
   if (!organism.disableNurseryLocomotion) {
     organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
@@ -364,7 +360,7 @@ void tickSingleCamper(evolab::Organism& organism, evolab::BarrenWorld& world,
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
   energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
-  energon.pruneMouthAnchors({organism}, stickyRadius);
+  energon.pruneMouthAnchors({organism}, cellSize);
 }
 
 void tickNurseryCamper(evolab::Organism& organism, evolab::BarrenWorld& world,

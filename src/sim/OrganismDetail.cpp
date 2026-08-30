@@ -526,24 +526,27 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     if (!organism.disableNurseryLocomotion) {
       applyCampChemotaxisHeading(organism, interoception, motorIntent);
 
-      const bool foodTracking =
-          interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Food &&
-          interoception.approach > kOrganismCampReflexMinValence &&
-          std::abs(interoception.focusBearing) <= kOrganismCampFoodTumbleBearingRad;
-      const bool tasteTracking =
-          interoception.mouthTasteApproach > kOrganismCampReflexMinValence &&
-          !interoception.mouthTasteSymmetricAmbiguity &&
-          std::abs(interoception.mouthTasteBearing) <= kOrganismCampFoodTumbleBearingRad;
-      const float effectiveTumbleRate = kActuatorTumbleRate * motorIntent.tumbleRateScale;
-      if (!foodTracking && !tasteTracking && chaosBernoulli(effectiveTumbleRate, rng)) {
-        const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
-        organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
+      const bool anchored = campLocomotionAnchored(interoception);
+      const float effectiveTumbleRate =
+          organism.tumbleRateFactor * kActuatorTumbleRate * motorIntent.tumbleRateScale;
+      const float effectiveTumbleTurn = organism.tumbleTurnFactor * kActuatorTumbleTurn;
+      if (!anchored && chaosBernoulli(effectiveTumbleRate, rng)) {
+        const float rightProb =
+            0.5f + 0.5f * std::clamp(organism.tumbleChiralityBias, -kTumbleChiralityBiasMax,
+                                     kTumbleChiralityBiasMax);
+        const float sign = chaosBernoulli(rightProb, rng) ? 1.0f : -1.0f;
+        organism.heading = normalizeAngle(organism.heading + sign * effectiveTumbleTurn);
         organism.lastTumbled = true;
       }
     }
-  } else if (!organism.disableNurseryLocomotion && chaosBernoulli(kActuatorTumbleRate, rng)) {
-    const float sign = chaosBernoulli(0.5f, rng) ? 1.0f : -1.0f;
-    organism.heading = normalizeAngle(organism.heading + sign * kActuatorTumbleTurn);
+  } else if (!organism.disableNurseryLocomotion &&
+             chaosBernoulli(organism.tumbleRateFactor * kActuatorTumbleRate, rng)) {
+    const float rightProb =
+        0.5f + 0.5f * std::clamp(organism.tumbleChiralityBias, -kTumbleChiralityBiasMax,
+                                 kTumbleChiralityBiasMax);
+    const float sign = chaosBernoulli(rightProb, rng) ? 1.0f : -1.0f;
+    organism.heading =
+        normalizeAngle(organism.heading + sign * organism.tumbleTurnFactor * kActuatorTumbleTurn);
     organism.lastTumbled = true;
   }
 

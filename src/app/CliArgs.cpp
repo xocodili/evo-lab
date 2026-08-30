@@ -69,6 +69,7 @@ SimConfig simConfigFromCli(const CliArgs& args) {
   config.designWidth = args.designWidth;
   config.designHeight = args.designHeight;
   config.fixedSimHz = args.fixedSimHz;
+  config.visualMaxFps = args.visualMaxFps;
   return config;
 }
 
@@ -129,6 +130,11 @@ CliArgs parseCliArgs(int argc, char** argv) {
         throw std::runtime_error("Missing value for --sim-hz");
       }
       args.fixedSimHz = parsePositiveFloat(argv[++i], "--sim-hz");
+    } else if (arg == "--max-fps") {
+      if (i + 1 >= argc) {
+        throw std::runtime_error("Missing value for --max-fps");
+      }
+      args.visualMaxFps = parsePositiveFloat(argv[++i], "--max-fps");
     } else if (arg == "--debug") {
       if (i + 1 >= argc) {
         throw std::runtime_error("Missing value for --debug");
@@ -156,6 +162,7 @@ void printHelp() {
             << "  --design-width N     Design resolution width (default: 1280)\n"
             << "  --design-height N    Design resolution height (default: 720)\n"
             << "  --sim-hz N           Fixed simulation rate (default: 60)\n"
+            << "  --max-fps N          Cap visual frame rate (default: 60; 0 = uncapped)\n"
             << "  --debug MS           Session debug log interval (evo-lab.session.log)\n"
             << "  --exit               Exit after headless run (for smoke tests)\n"
             << "  --version            Print version and exit\n"

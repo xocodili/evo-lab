@@ -20,6 +20,7 @@ add_library(evolab_sim STATIC
   sim/DayCycle.cpp
   sim/Energon.cpp
   sim/EnergonString.cpp
+  sim/EnergonInformation.cpp
   sim/EnergonSpatialIndex.cpp
   sim/EnergonTasteSensory.cpp
   sim/EnergonStats.cpp

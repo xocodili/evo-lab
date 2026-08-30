@@ -82,15 +82,16 @@ struct EnergonConfig {
 
   float fallSpeed = 42.0f;
 
-  float spawnRateMax = 6.0f;
-  // When true, sunfall scales as f(liveOrganisms) × entropy each rain cycle; spawnRateMax is a ceiling.
+  float spawnRateMax = 10.0f;
+  // When true, sunfall scales as f(liveOrganisms) × entropy each rain cycle.
+  // spawnRateMax is also a per-tick floor at full sun (ambient rain minimum).
   bool populationScaledRain = true;
 
   float ttlWetSeconds = 50.0f;
 
   float ttlDrySeconds = 6.0f;
 
-  int maxBlobs = 1800;
+  int maxBlobs = 4000;
 
   float worldHalfExtent = 0.0f;
 
@@ -187,13 +188,13 @@ public:
 
 
 
-  // Anchor grounded wet strings within stickyRadius of any live mouth (segment distance).
+  // Anchor grounded wet food strings; reach scales with M taste homing (cellSize).
 
-  void applyMouthStickiness(const std::vector<Organism>& organisms, float stickyRadius);
+  void applyMouthStickiness(const std::vector<Organism>& organisms, float cellSize);
 
 
 
-  void pruneMouthAnchors(const std::vector<Organism>& organisms, float stickyRadius);
+  void pruneMouthAnchors(const std::vector<Organism>& organisms, float cellSize);
 
 
 

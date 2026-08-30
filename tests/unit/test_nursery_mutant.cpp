@@ -63,11 +63,10 @@ void tickNurseryOrganism(evolab::Organism& organism, evolab::BarrenWorld& world,
   world.tick();
   energon.tick(world, sunIntensity, cellSize, heightScale);
   const float halfExtent = worldHalfExtent(world, cellSize);
-  const float stickyRadius = cellSize * evolab::kMouthStickyRadiusFactor;
   energon.prepareSpatialQueries(cellSize, halfExtent, world);
   organism.perceive(world, energon, cellSize, halfExtent, {organism}, world.tickCount(),
                     sunIntensity);
-  energon.applyMouthStickiness({organism}, stickyRadius);
+  energon.applyMouthStickiness({organism}, cellSize);
   energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
   organism.feed(energon, cellSize, world.tickCount());
   organism.runDigestAndComputer(energon, world.tickCount());
@@ -85,7 +84,7 @@ void tickNurseryOrganism(evolab::Organism& organism, evolab::BarrenWorld& world,
   organism.signal(energon, world.tickCount());
   organism.pruneNeuralAxons();
   energon.syncMouthAttachments({organism}, world, cellSize, heightScale);
-  energon.pruneMouthAnchors({organism}, stickyRadius);
+  energon.pruneMouthAnchors({organism}, cellSize);
 }
 
 int countNeuronType(const evolab::Organism& organism, evolab::NeuronType type) {

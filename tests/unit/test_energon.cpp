@@ -387,7 +387,7 @@ TEST_CASE("mouth sticky zone anchors without long-range co-advect", "[energon][a
   const std::uint32_t blobId = field.blobs().front().id;
 
   field.prepareSpatialQueries(evolab::kWorldCellSize, 64.0f, world);
-  field.applyMouthStickiness({camper}, stickyRadius);
+  field.applyMouthStickiness({camper}, evolab::kWorldCellSize);
   REQUIRE(field.mouthAnchors().size() == 1);
   REQUIRE(field.mouthAnchors().front().blobId == blobId);
 
@@ -422,7 +422,7 @@ TEST_CASE("mouth sticky attaches to closest string only", "[energon][attach]") {
   field.injectBlob(makeAttachedTestBlob(mouth->worldX + 2.0f, mouth->worldZ, 22));
 
   field.prepareSpatialQueries(evolab::kWorldCellSize, 64.0f, world);
-  field.applyMouthStickiness({camper}, stickyRadius);
+  field.applyMouthStickiness({camper}, evolab::kWorldCellSize);
 
   REQUIRE(field.mouthAnchors().size() == 1);
   REQUIRE(field.mouthAnchors().front().mouthNodeId == evolab::kCampMouthId);
