@@ -97,10 +97,15 @@ TEST_CASE("computer pattern match sets feed gain", "[camp][computer]") {
   computer->computerRegister[1] = 5;
   computer->computerRegister[2] = 4;
   seedComputerInbound(organism, 3, 6, 5, 4, 10);
+  organism.equilibriumExportStartUnit = evolab::kStemEquilibriumExportStartMin;
+  evolab::assignComputerHubFuel(
+      organism, static_cast<std::size_t>(evolab::hubStoreCapBytes(organism) * 0.86), 1);
+  computer->storeBytesPriorTick = computer->store.size();
 
   evolab::tickComputerPhase(organism, field, 10);
   REQUIRE(computer->lastComputerMatchScore > 0.9f);
-  REQUIRE(computer->computerFeedGain > 0.9f);
+  REQUIRE(organism.hubConservationExportScale > 0.95f);
+  REQUIRE(computer->computerFeedGain > 0.5f);
   REQUIRE(organism.computerFeedGain == computer->computerFeedGain);
 }
 
@@ -133,6 +138,11 @@ TEST_CASE("dual computer forage C drives A dispatch on food pattern", "[camp][co
   REQUIRE(cThreat != nullptr);
 
   seedDualComputerInbound(organism, 7, 6, 5, 10);
+  organism.equilibriumExportStartUnit = 0.40f;
+  evolab::assignComputerHubFuel(
+      organism, static_cast<std::size_t>(evolab::hubStoreCapBytes(organism) * 0.84), 1);
+  cForage->storeBytesPriorTick = cForage->store.size();
+  cThreat->storeBytesPriorTick = cThreat->store.size();
   evolab::tickComputerPhase(organism, field, 10);
 
   REQUIRE(cForage->lastComputerMatchScore > 0.9f);
@@ -153,6 +163,11 @@ TEST_CASE("dual computer threat C drives A dispatch on threat pattern", "[camp][
   REQUIRE(cThreat != nullptr);
 
   seedDualComputerInbound(organism, 1, 2, 3, 10);
+  organism.equilibriumExportStartUnit = 0.40f;
+  evolab::assignComputerHubFuel(
+      organism, static_cast<std::size_t>(evolab::hubStoreCapBytes(organism) * 0.84), 1);
+  cForage->storeBytesPriorTick = cForage->store.size();
+  cThreat->storeBytesPriorTick = cThreat->store.size();
   evolab::tickComputerPhase(organism, field, 10);
 
   REQUIRE(cThreat->lastComputerMatchScore > 0.9f);
@@ -168,6 +183,9 @@ TEST_CASE("replete computer expels green baseline cloaca byte", "[camp][computer
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
   evolab::assignComputerHubFuel(organism, evolab::kComputerHubStoreMaxBytes, 1);
   organism.createdAtTick = 0;
+  evolab::SkeletonNode* computer = organism.findNode(3);
+  REQUIRE(computer != nullptr);
+  computer->storeBytesPriorTick = computer->store.size();
 
   const std::size_t hubBefore = organism.computerHubFuelBytes();
   const int blobsBefore = field.activeCount();
@@ -224,4 +242,28 @@ TEST_CASE("distressed computer expels blue cloaca alarm", "[camp][computer][cloa
   const evolab::EnergonBlob& blob = field.blobs().back();
   REQUIRE(blob.origin == evolab::EnergonOrigin::Cloaca);
   REQUIRE(evolab::cloacaBandFromBlob(blob) == evolab::CloacaBand::Distress);
+}
+
+TEST_CASE("hub conservation zeros export while hub drains", "[camp][computer][conservation]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, 1.0f);
+  const std::size_t cap = evolab::hubStoreCapBytes(organism);
+  const std::size_t hubStart = static_cast<std::size_t>(cap * 0.92);
+  evolab::assignComputerHubFuel(organism, hubStart, 1);
+  evolab::SkeletonNode* computer = organism.findNode(3);
+  REQUIRE(computer != nullptr);
+  computer->storeBytesPriorTick = hubStart + evolab::kComputerHubConservationDrainToleranceBytes + 1;
+  computer->computerRegister[0] = 6;
+  computer->computerRegister[1] = 5;
+  computer->computerRegister[2] = 4;
+  seedComputerInbound(organism, 3, 6, 5, 4, 10);
+
+  evolab::tickComputerPhase(organism, field, 10);
+  REQUIRE(organism.computerFeedGain == 0.0f);
+  REQUIRE(organism.hubConservationExportScale == 0.0f);
+
+  computer->storeBytesPriorTick = organism.computerHubFuelBytes();
+  evolab::tickComputerPhase(organism, field, 11);
+  REQUIRE(organism.hubConservationExportScale > 0.0f);
 }

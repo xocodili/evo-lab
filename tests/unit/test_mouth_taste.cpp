@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "sim/CampTopology.hpp"
@@ -203,7 +204,7 @@ TEST_CASE("mouth taste temporal gradient turns positive when approaching food",
   REQUIRE(mouth != nullptr);
 
   const float foodBearing = 0.0f;
-  const float startDistance = evolab::kWorldCellSize * 4.0f;
+  const float startDistance = evolab::kWorldCellSize * 3.0f;
   camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   mouth = camper.findNode(evolab::kCampMouthId);
   const float foodX = mouth->worldX + std::sin(foodBearing) * startDistance;
@@ -219,8 +220,8 @@ TEST_CASE("mouth taste temporal gradient turns positive when approaching food",
   const float farSalience = mouth->mouthTasteSalience;
   REQUIRE(farSalience > 0.0f);
 
-  mouth->worldX += std::sin(foodBearing) * evolab::kWorldCellSize * 2.0f;
-  mouth->worldZ += std::cos(foodBearing) * evolab::kWorldCellSize * 2.0f;
+  mouth->worldX += std::sin(foodBearing) * evolab::kWorldCellSize * 1.5f;
+  mouth->worldZ += std::cos(foodBearing) * evolab::kWorldCellSize * 1.5f;
   evolab::runMouthTastePhase(camper, energon, evolab::kWorldCellSize, 2);
 
   REQUIRE(mouth->mouthTasteSalience > farSalience);
@@ -329,4 +330,88 @@ TEST_CASE("mouth taste grid prefers sunfall over distress blue in same neighborh
   const float distBlueSq = (peak.worldX - blueX) * (peak.worldX - blueX) +
                            (peak.worldZ - blueZ) * (peak.worldZ - blueZ);
   REQUIRE(distSunSq < distBlueSq);
+}
+
+TEST_CASE("mouth taste latch holds bearing across ticks", "[camp][mouth][taste][latch]") {
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonField energon(11, {});
+  float wx = 0.0f;
+  float wz = 0.0f;
+  REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, wx, wz, 0.0f, evolab::kTicksPerStemCellDay, 0,
+                                  evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+  mouth = camper.findNode(evolab::kCampMouthId);
+
+  const float foodBearing = 0.0f;
+  const float foodDist = evolab::kWorldCellSize * 2.5f;
+  const float foodX = mouth->worldX + std::sin(foodBearing) * foodDist;
+  const float foodZ = mouth->worldZ + std::cos(foodBearing) * foodDist;
+  REQUIRE(world.isWetWorld(foodX, foodZ, evolab::kWorldCellSize));
+  energon.injectBlob(evolab::makeCornucopiaBlob(foodX, foodZ, 0x42));
+
+  const float halfExtent =
+      static_cast<float>(world.heightmap().resolution - 1) * evolab::kWorldCellSize * 0.5f;
+  energon.prepareSpatialQueries(evolab::kWorldCellSize, halfExtent, world);
+  evolab::runMouthTastePhase(camper, energon, evolab::kWorldCellSize, 1);
+  REQUIRE(mouth->mouthTasteLatchValid);
+  const float latchX = mouth->mouthTasteLatchWorldX;
+  const float latchZ = mouth->mouthTasteLatchWorldZ;
+  const float bearingTick1 = mouth->mouthTasteBearing;
+
+  energon.prepareSpatialQueries(evolab::kWorldCellSize, halfExtent, world);
+  evolab::runMouthTastePhase(camper, energon, evolab::kWorldCellSize, 2);
+  REQUIRE(mouth->mouthTasteLatchValid);
+  REQUIRE(mouth->mouthTasteLatchWorldX == Catch::Approx(latchX).margin(1e-3f));
+  REQUIRE(mouth->mouthTasteLatchWorldZ == Catch::Approx(latchZ).margin(1e-3f));
+  REQUIRE(mouth->mouthTasteBearing == Catch::Approx(bearingTick1).margin(1e-3f));
+}
+
+TEST_CASE("mouth taste latch switch costs bytes", "[camp][mouth][taste][latch]") {
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonField energon(12, {});
+  float wx = 0.0f;
+  float wz = 0.0f;
+  REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, wx, wz, 0.0f, evolab::kTicksPerStemCellDay, 0,
+                                  evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+  mouth = camper.findNode(evolab::kCampMouthId);
+
+  const float foodBearing = 0.0f;
+  const float farDist = evolab::kWorldCellSize * 3.0f;
+  const float nearDist = evolab::kWorldCellSize * 1.8f;
+  const float farX = mouth->worldX + std::sin(foodBearing) * farDist;
+  const float farZ = mouth->worldZ + std::cos(foodBearing) * farDist;
+  const float nearX = mouth->worldX + std::sin(foodBearing) * nearDist;
+  const float nearZ = mouth->worldZ + std::cos(foodBearing) * nearDist;
+  REQUIRE(world.isWetWorld(farX, farZ, evolab::kWorldCellSize));
+  REQUIRE(world.isWetWorld(nearX, nearZ, evolab::kWorldCellSize));
+  energon.injectBlob(evolab::makeCornucopiaBlob(farX, farZ, 0x22));
+
+  const float halfExtent =
+      static_cast<float>(world.heightmap().resolution - 1) * evolab::kWorldCellSize * 0.5f;
+  energon.prepareSpatialQueries(evolab::kWorldCellSize, halfExtent, world);
+  evolab::runMouthTastePhase(camper, energon, evolab::kWorldCellSize, 1);
+  REQUIRE(mouth->mouthTasteLatchValid);
+  const float firstLatchX = mouth->mouthTasteLatchWorldX;
+  const float firstLatchPeakBytes = mouth->mouthTasteLatchPeakBytes;
+  mouth->store.assign(4, 0x01);
+  const std::size_t fuelBeforeSwitch = mouth->store.size();
+
+  energon.injectBlob(evolab::makeCornucopiaBlob(nearX, nearZ, 0x64));
+  energon.prepareSpatialQueries(evolab::kWorldCellSize, halfExtent, world);
+  evolab::runMouthTastePhase(camper, energon, evolab::kWorldCellSize, 2);
+  REQUIRE(mouth->mouthTasteLatchValid);
+  const bool latchRetargeted =
+      mouth->mouthTasteLatchWorldX != Catch::Approx(firstLatchX).margin(1e-3f) ||
+      mouth->mouthTasteLatchPeakBytes > firstLatchPeakBytes + 1.0e-3f;
+  REQUIRE(latchRetargeted);
+  REQUIRE(mouth->store.size() + evolab::kMouthTasteLatchSwitchCostBytes == fuelBeforeSwitch);
 }

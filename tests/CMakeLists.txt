@@ -24,12 +24,15 @@ add_executable(evo-lab-tests
   unit/test_actuator.cpp
   unit/test_nom.cpp
   unit/test_computer.cpp
+  unit/test_stem_equilibrium.cpp
   unit/test_cloaca_perceptor.cpp
+  unit/test_perceptor_diurnal.cpp
   unit/test_cloaca_palette.cpp
   unit/test_neuron_signal.cpp
   unit/test_neuron_trust.cpp
   unit/test_energon_conveyance.cpp
   unit/test_regulation_satiety.cpp
+  unit/test_tank_marathon.cpp
   unit/test_hgt_insertion.cpp
   unit/test_parthenogenesis.cpp
   unit/test_debug_session.cpp
@@ -53,6 +56,25 @@ endif()
 
 include(Catch)
 catch_discover_tests(evo-lab-tests DISCOVERY_MODE PRE_TEST)
+
+# Tiered regression gates — see tests/TEST_PLAN.md
+add_test(
+  NAME tier3_marathon
+  COMMAND evo-lab-tests "[tier3][marathon]"
+)
+set_tests_properties(tier3_marathon PROPERTIES LABELS "tier3;marathon")
+
+add_test(
+  NAME tier2_nursery
+  COMMAND evo-lab-tests "[nursery]"
+)
+set_tests_properties(tier2_nursery PROPERTIES LABELS "tier2;nursery")
+
+add_test(
+  NAME tier1_diagnostic
+  COMMAND evo-lab-tests "~[nursery]~[marathon]~[ultra-marathon]~[long]~[drift]~[optional]"
+)
+set_tests_properties(tier1_diagnostic PROPERTIES LABELS "tier1;diagnostic")
 
 add_test(
   NAME smoke_headless

@@ -53,6 +53,12 @@ std::uint8_t mouthTasteApproachConfidence(const SkeletonNode& mouth);
 // Per-link outbound: satiation to P/C; taste approach to A when hungry.
 std::uint8_t mouthOutboundConfidenceForDst(const SkeletonNode& mouth, NeuronType dst);
 
+// P ambient light: 0 = night, 7 = full sun (photoreception / world-clock channel).
+std::uint8_t diurnalLightConfidence(float sunIntensity);
+
+// P→A focus valence; P→M/C diurnal world clock (food scarcity stays on M taste → famineUnit).
+std::uint8_t perceptorOutboundConfidenceForDst(const SkeletonNode& perceptor, NeuronType dst);
+
 // M energon dispatch priority from wallet fill (distinct from chew satiation broadcast).
 std::uint8_t mouthEnergonDispatchConfidence(const Organism& organism, const SkeletonNode& mouth,
                                             NeuronType dst);
@@ -63,6 +69,9 @@ std::uint8_t actuatorActivityConfidence(bool strokePaid, std::uint32_t strokeByt
 // C hub outbound: 0 = starving hub, 7 = satiated computer store.
 std::uint8_t hubFuelConfidence(std::size_t hubBytes,
                                std::uint32_t fullBytes = kComputerHubStoreMaxBytes);
+
+// 0 = famine, 7 = abundance/ecological feast (broadcast by C during torpor).
+std::uint8_t famineAbundanceConfidence(float famineUnit);
 
 // Outbound confidence for any neuron type at emit time.
 std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType type,

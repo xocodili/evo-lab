@@ -18,12 +18,14 @@ TEST_CASE("camp locomotion anchored on P food lock without bearing window", "[ca
   REQUIRE(evolab::campLocomotionAnchored(interoception));
 }
 
-TEST_CASE("camp locomotion anchored on directional M taste", "[camp][tumble]") {
+TEST_CASE("M taste steers but does not anchor locomotion", "[camp][tumble]") {
   evolab::ActuatorInteroception interoception;
   interoception.mouthTasteApproach = 0.4f;
   interoception.mouthTasteBearing = 0.9f;
   interoception.mouthTasteSymmetricAmbiguity = false;
-  REQUIRE(evolab::campLocomotionAnchored(interoception));
+  REQUIRE_FALSE(evolab::campLocomotionAnchored(interoception));
+  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception, 8);
+  REQUIRE(intent.tumbleRateScale > 0.0f);
 }
 
 TEST_CASE("symmetric M taste is not an energon anchor", "[camp][tumble]") {

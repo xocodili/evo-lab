@@ -12,6 +12,8 @@
 #include "sim/Energon.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/Organism.hpp"
+#include "sim/NeuronFuel.hpp"
+#include "sim/NeuronStem.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/TideAdvection.hpp"
 #include "sim/WorldConstants.hpp"
@@ -875,4 +877,29 @@ TEST_CASE("nom seeds and renders for visual startup", "[nom]") {
   const evolab::game::OrganismDrawBatch batch = evolab::game::buildOrganismDrawBatch(
       population.organisms(), 0.0f, 80.0f, 120.0f, mvp, 1280, 720);
   REQUIRE(!batch.cellVerts.empty());
+}
+
+TEST_CASE("camp peripheral basal uses hub when local wallet empty", "[nom][stemcell][viability]") {
+  evolab::EnergonField energon(1, {});
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(18, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
+                                  evolab::kWorldCellSize);
+  evolab::assignComputerHubFuel(camper, evolab::kComputerHubStoreMaxBytes, 1);
+
+  evolab::SkeletonNode* perceptor = camper.findNode(evolab::kCampPerceptorId);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  evolab::SkeletonNode* actuator = camper.findNode(evolab::kCampActuatorId);
+  REQUIRE(perceptor != nullptr);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(actuator != nullptr);
+  perceptor->store.clear();
+  mouth->store.clear();
+  actuator->store.clear();
+
+  for (int i = 0; i < static_cast<int>(evolab::kNeuronBasalGraceTicks) + 4; ++i) {
+    camper.tickNeuronViability(energon);
+  }
+
+  REQUIRE(evolab::organismHasCampNeuronFloor(camper));
+  REQUIRE(camper.isCampNom());
 }

@@ -26,6 +26,9 @@ public:
                const BarrenWorld* world, float cellSize);
 
   EnergonTasteSensoryPeak peakInRadius(float queryX, float queryZ, float radius) const;
+  float cellBytesAtWorld(float worldX, float worldZ) const;
+  // Normalized mass-weighted food gradient magnitude squared (0 = symmetric ring).
+  float resultantVectorMagSqInRadius(float queryX, float queryZ, float radius) const;
 
 private:
   void clear();

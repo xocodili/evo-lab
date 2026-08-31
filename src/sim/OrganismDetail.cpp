@@ -129,10 +129,10 @@ void creditMouthStore(Organism& organism, SkeletonNode& node, EnergonField& fiel
   (void)field;
   for (std::uint32_t i = 0; i < units; ++i) {
     if (node.neuron == NeuronType::Mouth && organismUsesCampNeuronPhases(organism)) {
-      if (node.store.size() < peripheralStoreCapBytes(organism)) {
-        neuronStorePush(organism, node, byte);
-      } else if (hubStoreAcceptanceRemaining(organism) > 0) {
+      if (hubStoreAcceptanceRemaining(organism) > 0) {
         hubStorePush(organism, byte);
+      } else if (node.store.size() < peripheralStoreCapBytes(organism)) {
+        neuronStorePush(organism, node, byte);
       }
       continue;
     }
@@ -199,7 +199,7 @@ bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
     neuronConsumeBack(node, kBiteCost);
     return true;
   }
-  if (!organism.isCampNom() && hubStoreConsumeBack(organism, kBiteCost)) {
+  if (hubStoreConsumeBack(organism, kBiteCost)) {
     return true;
   }
   return false;
@@ -517,7 +517,8 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   if (organism.isCampNom()) {
     interoception = gatherActuatorInteroception(organism, motorNode->id, simTick);
     motorIntent = computeCampMotorIntent(
-        interoception, static_cast<std::uint32_t>(motorNode->store.size()));
+        interoception, static_cast<std::uint32_t>(motorNode->store.size()),
+        motorNode->coordinatorDutyScale);
     organism.lastActuatorInteroception = interoception;
     organism.lastMotorIntent = motorIntent;
     organism.lastActuatorNetDrive = motorIntent.netDrive;

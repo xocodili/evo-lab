@@ -2,8 +2,10 @@
 
 #include "sim/CellConstants.hpp"
 #include "sim/NeuronFuel.hpp"
+#include "sim/NeuronSignal.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/OrganismNeuron.hpp"
+#include "sim/PerceptorFocus.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -31,7 +33,6 @@ float nodeSenseDrive(const Organism& organism, const SkeletonNode& node) {
     case NeuronType::Actuator:
       return organism.lastStrokePaid ? 1.0f : kCoordinatorBaselineDutyScale;
     case NeuronType::Computer:
-      // mini-C reads last tick's organ match; full C updates match later same frame.
       return clamp01(node.lastComputerMatchScore);
     case NeuronType::None:
       return nodeFuelUnit(organism, node);
@@ -44,6 +45,59 @@ std::uint8_t encodeCoordinatorObserved(const CoordinatorInteroception& interocep
   const float combined =
       clamp01(interoception.fuelUnit * 0.55f + interoception.senseDrive * 0.45f);
   return static_cast<std::uint8_t>(std::lround(combined * static_cast<float>(kNeuronConfidenceMax)));
+}
+
+float inboundSignalStrengthUnit(const Organism& organism, std::uint32_t dstNodeId,
+                                std::uint64_t simTick) {
+  float best = 0.0f;
+  bool any = false;
+  forEachInboundAxon(organism, dstNodeId, simTick, true, [&](const InboundAxon& inbound) {
+    if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
+      return;
+    }
+    any = true;
+    best = std::max(best, confidenceToUnit(inbound.axon.lastReceived.byte) * inbound.weight);
+  });
+  if (!any) {
+    return 0.0f;
+  }
+  return clamp01(best);
+}
+
+float organismFieldFoodUnit(const Organism& organism) {
+  float best = 0.0f;
+  for (const SkeletonNode& node : organism.nodes) {
+    if (!node.alive) {
+      continue;
+    }
+    if (node.neuron == NeuronType::Mouth) {
+      best = std::max(best, clamp01(node.mouthTasteSalience));
+    } else if (node.neuron == NeuronType::Perceptor) {
+      if (node.focusKind == PerceptFocusKind::Food) {
+        best = std::max(best, clamp01(node.focusSalience));
+      }
+      if (node.perceptPriorFoodSalienceValid) {
+        best = std::max(best, clamp01(node.perceptPriorFoodSalience));
+      }
+    }
+  }
+  return best;
+}
+
+float hubFuelUnit(const Organism& organism) {
+  return clamp01(static_cast<float>(computerHubFuelBytes(organism)) /
+                 static_cast<float>(std::max<std::size_t>(hubStoreCapBytes(organism), 1u)));
+}
+
+float nodeEffectiveFamine(const Organism& organism, const SkeletonNode& node) {
+  float famine = organism.famineUnit;
+  if (node.neuron == NeuronType::Mouth) {
+    famine *= (1.0f - clamp01(node.mouthTasteSalience));
+  } else if (node.neuron == NeuronType::Perceptor && node.focusKind == PerceptFocusKind::Food &&
+             node.focusLocked) {
+    famine *= (1.0f - clamp01(node.focusSalience));
+  }
+  return clamp01(famine);
 }
 
 float computeNodeDutyScale(SkeletonNode& node, const Organism& organism,
@@ -63,15 +117,14 @@ float computeNodeDutyScale(SkeletonNode& node, const Organism& organism,
   node.coordinatorLastExcitation = outInteroception.excitation;
   node.coordinatorLastDelta = outInteroception.delta;
 
-  const float hubUnit =
-      clamp01(static_cast<float>(computerHubFuelBytes(organism)) /
-              static_cast<float>(std::max<std::size_t>(hubStoreCapBytes(organism), 1u)));
-  const float starvationBoost = (1.0f - outInteroception.fuelUnit) * kCoordinatorStarvationBoost;
-  const float satiationBrake = hubUnit * kCoordinatorSatiationBrake;
+  const float hubUnit = hubFuelUnit(organism);
+  const float repleteUnit = hubUnit > 0.01f ? hubUnit : outInteroception.fuelUnit;
+  const float satiationBrake = repleteUnit * kCoordinatorSatiationBrake;
+  const float famineTorpor = nodeEffectiveFamine(organism, node) * kCoordinatorFamineTorpor;
 
   float duty = kCoordinatorBaselineDutyScale + outInteroception.excitation * 0.35f +
-               outInteroception.delta * kCoordinatorDeltaGain + starvationBoost - satiationBrake;
-  duty = std::clamp(duty, kCoordinatorMinDutyScale, kCoordinatorMaxDutyScale);
+               outInteroception.delta * kCoordinatorDeltaGain - satiationBrake - famineTorpor;
+  duty = std::clamp(duty, coordinatorMinDutyForNeuron(node.neuron), kCoordinatorMaxDutyScale);
   node.coordinatorDutyScale = duty;
   return duty;
 }
@@ -107,6 +160,57 @@ void syncOrganismCoordinatorTelemetry(Organism& organism) {
 
 }  // namespace
 
+float coordinatorMinDutyForNeuron(NeuronType neuron) {
+  switch (neuron) {
+    case NeuronType::Perceptor:
+      return kCoordinatorMinDutyPerceptor;
+    case NeuronType::Mouth:
+      return kCoordinatorMinDutyMouth;
+    case NeuronType::Actuator:
+      return kCoordinatorMinDutyActuator;
+    case NeuronType::Computer:
+      return kCoordinatorMinDutyComputer;
+    default:
+      return kCoordinatorMinDutyScale;
+  }
+}
+
+float computeOrganismFamineUnit(const Organism& organism, std::uint64_t simTick) {
+  if (!organism.isCampNom()) {
+    return 0.0f;
+  }
+
+  const SkeletonNode* computer = findNeuronNode(organism, NeuronType::Computer);
+  if (computer == nullptr || !computer->alive) {
+    return 0.0f;
+  }
+
+  const float hubUnit = hubFuelUnit(organism);
+  const float hubStress = 1.0f - hubUnit;
+  const float inboundStrength = inboundSignalStrengthUnit(organism, computer->id, simTick);
+  const float quietStress = 1.0f - inboundStrength;
+  const float fieldFood = organismFieldFoodUnit(organism);
+  const float fieldStress = 1.0f - fieldFood;
+
+  // Feast: wet food present, or replete hub living on reserves — not famine.
+  if (fieldFood >= kCoordinatorFeastFieldFood) {
+    return 0.0f;
+  }
+  if (hubUnit >= kCoordinatorFeastHubUnit) {
+    return 0.0f;
+  }
+
+  float famine = kCoordinatorFamineHubWeight * hubStress +
+                 kCoordinatorFamineQuietWeight * quietStress +
+                 kCoordinatorFamineFieldWeight * fieldStress;
+
+  if (fieldFood >= kCoordinatorFamineFieldSuppress) {
+    famine *= (1.0f - fieldFood);
+  }
+
+  return clamp01(famine);
+}
+
 CoordinatorInteroception gatherCoordinatorInteroception(const Organism& organism,
                                                         const SkeletonNode& node) {
   CoordinatorInteroception interoception;
@@ -131,10 +235,12 @@ void initCoordinatorNodeRegister(SkeletonNode& node) {
 }
 
 void tickCoordinatorPhase(Organism& organism, std::uint64_t simTick) {
-  (void)simTick;
   if (!organism.alive) {
     return;
   }
+
+  organism.famineUnit = computeOrganismFamineUnit(organism, simTick);
+  organism.famineConfidence = famineAbundanceConfidence(organism.famineUnit);
 
   for (SkeletonNode& node : organism.nodes) {
     if (!node.alive) {
@@ -155,9 +261,20 @@ float coordinatorDutyScaleForNode(const Organism& organism, std::uint32_t nodeId
   return node->coordinatorDutyScale;
 }
 
-float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale) {
-  return std::clamp(organDispatchGain * clamp01(coordinatorDutyScale), kComputerMinDispatchGain,
-                    1.0f);
+float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale,
+                                   float hubConservationExportScale) {
+  (void)hubConservationExportScale;
+  if (organDispatchGain <= 1.0e-4f) {
+    return 0.0f;
+  }
+  const float scaled = organDispatchGain * clamp01(coordinatorDutyScale);
+  if (scaled <= 1.0e-4f) {
+    return 0.0f;
+  }
+  if (organDispatchGain >= kComputerMinDispatchGain - 1.0e-4f) {
+    return std::clamp(scaled, kComputerMinDispatchGain, 1.0f);
+  }
+  return std::clamp(scaled, 0.0f, 1.0f);
 }
 
 }  // namespace evolab

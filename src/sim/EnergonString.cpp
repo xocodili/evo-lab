@@ -1,5 +1,6 @@
 #include "sim/EnergonString.hpp"
 
+#include "sim/CellConstants.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/EnergonInformation.hpp"
 
@@ -101,7 +102,7 @@ float energonDryTtlSeconds(const EnergonBlob& blob, const EnergonConfig& config,
     return 0.0f;
   }
   const float wetTtl = energonWetTtlSeconds(blob, config, ttlScale);
-  return wetTtl * (config.ttlDrySeconds / config.ttlWetSeconds);
+  return wetTtl * (config.ttlDrySeconds / config.ttlWetSeconds) / kEnergonDryDecayMultiplier;
 }
 
 void energonAssignGroundedTtl(EnergonBlob& blob, const EnergonConfig& config, bool onWet,

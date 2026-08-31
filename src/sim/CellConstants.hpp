@@ -83,6 +83,19 @@ inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay /
 inline constexpr std::uint8_t kComputerSatiationConfidence = 6u;
 inline constexpr std::uint8_t kComputerSignalExpulsionByte = 1u;
 inline constexpr float kComputerMinDispatchGain = 0.15f;
+// Black Queen equilibrium (stem layer): stop export below reserve slack or while store drains.
+inline constexpr std::uint32_t kComputerHubConservationSlackBytes = 3600u;
+inline constexpr std::uint32_t kComputerHubConservationDrainToleranceBytes = 4u;
+// Begin ramping export above this fill unit; full export at kComputerSatiationConfidence.
+inline constexpr float kComputerHubConservationExportStartUnit = 0.55f;
+// Shared stem defaults — every differentiated neuron (P/M/C/A) inherits ± jitter on exportStart.
+inline constexpr float kStemEquilibriumExportStartUnit = kComputerHubConservationExportStartUnit;
+inline constexpr std::uint32_t kStemEquilibriumDrainToleranceBytes =
+    kComputerHubConservationDrainToleranceBytes;
+inline constexpr float kStemEquilibriumExportStartMin = 0.40f;
+inline constexpr float kStemEquilibriumExportStartMax = 0.70f;
+// Minimum export while store is stable but below the heritable ramp knee (keeps P/M/A alive).
+inline constexpr float kStemEquilibriumMinExportScale = kComputerMinDispatchGain;
 // P vs M valence mismatch suppresses dispatch (CTA / postingestive RPE analogue).
 inline constexpr float kComputerCtaDisagreementGain = 0.3f;
 inline constexpr std::uint8_t kSignalTagReservedMin = 0xA0u;
@@ -91,10 +104,10 @@ inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 // Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
 inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
 inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
-// Chemotaxis horizon in multiples of cellSize (~nom body scale). Analogue: E. coli run-and-tumble
-// bias over ~10–20 body lengths (Berg & Purcell 1977; Dusenbery 1998), not mile-scale absolute
-// chemoreception (debunked shark trope; Gardiner & Atema 2010, Hueter et al. 2004 JEB).
-inline constexpr float kPerceptorSenseRadiusFactor = 10.0f / 3.0f;
+// Chemotaxis horizon in multiples of cellSize (~nom body scale). Near-sighted P cone;
+// M taste reaches ~2× P (medium range). Berg & Purcell run-and-tumble bias is body-length
+// scaled, not map-spanning (Gardiner & Atema 2010; Hueter et al. 2004 JEB).
+inline constexpr float kPerceptorSenseRadiusFactor = 2.0f;
 inline constexpr float kPerceptorFocusLockThreshold = 0.05f;
 inline constexpr float kPerceptorFocusReleaseThreshold = 0.02f;
 // Berg-style run bias: outbound confidence nudged by Δ food Go/NoGo score vs prior paid scan.
@@ -107,6 +120,13 @@ inline constexpr float kPerceptDiurnalRadiusFloor = 0.35f;
 inline constexpr float kPerceptNoiseBearingRad = 0.05f;
 inline constexpr float kPerceptNightChaosGain = 2.5f;
 inline constexpr float kPerceptFalseNegativeNightRate = 0.12f;
+// Ambient photoreception mapped to believe bytes 0=night, 7=noon (P→M/C world-clock channel).
+inline constexpr float kPerceptDiurnalNeutralSun = 0.05f;
+// Deep famine: skip expensive P field scans (prior-tick famineUnit); diurnal signal still free.
+inline constexpr float kCoordinatorDeepTorporFamineThreshold = 0.72f;
+inline constexpr float kTorporScanSkipMaxProbability = 0.85f;
+// Max basal skip at famineUnit=1 (was 0.45 — too shallow for quiescence-scale savings).
+inline constexpr float kCoordinatorFamineBasalSkipGain = 0.92f;
 inline constexpr float kOrganismCampReflexMinValence = 0.12f;
 inline constexpr std::uint32_t kAxonChannelCapacity = 64u;
 // R0 HGT: idle/dangling axon line maintenance debited from downstream dst (or live cap if dst dead).
@@ -135,19 +155,13 @@ inline constexpr std::uint32_t kParthenogenesisRefractoryTicks = 3600u;
 inline constexpr float kNeuralAxonMinGateScale = 0.05f;
 // XZ overlap radius as a fraction of world cell size (strict bite / chew contact).
 inline constexpr float kMouthContactRadiusFactor = 0.65f;
-// Short-range adhesion analogue (van der Waals, mucus, pili): anchor and co-advect within this
-// radius. Match neuron billboard diameter on screen (~8px); was 3.5× cellSize and hoovered patches.
-// Slightly wider than bite contact so near-misses latch; see docs/ART-STYLE.md.
+// Short-range adhesion analogue (van der Waals, mucus, pili): discovery, prune, and chew
+// co-advect all use this radius. Match neuron billboard diameter on screen (~8px); was 3.5×
+// cellSize and hoovered patches. Slightly wider than bite contact so near-misses latch.
 inline constexpr float kMouthStickyRadiusFactor = 0.75f;
-// M taste homing extends mucus/adhesion reach before first bite (tide co-advect latch).
-inline constexpr float kMouthTasteChemotaxisStickyRadiusFactor = 2.25f;
-// Co-advect pinned strings while chewing (tide / feedbag latch); wider than sticky discovery
-// but only when lastMouthHadFoodContact — avoids crawl-phase hoover that cleared energon patches.
-inline constexpr float kMouthChewCoAdvectRadiusFactor = 3.5f;
 // Extra-oral taste buds: omnidirectional chemo sampling at the mouth (barbel / olfaction
-// analogue). Horizon matches the prior perceptor cone reach (~10× cellSize); dissolved
-// trails extend well beyond vision but no longer dwarf the focus wedge on screen.
-inline constexpr float kMouthTasteRadiusFactor = kPerceptorSenseRadiusFactor * 3.0f;
+// analogue). Medium reach — wider than P focus cone but not map-spanning.
+inline constexpr float kMouthTasteRadiusFactor = kPerceptorSenseRadiusFactor * 2.0f;
 inline constexpr float kMouthTasteSalienceFloor = 0.25f;
 // Berg-style temporal ΔC bias on run/tumble when P has no lock.
 inline constexpr float kMouthTasteTemporalGain = 3.0f;
@@ -162,6 +176,11 @@ inline constexpr float kMouthTasteVestigialTurnScale = 0.22f;
 // When omnidirectional taste vectors cancel (symmetric food ring), resultant bearing is ambiguous.
 inline constexpr float kMouthTasteSymmetryVectorEpsilonSq = 0.04f;
 inline constexpr float kMouthTasteSymmetryTumbleBoost = 1.75f;
+// Taste attention latch: hold one coarse-grid peak until eaten, depleted, P handover, or timeout.
+inline constexpr std::uint32_t kMouthTasteLatchSwitchCostBytes = 1u;
+inline constexpr float kMouthTastePeakHysteresisFraction = 0.15f;
+inline constexpr float kMouthTasteLatchQuitMassFraction = 0.12f;
+inline constexpr std::uint32_t kMouthTasteLatchMaxTicks = 1200u;
 // Coarse taste grid byte weights (sunfall ≫ distress blue — cannibal cue when nothing better).
 inline constexpr float kMouthTasteSunfallGridWeight = 1.0f;
 inline constexpr float kMouthTasteFragmentGridWeight = 0.85f;
@@ -170,6 +189,8 @@ inline constexpr float kMouthTasteBaselineCloacaGridWeight = 0.05f;
 // Coarse chemo map for extra-oral taste: world-spanning byte-density field (clumping / mass flux).
 inline constexpr int kMouthTasteSensoryGridResolution = 256;
 inline constexpr int kSunfallEntropyPeriodTicks = 3;
+// Dry-land energon clears faster than wet (TTL + byte entropy); un edible on dry anyway.
+inline constexpr float kEnergonDryDecayMultiplier = 18.0f;
 
 // Ordinal classification for jittered cloaca palette bytes on the field.
 inline constexpr std::uint8_t kCloacaPaletteDistressCeiling = 96u;
@@ -185,7 +206,19 @@ inline constexpr float kCoordinatorBaselineDutyScale = 0.55f;
 inline constexpr float kCoordinatorExcitationGain = 0.45f;
 inline constexpr float kCoordinatorDeltaGain = 0.25f;
 inline constexpr float kCoordinatorSatiationBrake = 0.35f;
-inline constexpr float kCoordinatorStarvationBoost = 0.4f;
+// Famine/torpor: low hub + quiet axons + empty field → lower duty (replaces starvationBoost).
+inline constexpr float kCoordinatorFamineTorpor = 0.45f;
+inline constexpr float kCoordinatorFamineHubWeight = 0.35f;
+inline constexpr float kCoordinatorFamineQuietWeight = 0.30f;
+inline constexpr float kCoordinatorFamineFieldWeight = 0.35f;
+inline constexpr float kCoordinatorFeastHubUnit = 0.55f;
+inline constexpr float kCoordinatorFeastFieldFood = 0.25f;
+inline constexpr float kCoordinatorFamineFieldSuppress = 0.20f;
+inline constexpr float kCoordinatorFamineBasalSkipThreshold = 0.45f;  // famineUnit gate for basal skip
+inline constexpr float kCoordinatorMinDutyPerceptor = 0.18f;
+inline constexpr float kCoordinatorMinDutyMouth = 0.22f;
+inline constexpr float kCoordinatorMinDutyActuator = 0.08f;
+inline constexpr float kCoordinatorMinDutyComputer = 0.12f;
 
 // Skeleton yaw: max turn per tick (radians) toward flow / nearby food.
 inline constexpr float kOrganismMaxTurnPerTick = 0.22f;

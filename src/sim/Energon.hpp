@@ -2,6 +2,8 @@
 
 
 
+#include "sim/EnergonRain.hpp"
+
 #include <cstdint>
 
 #include <functional>
@@ -86,6 +88,9 @@ struct EnergonConfig {
   // When true, sunfall scales as f(liveOrganisms) × entropy each rain cycle.
   // spawnRateMax is also a per-tick floor at full sun (ambient rain minimum).
   bool populationScaledRain = true;
+  // Rain budget and spawn-gate quota never drop below this population (seed count).
+  // Live count above baseline scales rain up; attrition does not shrink the field.
+  int rainPopulationBaseline = 0;
 
   float ttlWetSeconds = 50.0f;
 
@@ -229,9 +234,15 @@ public:
 
   // Coarse zoomed-out taste map rebuilt with prepareSpatialQueries; mouth steers to peak cell.
   EnergonTasteSensoryPeak queryTasteSensoryPeak(float x, float z, float radius) const;
+  float queryTasteResultantMagSq(float x, float z, float radius) const;
+  float queryTasteCellBytes(float worldX, float worldZ) const;
 
   // Nursery / oracle: keep the eternal cornucopia blob glued to a world anchor (e.g. mouth).
   void anchorCornucopiaBlob(float x, float z, float y);
+
+  const EnergonSunfallTickStats& lastSunfallTickStats() const { return lastSunfallStats_; }
+  std::uint64_t cumulativeSunfallSpawns() const { return cumulativeSunfallSpawns_; }
+  void resetSunfallTelemetry();
 
 
 
@@ -260,6 +271,9 @@ private:
 
   std::unique_ptr<EnergonSpatialIndex> spatialIndex_;
   std::unique_ptr<EnergonTasteSensoryGrid> tasteSensoryGrid_;
+
+  EnergonSunfallTickStats lastSunfallStats_{};
+  std::uint64_t cumulativeSunfallSpawns_ = 0;
 
 
 

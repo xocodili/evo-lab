@@ -1,6 +1,7 @@
 #include "sim/OrganismComputer.hpp"
 
 #include "sim/CampNeuronGating.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuralAxon.hpp"
@@ -36,8 +37,11 @@ float computeComputerFeedGain(const Organism& organism, float matchScore, float 
   const float repleteNoGo = campHubRepleteNoGo(hubUnit);
   const float ctaNoGo = clamp01(std::abs(ctaPe) * kComputerCtaDisagreementGain);
   const float dispatchDrive = clamp01(matchGo - reserveNoGo - repleteNoGo * 0.35f - ctaNoGo);
-  return std::clamp(std::max(dispatchDrive, kComputerMinDispatchGain * matchGo),
-                     kComputerMinDispatchGain, 1.0f);
+  float gain = dispatchDrive;
+  if (gain > 1.0e-4f) {
+    gain = std::max(gain, kComputerMinDispatchGain * matchGo);
+  }
+  return std::clamp(gain, 0.0f, 1.0f);
 }
 
 void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& field,
@@ -48,10 +52,12 @@ void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& f
   computer.lastComputerMatchScore = computeComputerMatchScore(interoception, computer.computerRegister);
   const float ctaPe = campComputerCtaPredictionError(interoception);
   computer.lastComputerPredictionError = ctaPe;
+  const float conservation = organism.hubConservationExportScale;
   computer.computerFeedGain =
-      computeComputerFeedGain(organism, computer.lastComputerMatchScore, ctaPe);
+      computeComputerFeedGain(organism, computer.lastComputerMatchScore, ctaPe) * conservation;
   computer.computerFeedGain =
-      applyMiniCToComputerDispatch(computer.computerFeedGain, computer.coordinatorDutyScale);
+      applyMiniCToComputerDispatch(computer.computerFeedGain, computer.coordinatorDutyScale,
+                                   conservation);
 
   if (allowCloacaExpulsion) {
     organism.lastHubSignalExpelledThisTick = false;
@@ -199,6 +205,8 @@ void tickComputerPhase(Organism& organism, EnergonField& field, std::uint64_t si
   if (!organismUsesCampNeuronPhases(organism)) {
     return;
   }
+
+  refreshCampEquilibriumExportScales(organism);
 
   bool cloacaPending = true;
   for (SkeletonNode& node : organism.nodes) {

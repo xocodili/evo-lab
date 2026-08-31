@@ -8,6 +8,7 @@
 #include "sim/EnergonInformation.hpp"
 #include "sim/EnergonRain.hpp"
 #include "sim/EnergonSpatialIndex.hpp"
+#include "sim/EnergonStats.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/Organism.hpp"
 #include "sim/TideAdvection.hpp"
@@ -65,25 +66,17 @@ bool isMouthStickyFoodBlob(const EnergonBlob& blob) {
   return false;
 }
 
-float mouthStickyRadiusForNode(float cellSize, const SkeletonNode& mouth) {
-  const float base = cellSize * kMouthStickyRadiusFactor;
-  if (mouth.mouthTasteSampleValid &&
-      mouth.mouthTasteSalience >= kMouthTasteSalienceFloor) {
-    return std::max(base, cellSize * kMouthTasteChemotaxisStickyRadiusFactor);
-  }
-  return base;
+float mouthStickyRadiusForNode(float cellSize, const SkeletonNode& /*mouth*/) {
+  return cellSize * kMouthStickyRadiusFactor;
 }
 
 float mouthStickyPruneRadius(float cellSize) {
-  return cellSize * std::max(kMouthStickyRadiusFactor, kMouthTasteChemotaxisStickyRadiusFactor);
+  return cellSize * kMouthStickyRadiusFactor;
 }
 
 float mouthCoAdvectRadiusFactor(const Organism& organism) {
   if (organism.lastMouthHadFoodContact) {
-    return kMouthChewCoAdvectRadiusFactor;
-  }
-  if (organism.lastMouthTasteSalience >= kMouthTasteSalienceFloor) {
-    return kMouthTasteChemotaxisStickyRadiusFactor;
+    return kMouthStickyRadiusFactor;
   }
   return kMouthContactRadiusFactor;
 }
@@ -91,7 +84,15 @@ float mouthCoAdvectRadiusFactor(const Organism& organism) {
 }  // namespace
 
 int energonEvictionScore(const EnergonBlob& blob) {
-  // Lower score evicts first: shed cloaca/waste before sunfall food.
+  // Lower score evicts first. Dry grounded blobs are dead weight at cap — shed them
+  // before airborne or wet food regardless of origin.
+  int wetnessRank = 2;
+  if (blob.grounded && !blob.onWet) {
+    wetnessRank = 0;
+  } else if (!blob.grounded) {
+    wetnessRank = 1;
+  }
+
   int originRank = 0;
   switch (blob.origin) {
     case EnergonOrigin::Cloaca:
@@ -110,7 +111,8 @@ int energonEvictionScore(const EnergonBlob& blob) {
       originRank = 4;
       break;
   }
-  return originRank * 1'000'000 + static_cast<int>(blob.ttl * 1'000.0f);
+  return wetnessRank * 10'000'000 + originRank * 1'000'000 +
+         static_cast<int>(blob.ttl * 1'000.0f);
 }
 
 bool EnergonField::evictOneBlob() {
@@ -165,6 +167,12 @@ void EnergonField::clear() {
   blobs_.clear();
   mouthAnchors_.clear();
   nextId_ = 1;
+  resetSunfallTelemetry();
+}
+
+void EnergonField::resetSunfallTelemetry() {
+  lastSunfallStats_ = {};
+  cumulativeSunfallSpawns_ = 0;
 }
 
 EnergonBlob* EnergonField::findBlob(std::uint32_t blobId) {
@@ -563,6 +571,20 @@ EnergonTasteSensoryPeak EnergonField::queryTasteSensoryPeak(float x, float z, fl
   return tasteSensoryGrid_->peakInRadius(x, z, radius);
 }
 
+float EnergonField::queryTasteResultantMagSq(float x, float z, float radius) const {
+  if (!tasteSensoryGrid_) {
+    return 0.0f;
+  }
+  return tasteSensoryGrid_->resultantVectorMagSqInRadius(x, z, radius);
+}
+
+float EnergonField::queryTasteCellBytes(float worldX, float worldZ) const {
+  if (!tasteSensoryGrid_) {
+    return 0.0f;
+  }
+  return tasteSensoryGrid_->cellBytesAtWorld(worldX, worldZ);
+}
+
 void EnergonField::forEachBlobNear(float x, float z, float radius,
                                    const std::function<void(const EnergonBlob&)>& fn) const {
   if (!spatialIndex_ || !fn) {
@@ -573,9 +595,7 @@ void EnergonField::forEachBlobNear(float x, float z, float radius,
 
 void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
                                  float cellSize, int liveOrganismCount) {
-  if (sunIntensity <= 0.0f) {
-    return;
-  }
+  lastSunfallStats_ = {};
 
   const int res = world.heightmap().resolution;
   const float half = static_cast<float>(res - 1) * cellSize * 0.5f;
@@ -583,17 +603,39 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
     return;
   }
 
+  const int rainPopulation =
+      effectiveRainPopulation(liveOrganismCount, config_.rainPopulationBaseline);
+  const int wetEdibleBytes = computeEnergonStats(*this).wetEdibleBytes;
+  const float rainSun =
+      effectiveRainSunIntensity(sunIntensity, wetEdibleBytes, rainPopulation);
+  lastSunfallStats_.effectiveSunIntensity = rainSun;
+  lastSunfallStats_.nightFamineRain = sunIntensity <= 0.0f && rainSun > 0.0f;
+  if (rainSun <= 0.0f) {
+    return;
+  }
+
   std::mt19937_64 rng(mixSeed(seed_, world.tickCount() * 1315423911ULL + blobs_.size() ^
                                          kChaosSaltEnergonSunfall));
 
   float expected = 0.0f;
-  const float ambientFloor = config_.spawnRateMax * sunIntensity;
-  if (config_.populationScaledRain && liveOrganismCount > 0) {
-    expected = expectedSunfallBlobsPerTick(liveOrganismCount, sunIntensity);
+  const float ambientFloor = config_.spawnRateMax * rainSun;
+  if (config_.populationScaledRain && rainPopulation > 0) {
+    expected = expectedSunfallBlobsPerTick(rainPopulation, rainSun);
     expected = std::max(expected, ambientFloor);
   } else {
     expected = ambientFloor;
   }
+
+  const float fullness = energonRainGateFullness(
+      wetEdibleBytes, static_cast<int>(blobs_.size()), config_.maxBlobs, rainPopulation);
+  const float spawnProbability = energonSunfallSpawnProbability(fullness);
+  const float nominalExpected = expected;
+  expected *= spawnProbability;
+
+  lastSunfallStats_.fieldFullness = fullness;
+  lastSunfallStats_.spawnProbability = spawnProbability;
+  lastSunfallStats_.nominalExpected = nominalExpected;
+  lastSunfallStats_.adjustedExpected = expected;
 
   int spawnCount = static_cast<int>(expected);
   std::bernoulli_distribution frac(expected - static_cast<float>(spawnCount));
@@ -610,6 +652,7 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
 
   spawnCount = std::min(spawnCount, config_.maxBlobs - static_cast<int>(blobs_.size()));
   if (spawnCount <= 0) {
+    lastSunfallStats_.spawnedBlobs = 0;
     return;
   }
 
@@ -633,6 +676,8 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
     blob.onWet = false;
     blobs_.push_back(blob);
   }
+  lastSunfallStats_.spawnedBlobs = spawnCount;
+  cumulativeSunfallSpawns_ += static_cast<std::uint64_t>(spawnCount);
 }
 
 void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float cellSize,
@@ -675,17 +720,22 @@ void EnergonField::updateBlob(EnergonBlob& blob, const BarrenWorld& world, float
       blob.tailZ += dz;
     }
 
-    const float decayPerTick =
-        (column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds) * 60.0f;
+    float ttlSeconds = column.wet ? config_.ttlWetSeconds : config_.ttlDrySeconds;
+    if (!column.wet) {
+      ttlSeconds /= kEnergonDryDecayMultiplier;
+    }
+    const float decayPerTick = ttlSeconds * 60.0f;
     if (blob.cornucopia) {
       blob.ttl = energonWetTtlSeconds(blob, config_);
     } else {
       const float originScale = energonWetTtlScaleForBlob(blob);
       int entropySteps = std::max(1, static_cast<int>(std::lround(1.0f / originScale)));
       if (!column.wet) {
-        entropySteps = std::max(1, entropySteps / 2);
+        entropySteps = std::max(
+            1, static_cast<int>(std::lround(static_cast<float>(entropySteps) *
+                                            kEnergonDryDecayMultiplier)));
       }
-      if (blob.origin == EnergonOrigin::Sunfall &&
+      if (blob.origin == EnergonOrigin::Sunfall && column.wet &&
           (world.tickCount() + blob.id) % static_cast<std::uint32_t>(kSunfallEntropyPeriodTicks) !=
               0) {
         entropySteps = 0;

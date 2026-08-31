@@ -37,6 +37,11 @@ void tickCoordinatorPhase(Organism& organism, std::uint64_t simTick);
 float coordinatorDutyScaleForNode(const Organism& organism, std::uint32_t nodeId);
 
 // full C organ gain × mini-C duty (clamped to organ minimum dispatch).
-float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale);
+float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale,
+                                   float hubConservationExportScale = 1.0f);
+
+float computeOrganismFamineUnit(const Organism& organism, std::uint64_t simTick);
+
+float coordinatorMinDutyForNeuron(NeuronType neuron);
 
 }  // namespace evolab

@@ -815,6 +815,10 @@ void syncOrganismPerceptMirror(Organism& organism, const SkeletonNode& perceptor
 
   organism.lastPerceptConfidence = perceptor.perceptConfidence;
 
+  organism.lastPerceptDiurnalConfidence = perceptor.perceptDiurnalConfidence;
+
+  organism.lastPerceptSunIntensity = perceptor.perceptSunIntensity;
+
   organism.lastPerceptFocusKind = perceptor.focusKind;
 
   organism.lastPerceptBearing = perceptor.focusBearing;
@@ -825,11 +829,111 @@ void syncOrganismPerceptMirror(Organism& organism, const SkeletonNode& perceptor
 
 
 
-void emitPerceptSignals(Organism& organism, std::uint32_t perceptorId, std::uint8_t confidence,
+void emitPerceptorOutboundSignals(Organism& organism, std::uint32_t perceptorId,
 
-                        std::uint64_t simTick) {
+                                  SkeletonNode& perceptor, std::uint64_t simTick) {
 
-  emitOutboundConfidence(organism, perceptorId, confidence, simTick);
+  static constexpr NeuronType kAllowedDst[] = {NeuronType::Mouth, NeuronType::Actuator,
+
+                                               NeuronType::Computer};
+
+  for (NeuralAxon& axon : organism.neuralAxons) {
+
+    if (axon.srcNodeId != perceptorId) {
+
+      continue;
+
+    }
+
+    const SkeletonNode* dst = organism.findNode(axon.dstNodeId);
+
+    if (dst == nullptr || !dst->alive || axon.uncappedNodeId == axon.dstNodeId ||
+
+        axon.uncappedNodeId == axon.srcNodeId) {
+
+      continue;
+
+    }
+
+    bool allowed = false;
+
+    for (NeuronType allowedDst : kAllowedDst) {
+
+      if (dst->neuron == allowedDst) {
+
+        allowed = true;
+
+        break;
+
+      }
+
+    }
+
+    if (!allowed) {
+
+      continue;
+
+    }
+
+    const std::uint8_t confidence =
+
+        perceptorOutboundConfidenceForDst(perceptor, dst->neuron);
+
+    if (!isNeuronConfidenceByte(confidence)) {
+
+      continue;
+
+    }
+
+    writeAxonConfidence(axon, confidence, simTick);
+
+    perceptor.lastEmittedByte = confidence;
+
+  }
+
+}
+
+
+
+bool emitTorporDiurnalOnly(Organism& organism, SkeletonNode& perceptor, float sunIntensity,
+
+                           std::uint64_t simTick, std::mt19937& rng) {
+
+  if (!organism.isCampNom() ||
+
+      organism.famineUnit < kCoordinatorDeepTorporFamineThreshold) {
+
+    return false;
+
+  }
+
+  const float depth =
+
+      clamp01((organism.famineUnit - kCoordinatorDeepTorporFamineThreshold) /
+
+              (1.0f - kCoordinatorDeepTorporFamineThreshold));
+
+  const float skipProb = depth * kTorporScanSkipMaxProbability;
+
+  if (!chaosBernoulli(skipProb, rng)) {
+
+    return false;
+
+  }
+
+  perceptor.perceptDiurnalConfidence = diurnalLightConfidence(sunIntensity);
+
+  perceptor.perceptSunIntensity = sunIntensity;
+
+  organism.lastPerceptScanPaid = false;
+
+  organism.lastPerceptBytesPaid = 0;
+
+  syncOrganismPerceptMirror(organism, perceptor);
+
+  emitPerceptorOutboundSignals(organism, perceptor.id, perceptor, simTick);
+
+  return true;
 
 }
 
@@ -855,6 +959,22 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
+  std::mt19937 rng =
+
+      chaosSpawnRng(simTick, static_cast<std::uint64_t>(organism.id) ^
+
+                                (static_cast<std::uint64_t>(perceptor.id) << 16) ^ kChaosSaltNom);
+
+
+
+  if (emitTorporDiurnalOnly(organism, perceptor, sunIntensity, simTick, rng)) {
+
+    return;
+
+  }
+
+
+
   if (perceptor.store.size() < kPerceptorScanCostPerTick) {
 
     return;
@@ -863,11 +983,9 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
-  std::mt19937 rng =
+  perceptor.perceptDiurnalConfidence = diurnalLightConfidence(sunIntensity);
 
-      chaosSpawnRng(simTick, static_cast<std::uint64_t>(organism.id) ^
-
-                                (static_cast<std::uint64_t>(perceptor.id) << 16) ^ kChaosSaltNom);
+  perceptor.perceptSunIntensity = sunIntensity;
 
 
 
@@ -960,7 +1078,7 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
   syncOrganismPerceptMirror(organism, perceptor);
 
-  emitPerceptSignals(organism, perceptor.id, confidence, simTick);
+  emitPerceptorOutboundSignals(organism, perceptor.id, perceptor, simTick);
 
   bool hadFoodCandidate = false;
   for (const PerceptCandidate& candidate : candidates) {
@@ -1000,6 +1118,10 @@ void runPerceptorPhase(Organism& organism, const BarrenWorld& world, const Energ
 
 
   organism.lastPerceptConfidence = 0;
+
+  organism.lastPerceptDiurnalConfidence = 0;
+
+  organism.lastPerceptSunIntensity = 0.0f;
 
   organism.lastPerceptFocusKind = PerceptFocusKind::None;
 

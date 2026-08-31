@@ -50,7 +50,7 @@ Keep **≤ 16 colours per atlas** for consistency and small PNG size.
 | Atlas layout | Horizontal strip or power-of-two sheet |
 | Neuron billboard diameter | **8 px** (`kNeuronDiameterPx`) |
 | Mouth sprite diameter | **8 px** (`kMouthSpriteDiameterPx`) — same scale as neuron |
-| Mouth **sticky** adhesion (sim) | Anchor discovery within `kMouthStickyRadiusFactor` (0.75× cellSize). Co-advect at bite contact while approaching; while chewing, tether to `kMouthChewCoAdvectRadiusFactor` (3.5) for tide/feedbag. Taste stays long-range. |
+| Mouth **sticky** adhesion (sim) | Anchor discovery, prune, and chew co-advect all use `kMouthStickyRadiusFactor` (0.75× cellSize). Co-advect while approaching uses bite contact; while chewing, tether stays within sticky radius. Taste homing drives locomotion only — it does not widen the vacuum. |
 | Pivot | Center of frame (billboard anchor at node world position) |
 
 **Screen ↔ world:** `OrganismDrawer` sets `halfSizeWorld = (diameterPx × 0.5) × worldPerPx`. Sticky radius is tuned in sim constants so adhesion matches the **mouth sprite footprint**, not the taste horizon.

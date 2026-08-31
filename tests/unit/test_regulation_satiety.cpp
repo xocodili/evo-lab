@@ -2,12 +2,15 @@
 #include "sim/CellConstants.hpp"
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
+#include "sim/EnergonConveyance.hpp"
 #include "sim/EnergonString.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronFuel.hpp"
+#include "sim/NeuronCoordinator.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/Organism.hpp"
+#include "sim/OrganismComputer.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -105,13 +108,26 @@ void tickCampNomFull(evolab::Organism& organism, evolab::BarrenWorld& world,
     ensureAbundantFoodAtMouth(energon, *mouth, cellSize);
   }
   organism.feed(energon, cellSize, world.tickCount());
-  organism.runDigestAndComputer(energon, world.tickCount());
+  for (evolab::SkeletonNode& node : organism.nodes) {
+    if (node.alive && node.neuron == evolab::NeuronType::Mouth) {
+      evolab::tickMouthChewMetabolism(node, node.ateThisTick);
+    }
+  }
+  evolab::digestMouthToComputer(organism);
+  evolab::conveyMouthDownstream(organism, energon, world.tickCount());
   const evolab::OrganismTickContext ctx{world,     energon,     cellSize,
                                         heightScale, halfExtent, world.tickCount()};
   evolab::runOrganismPreAdvectHooks(organism, ctx);
+  evolab::tickCoordinatorPhase(organism, world.tickCount());
+  evolab::tickComputerPhase(organism, energon, world.tickCount());
   organism.advectRoot(world, energon, cellSize, heightScale, halfExtent);
   organism.metabolise(world, cellSize, heightScale);
   organism.tickNeuronViability(energon);
+  for (evolab::SkeletonNode& node : organism.nodes) {
+    if (node.alive && node.neuron == evolab::NeuronType::Mouth) {
+      evolab::reconcileMouthChewFill(node);
+    }
+  }
   energon.purgeDepletedBlobs();
   organism.transferEnergy(energon, cellSize, world.tickCount());
   organism.signal(energon, world.tickCount());
@@ -405,7 +421,6 @@ TEST_CASE("upper bound satiety: abundant food regulates crawl and expels hub sig
   constexpr int kTotalTicks = kWarmupTicks + kMeasureTicks;
 
   SatietyWindowMetrics window;
-  int signalBeforeMeasure = 0;
   int fragmentBeforeMeasure = 0;
   int feedSuppressedWithFood = 0;
   int foodContactTicks = 0;
@@ -418,7 +433,6 @@ TEST_CASE("upper bound satiety: abundant food regulates crawl and expels hub sig
                     evolab::kTerrainHeightScale, 1.0f, mouth);
 
     if (tick == kWarmupTicks) {
-      signalBeforeMeasure = countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca);
       fragmentBeforeMeasure = countFieldOrigin(energon, evolab::EnergonOrigin::Fragment);
     }
 
@@ -439,11 +453,12 @@ TEST_CASE("upper bound satiety: abundant food regulates crawl and expels hub sig
       if (organism.lastActuatorInhibited) {
         ++window.actuatorInhibited;
       }
+      if (organism.lastHubSignalExpelledThisTick) {
+        ++window.signalExpulsions;
+      }
     }
   }
 
-  window.signalExpulsions =
-      countFieldOrigin(energon, evolab::EnergonOrigin::Cloaca) - signalBeforeMeasure;
   window.fragmentExpulsions =
       countFieldOrigin(energon, evolab::EnergonOrigin::Fragment) - fragmentBeforeMeasure;
 
@@ -485,6 +500,9 @@ TEST_CASE("satiety ramp: continuous feeding increases hub toward expulsion thres
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
   REQUIRE(mouth != nullptr);
+  evolab::SkeletonNode* computer = organism.findNode(evolab::kCampRootNodeId);
+  REQUIRE(computer != nullptr);
+  computer->store.assign(evolab::kComputerHubReserveBytes, 0);
 
   const std::size_t hubStart = organism.computerHubFuelBytes();
   constexpr int kRampTicks = 4000;

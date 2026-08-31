@@ -3,10 +3,14 @@
 #include "sim/CellConstants.hpp"
 #include "sim/NeuronCoordinator.hpp"
 #include "sim/NeuronFuel.hpp"
+#include "sim/NeuronSignal.hpp"
 #include "sim/Organism.hpp"
+#include "sim/OrganismActuator.hpp"
 #include "sim/OrganismComputer.hpp"
+#include "sim/OrganismNeuron.hpp"
 #include "sim/WorldConstants.hpp"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 TEST_CASE("stem cell coordinator throttles duty when hub replete", "[coordinator][stemcell]") {
@@ -36,7 +40,7 @@ TEST_CASE("camp nom coordinator runs on every neuron node", "[coordinator][camp]
       continue;
     }
     ++liveNodes;
-    REQUIRE(node.coordinatorDutyScale >= evolab::kCoordinatorMinDutyScale);
+    REQUIRE(node.coordinatorDutyScale >= evolab::coordinatorMinDutyForNeuron(node.neuron));
     REQUIRE(node.coordinatorDutyScale <= evolab::kCoordinatorMaxDutyScale);
   }
   REQUIRE(liveNodes == 4);
@@ -82,4 +86,70 @@ TEST_CASE("symmetric mouth taste marks ambiguity for tumble bias", "[coordinator
       avgVectorMagSq <= evolab::kMouthTasteSymmetryVectorEpsilonSq &&
       std::abs(temporalDelta) <= evolab::kOrganismCampReflexMinValence;
   REQUIRE(symmetricAmbiguity);
+}
+
+TEST_CASE("famine stress lowers duty when hub empty and field barren", "[coordinator][famine][regulation]") {
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
+                                  evolab::kWorldCellSize);
+  evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  REQUIRE(computer != nullptr);
+  computer->store.clear();
+
+  for (evolab::SkeletonNode& node : camper.nodes) {
+    if (node.neuron == evolab::NeuronType::Mouth) {
+      node.mouthTasteSalience = 0.0f;
+      node.mouthTasteGradient = 0.0f;
+    }
+    if (node.neuron == evolab::NeuronType::Perceptor) {
+      node.focusKind = evolab::PerceptFocusKind::None;
+      node.focusLocked = false;
+      node.focusSalience = 0.0f;
+      node.perceptPriorFoodSalienceValid = false;
+    }
+  }
+
+  evolab::tickCoordinatorPhase(camper, 10);
+  REQUIRE(camper.famineUnit > 0.35f);
+
+  const evolab::SkeletonNode* actuator =
+      evolab::findFirstNeuronNode(camper, evolab::NeuronType::Actuator, true);
+  REQUIRE(actuator != nullptr);
+  REQUIRE(actuator->coordinatorDutyScale < 0.65f);
+  REQUIRE(actuator->coordinatorDutyScale >= evolab::kCoordinatorMinDutyActuator);
+}
+
+TEST_CASE("feast suppresses famine when hub and field food are abundant", "[coordinator][famine]") {
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  evolab::assignComputerHubFuel(camper, evolab::kComputerHubStoreMaxBytes, 1);
+  for (evolab::SkeletonNode& node : camper.nodes) {
+    if (node.neuron == evolab::NeuronType::Mouth) {
+      node.mouthTasteSalience = 0.85f;
+    }
+  }
+
+  evolab::tickCoordinatorPhase(camper, 11);
+  REQUIRE(camper.famineUnit == Catch::Approx(0.0f));
+}
+
+TEST_CASE("computer outbound reflects famine abundance", "[coordinator][famine]") {
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  const evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  REQUIRE(computer != nullptr);
+  camper.famineUnit = 0.9f;
+  camper.famineConfidence = evolab::famineAbundanceConfidence(camper.famineUnit);
+
+  const std::uint8_t outbound =
+      evolab::encodeNeuronOutboundConfidence(camper, evolab::NeuronType::Computer, *computer);
+  REQUIRE(static_cast<int>(outbound) <= 1);
+}
+
+TEST_CASE("actuator motor intent scales with coordinator duty", "[coordinator][famine]") {
+  evolab::ActuatorInteroception interoception;
+  const evolab::MotorIntent fullDuty = evolab::computeCampMotorIntent(interoception, 8, 1.0f);
+  const evolab::MotorIntent torpor = evolab::computeCampMotorIntent(interoception, 8, 0.15f);
+  REQUIRE(torpor.strokeBytes <= fullDuty.strokeBytes);
+  REQUIRE(torpor.tumbleRateScale <= fullDuty.tumbleRateScale);
 }

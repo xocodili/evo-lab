@@ -51,9 +51,10 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
                                                   std::uint64_t simTick);
 
 MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
-                                  std::uint32_t actuatorFuelBytes);
+                                  std::uint32_t actuatorFuelBytes,
+                                  float coordinatorDutyScale = 1.0f);
 
-// Energon anchors locomotion: P food/threat lock or directional M taste suppress tumble.
+// P food/threat focus lock suppresses tumble; M taste steers via latch but does not anchor.
 bool campLocomotionAnchored(const ActuatorInteroception& interoception);
 
 void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,

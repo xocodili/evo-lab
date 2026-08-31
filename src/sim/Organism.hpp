@@ -82,6 +82,12 @@ struct SkeletonNode {
   bool mouthTastePriorValid = false;
   // True when weighted taste vectors cancel (equidistant food ring — Berg / choice bias analogue).
   bool mouthTasteSymmetricAmbiguity = false;
+  // Fixated coarse-grid sniff target (steer toward latch; P lock handles exploitation).
+  bool mouthTasteLatchValid = false;
+  float mouthTasteLatchWorldX = 0.0f;
+  float mouthTasteLatchWorldZ = 0.0f;
+  float mouthTasteLatchPeakBytes = 0.0f;
+  std::uint64_t mouthTasteLatchTick = 0;
 
   std::uint8_t lastEmittedByte = 0;
 
@@ -93,12 +99,20 @@ struct SkeletonNode {
   float focusSalience = 0.0f;
   bool focusLocked = false;
   std::uint8_t perceptConfidence = 0;
+  // Ambient photoreception sample (0–7); outbound on P→M/C axons each paid scan.
+  std::uint8_t perceptDiurnalConfidence = 0;
+  float perceptSunIntensity = 0.0f;
   // Prior paid-scan best food Go/NoGo score (temporal chemotaxis gradient).
   float perceptPriorFoodSalience = 0.0f;
   bool perceptPriorFoodSalienceValid = false;
 
   // Consecutive ticks basal cost could not be paid from this neuron's fuel pool.
   std::uint16_t basalArrearsTicks = 0;
+
+  // Prior-tick store bytes for Black Queen equilibrium (stop sharing while draining).
+  std::size_t storeBytesPriorTick = 0;
+  // Last computed export scale for this node (0 = retain, 1 = full surplus dispatch).
+  float equilibriumExportScale = 0.0f;
 
   // Computer (C) node: pattern template + per-tick match/dispatch (valid when neuron == Computer).
   std::array<std::uint8_t, kComputerRegisterBytes> computerRegister{};
@@ -184,6 +198,8 @@ public:
   // Heritable mitochondrial wallet nominal caps (± jitter at spawn / reproduction).
   float peripheralStoreCapFactor = kDefaultPeripheralStoreCapFactor;
   float hubStoreCapFactor = kDefaultHubStoreCapFactor;
+  // Heritable Black Queen export threshold (fill unit above which surplus may leave the node).
+  float equilibriumExportStartUnit = kStemEquilibriumExportStartUnit;
 
   // Heritable cloaca palette tiers (cool distress, mid baseline, warm mate; jittered at spawn).
   std::uint8_t cloacaDistressByte = kEnergonPaletteDistress;
@@ -236,6 +252,8 @@ public:
 
   // Proprioception (P neuron): mirror of primary perceptor focus (inspector / debug).
   std::uint8_t lastPerceptConfidence = 0;
+  std::uint8_t lastPerceptDiurnalConfidence = 0;
+  float lastPerceptSunIntensity = 0.0f;
   PerceptFocusKind lastPerceptFocusKind = PerceptFocusKind::None;
   float lastPerceptBearing = 0.0f;
   float lastPerceptRange = 0.0f;
@@ -249,6 +267,12 @@ public:
   float coordinatorDutyScale = 1.0f;
   float coordinatorMinNodeDuty = 1.0f;
   float coordinatorMaxNodeDuty = 1.0f;
+  // Organism-level feast/famine stress (0 = feast/abundance, 1 = famine/torpor).
+  float famineUnit = 0.0f;
+  std::uint8_t famineConfidence = kNeuronConfidenceNeutral;
+  // Prior-tick C hub bytes for equilibrium export gating (Black Queen homeostasis).
+  std::size_t hubBytesPriorTick = 0;
+  float hubConservationExportScale = 0.0f;
   bool lastHubSignalExpelledThisTick = false;
   CloacaBand lastCloacaBandExpelled = CloacaBand::None;
   std::uint32_t computerNodeId = 0;

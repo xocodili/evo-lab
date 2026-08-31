@@ -129,6 +129,9 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
       clampWalletCapFactor(chaosJitterFloat(parent.peripheralStoreCapFactor, rng));
   organism.hubStoreCapFactor =
       clampWalletCapFactor(chaosJitterFloat(parent.hubStoreCapFactor, rng));
+  organism.equilibriumExportStartUnit =
+      std::clamp(chaosJitterFloat(parent.equilibriumExportStartUnit, rng),
+                 kStemEquilibriumExportStartMin, kStemEquilibriumExportStartMax);
   organism.cloacaDistressByte = parent.cloacaDistressByte;
   organism.cloacaBaselineByte = parent.cloacaBaselineByte;
   organism.cloacaMateByte = parent.cloacaMateByte;

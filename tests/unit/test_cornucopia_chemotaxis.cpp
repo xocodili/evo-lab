@@ -506,7 +506,7 @@ CornucopiaNurserySite setupCornucopiaNursery(evolab::BarrenWorld& world,
                                                std::optional<float> spawnHeading = std::nullopt) {
   CornucopiaNurserySite site;
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
-  const float cornucopiaDistance = evolab::kWorldCellSize * 2.5f;
+  const float cornucopiaDistance = evolab::kWorldCellSize * 1.8f;
   const float minDepth = minChemotaxisDepth(evolab::kWorldCellSize);
   REQUIRE(findDeepWetChemotaxisSite(world, evolab::kWorldCellSize, foodBearing, senseRadius,
                                     cornucopiaDistance, minDepth, site.wetX, site.wetZ));

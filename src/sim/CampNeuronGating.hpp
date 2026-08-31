@@ -1,7 +1,9 @@
 #pragma once
 
 #include "sim/CellConstants.hpp"
+#include "sim/NeuronFuel.hpp"
 #include "sim/NeuronSignal.hpp"
+#include "sim/Organism.hpp"
 #include "sim/OrganismNeuron.hpp"
 
 namespace evolab {

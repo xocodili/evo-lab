@@ -93,6 +93,48 @@ TEST_CASE("population scaled sunfall increases with live organism count", "[ener
   REQUIRE(fullPopCount > emptyPopCount + 50);
 }
 
+TEST_CASE("effective rain sun keeps night trickle when field is starved", "[energon]") {
+  constexpr int kLive = 60;
+  const float quota = evolab::rainCycleFieldBytesForPopulation(kLive);
+  REQUIRE(quota > 0.0f);
+  const int starvedBytes = static_cast<int>(quota * evolab::kEnergonSpawnProbLowFullness * 0.5f);
+  REQUIRE(evolab::effectiveRainSunIntensity(1.0f, starvedBytes, kLive) ==
+          Catch::Approx(1.0f));
+  REQUIRE(evolab::effectiveRainSunIntensity(0.0f, starvedBytes, kLive) ==
+          Catch::Approx(evolab::kEnergonNightFamineRainSun));
+  const int fedBytes = static_cast<int>(quota * 0.5f);
+  REQUIRE(evolab::effectiveRainSunIntensity(0.0f, fedBytes, kLive) == Catch::Approx(0.0f));
+}
+
+TEST_CASE("rain population baseline floors budget after attrition", "[energon]") {
+  REQUIRE(evolab::effectiveRainPopulation(24, 60) == 60);
+  REQUIRE(evolab::effectiveRainPopulation(80, 60) == 80);
+  REQUIRE(evolab::expectedSunfallBlobsPerTick(evolab::effectiveRainPopulation(24, 60), 1.0f) ==
+          Catch::Approx(evolab::expectedSunfallBlobsPerTick(60, 1.0f)));
+
+  evolab::BarrenWorld world(42, 64);
+  evolab::EnergonConfig floored;
+  floored.populationScaledRain = true;
+  floored.spawnRateMax = 0.0f;
+  floored.maxBlobs = 8000;
+  floored.rainPopulationBaseline = 60;
+  evolab::EnergonField flooredField(42, floored);
+
+  evolab::EnergonConfig attrition;
+  attrition.populationScaledRain = true;
+  attrition.spawnRateMax = 0.0f;
+  attrition.maxBlobs = 8000;
+  evolab::EnergonField attritionField(43, attrition);
+
+  for (int i = 0; i < 400; ++i) {
+    world.tick();
+    flooredField.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 24);
+    attritionField.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 24);
+  }
+
+  REQUIRE(flooredField.activeCount() > attritionField.activeCount() + 50);
+}
+
 TEST_CASE("dry land energon decays faster than wet", "[energon]") {
   evolab::BarrenWorld world(7, 32);
   evolab::EnergonConfig config;
@@ -101,22 +143,50 @@ TEST_CASE("dry land energon decays faster than wet", "[energon]") {
   config.ttlDrySeconds = 4.0f;
   evolab::EnergonField field(7, config);
 
+  float wetX = 0.0f;
+  float wetZ = 0.0f;
+  float dryX = 0.0f;
+  float dryZ = 0.0f;
+  const float half = static_cast<float>(world.heightmap().resolution - 1) * evolab::kWorldCellSize * 0.5f;
+  bool foundWet = false;
+  bool foundDry = false;
+  for (float x = -half; x <= half && (!foundWet || !foundDry); x += evolab::kWorldCellSize * 0.5f) {
+    for (float z = -half; z <= half; ++z) {
+      if (!foundWet && world.isWetWorld(x, z, evolab::kWorldCellSize)) {
+        wetX = x;
+        wetZ = z;
+        foundWet = true;
+      }
+      if (!foundDry && !world.isWetWorld(x, z, evolab::kWorldCellSize)) {
+        dryX = x;
+        dryZ = z;
+        foundDry = true;
+      }
+    }
+  }
+  REQUIRE(foundWet);
+  REQUIRE(foundDry);
+
   evolab::EnergonBlob dryBlob;
   dryBlob.id = 1;
   dryBlob.data = 0xFFFFFF;
   dryBlob.remaining = 3;
   dryBlob.initialBytes = 3;
-  dryBlob.x = 0.0f;
-  dryBlob.z = 0.0f;
+  dryBlob.x = dryX;
+  dryBlob.z = dryZ;
   dryBlob.y = 1.0f;
   dryBlob.grounded = true;
   dryBlob.onWet = false;
   dryBlob.ttl = config.ttlDrySeconds;
+  evolab::energonBlobInitPoint(dryBlob);
 
   evolab::EnergonBlob wetBlob = dryBlob;
   wetBlob.id = 2;
+  wetBlob.x = wetX;
+  wetBlob.z = wetZ;
   wetBlob.onWet = true;
   wetBlob.ttl = config.ttlWetSeconds;
+  evolab::energonBlobInitPoint(wetBlob);
 
   field.injectBlob(dryBlob);
   field.injectBlob(wetBlob);
@@ -128,15 +198,20 @@ TEST_CASE("dry land energon decays faster than wet", "[energon]") {
 
   float dryTtl = 0.0f;
   float wetTtl = 0.0f;
+  bool dryExists = false;
+  bool wetExists = false;
   for (const evolab::EnergonBlob& blob : field.blobs()) {
     if (blob.id == 1) {
+      dryExists = true;
       dryTtl = blob.ttl;
     } else if (blob.id == 2) {
+      wetExists = true;
       wetTtl = blob.ttl;
     }
   }
 
-  REQUIRE(dryTtl < wetTtl);
+  REQUIRE(wetExists);
+  REQUIRE((!dryExists || dryTtl < wetTtl));
 }
 
 TEST_CASE("injectBlob enforces maxBlobs for cloaca vents", "[energon]") {
@@ -205,6 +280,61 @@ TEST_CASE("sunfall evicts cloaca waste when field is at cap", "[energon]") {
   }
 
   REQUIRE(sunfallCount > 0);
+}
+
+TEST_CASE("cap eviction prefers dry grounded blobs over wet food", "[energon]") {
+  evolab::EnergonConfig config;
+  config.maxBlobs = 4;
+  evolab::EnergonField field(42, config);
+
+  auto injectSunfall = [&](std::uint32_t id, bool onWet) {
+    evolab::EnergonBlob blob;
+    blob.id = id;
+    blob.data = 0x80808080;
+    blob.remaining = 4;
+    blob.initialBytes = 4;
+    blob.origin = evolab::EnergonOrigin::Sunfall;
+    blob.x = static_cast<float>(id);
+    blob.z = 0.0f;
+    blob.y = 1.0f;
+    blob.grounded = true;
+    blob.onWet = onWet;
+    blob.ttl = 100.0f;
+    field.injectBlob(blob);
+  };
+
+  injectSunfall(1, false);
+  injectSunfall(2, false);
+  injectSunfall(3, true);
+  injectSunfall(4, true);
+  REQUIRE(field.activeCount() == 4);
+
+  injectSunfall(5, true);
+  REQUIRE(field.activeCount() == 4);
+
+  bool dryOnePresent = false;
+  bool dryTwoPresent = false;
+  bool wetFivePresent = false;
+  for (const evolab::EnergonBlob& blob : field.blobs()) {
+    if (blob.id == 1) {
+      dryOnePresent = true;
+    }
+    if (blob.id == 2) {
+      dryTwoPresent = true;
+    }
+    if (blob.id == 5) {
+      wetFivePresent = true;
+    }
+  }
+  REQUIRE(wetFivePresent);
+  REQUIRE((!dryOnePresent || !dryTwoPresent));
+  int dryCount = 0;
+  for (const evolab::EnergonBlob& blob : field.blobs()) {
+    if (blob.grounded && !blob.onWet) {
+      ++dryCount;
+    }
+  }
+  REQUIRE(dryCount == 1);
 }
 
 TEST_CASE("corpse release packs up to eight bytes per blob", "[energon]") {
@@ -403,6 +533,43 @@ TEST_CASE("mouth sticky zone anchors without long-range co-advect", "[energon][a
   const float distSqAfter = evolab::energonPointSegmentDistanceSq(
       mouth->worldX, mouth->worldZ, field.blobs().front(), t);
   REQUIRE(distSqAfter <= contactRadius * contactRadius * 1.25f);
+}
+
+TEST_CASE("mouth taste salience does not expand sticky discovery radius", "[energon][attach]") {
+  evolab::BarrenWorld world(3, 32);
+  evolab::EnergonConfig config;
+  config.spawnRateMax = 0.0f;
+  evolab::EnergonField field(1, config);
+
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+
+  mouth->mouthTasteSampleValid = true;
+  mouth->mouthTasteSalience = 1.0f;
+  camper.lastMouthTasteSalience = 1.0f;
+
+  const float stickyRadius = evolab::kWorldCellSize * evolab::kMouthStickyRadiusFactor;
+  const float beyondSticky = stickyRadius * 1.35f;
+  evolab::EnergonBlob blob;
+  blob.id = 14;
+  blob.initialBytes = 1;
+  blob.remaining = 1;
+  blob.data = 0x01;
+  blob.x = mouth->worldX + beyondSticky;
+  blob.z = mouth->worldZ;
+  blob.y = 1.0f;
+  blob.grounded = true;
+  blob.onWet = true;
+  blob.ttl = 40.0f;
+  evolab::energonBlobInitPoint(blob);
+  field.injectBlob(blob);
+
+  field.prepareSpatialQueries(evolab::kWorldCellSize, 64.0f, world);
+  field.applyMouthStickiness({camper}, evolab::kWorldCellSize);
+  REQUIRE(field.mouthAnchors().empty());
 }
 
 TEST_CASE("mouth sticky attaches to closest string only", "[energon][attach]") {

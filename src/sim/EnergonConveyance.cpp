@@ -8,6 +8,7 @@
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuronTrust.hpp"
 #include "sim/Organism.hpp"
+#include "sim/NeuronStem.hpp"
 #include "sim/OrganismNeuron.hpp"
 
 #include <algorithm>
@@ -240,8 +241,19 @@ int conveyAlongAxonFromHub(Organism& organism, NeuralAxon& axon, SkeletonNode& s
 }
 
 void conveyFromNode(Organism& organism, SkeletonNode& src, std::uint64_t simTick) {
-  const std::size_t surplus = neuronStoreSurplus(organism, src);
-  if (surplus == 0) {
+  const float exportScale = stemNodeEquilibriumExportScale(organism, src);
+  src.equilibriumExportScale = exportScale;
+  if (exportScale <= 1.0e-4f) {
+    return;
+  }
+
+  const std::size_t rawSurplus = neuronStoreSurplus(organism, src);
+  if (rawSurplus == 0) {
+    return;
+  }
+  const std::size_t scaledSurplus =
+      static_cast<std::size_t>(std::floor(static_cast<float>(rawSurplus) * exportScale));
+  if (scaledSurplus == 0) {
     return;
   }
 
@@ -259,11 +271,11 @@ void conveyFromNode(Organism& organism, SkeletonNode& src, std::uint64_t simTick
     return;
   }
 
-  int remaining = static_cast<int>(surplus);
+  int remaining = static_cast<int>(scaledSurplus);
   for (int i = 0; i < routeCount && remaining > 0; ++i) {
     OutboundRoute& route = routes[i];
     int share = static_cast<int>(
-        std::lround(static_cast<float>(surplus) * (route.weight / totalWeight)));
+        std::lround(static_cast<float>(scaledSurplus) * (route.weight / totalWeight)));
     if (i + 1 == routeCount) {
       share = remaining;
     }
@@ -282,9 +294,16 @@ void conveyFromMouthOperational(Organism& organism, SkeletonNode& mouth, std::ui
     return;
   }
 
+  const float exportScale = stemNodeEquilibriumExportScale(organism, mouth);
+  mouth.equilibriumExportScale = exportScale;
+  if (exportScale <= 1.0e-4f) {
+    return;
+  }
+
   const int available =
       static_cast<int>(mouth.store.size() - static_cast<std::size_t>(kMouthConveyReserveBytes));
   int budget = std::min(static_cast<int>(kMouthConveyanceMaxPerTick), available);
+  budget = static_cast<int>(std::floor(static_cast<float>(budget) * exportScale));
   if (budget <= 0) {
     return;
   }
@@ -396,7 +415,13 @@ void conveyMouthDownstream(Organism& organism, EnergonField& field, std::uint64_
 
 void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t simTick) {
   (void)field;
-  if (!organismUsesCampNeuronPhases(organism) || !organismHasConveySurplus(organism)) {
+  if (!organismUsesCampNeuronPhases(organism)) {
+    return;
+  }
+
+  refreshCampEquilibriumExportScales(organism);
+
+  if (!organismHasConveySurplus(organism)) {
     return;
   }
 

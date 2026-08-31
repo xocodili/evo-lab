@@ -6,6 +6,7 @@
 #include "sim/CampTopology.hpp"
 #include "sim/NeuronTick.hpp"
 #include "sim/NeuronCoordinator.hpp"
+#include "sim/NeuronStem.hpp"
 #include "sim/OrganismComputer.hpp"
 #include "sim/EnergonConveyance.hpp"
 #include "sim/NeuronSignal.hpp"
@@ -296,6 +297,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
       tickMouthChewMetabolism(node, node.ateThisTick);
     }
     digestMouthToComputer(organism);
+    refreshCampEquilibriumExportScales(organism);
     conveyMouthDownstream(organism, energon, world.tickCount());
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,
@@ -354,6 +356,18 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
   tickParthenogenesisPass(organisms_, world, cellSize, heightScale, world.tickCount(), nextId_);
   for (Organism& organism : organisms_) {
     organism.transferColony();
+  }
+
+  for (Organism& organism : organisms_) {
+    if (!organism.alive || !organism.isCampNom()) {
+      continue;
+    }
+    for (SkeletonNode& node : organism.nodes) {
+      if (node.alive && node.neuron != NeuronType::None) {
+        node.storeBytesPriorTick = node.store.size();
+      }
+    }
+    organism.hubBytesPriorTick = organism.computerHubFuelBytes();
   }
 
   organisms_.erase(std::remove_if(organisms_.begin(), organisms_.end(),

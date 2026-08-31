@@ -125,10 +125,6 @@ bool campLocomotionAnchored(const ActuatorInteroception& interoception) {
       interoception.flee > minValence) {
     return true;
   }
-  if (interoception.mouthTasteApproach > minValence &&
-      !interoception.mouthTasteSymmetricAmbiguity) {
-    return true;
-  }
   return false;
 }
 
@@ -151,8 +147,11 @@ void commitActuatorMouthInboundPrior(Organism& organism, const ActuatorInterocep
 }
 
 MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
-                                  std::uint32_t actuatorFuelBytes) {
+                                  std::uint32_t actuatorFuelBytes,
+                                  float coordinatorDutyScale) {
   MotorIntent intent;
+
+  const float duty = clamp01(coordinatorDutyScale);
 
   const float hubBrake = confidenceToUnit(kComputerSatiationConfidence);
   const float hubNoGo = campHubRepleteNoGo(interoception.hubSatiation);
@@ -173,6 +172,7 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
     intent.tumbleRateScale =
         clamp01(1.0f - interoception.approach * 0.65f + interoception.flee * 0.45f +
                 std::max(0.0f, interoception.mouthSignalDelta) * 0.2f);
+    intent.tumbleRateScale = clamp01(intent.tumbleRateScale * duty);
     if (interoception.mouthTasteSymmetricAmbiguity) {
       intent.tumbleRateScale =
           clamp01(intent.tumbleRateScale * kMouthTasteSymmetryTumbleBoost);
@@ -184,7 +184,7 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
   const float maxBytes = static_cast<float>(kActuatorStrokeCostPerTick);
   const float energyFactor =
       clamp01(static_cast<float>(actuatorFuelBytes) / std::max(maxBytes, 1.0f));
-  float crawlDrive = clamp01(intent.netDrive + gradientGo * hunger);
+  float crawlDrive = clamp01((intent.netDrive + gradientGo * hunger) * duty);
   if (interoception.mouthTasteApproach > kOrganismCampReflexMinValence) {
     crawlDrive = std::max(crawlDrive, hunger * std::max(interoception.mouthTasteApproach,
                                                         kActuatorBaselineCrawlDrive));

@@ -58,12 +58,19 @@ void consumeFuelBack(std::vector<std::uint8_t>& storage, std::size_t count) {
 bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
   std::vector<std::uint8_t>* pool = neuronFuelPool(organism, node);
   if (pool != nullptr && organism.isCampNom() && node.neuron != NeuronType::None &&
-      node.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f &&
       pool->size() >= kStemCellBasalCostPerTick) {
     std::mt19937 rng(static_cast<std::uint32_t>(node.id * 2654435761u ^
                                                 static_cast<std::uint32_t>(
                                                     organism.createdAtTick + node.basalArrearsTicks)));
-    if (!chaosBernoulli(node.coordinatorDutyScale, rng)) {
+    float payProb = 1.0f;
+    if (node.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f) {
+      payProb = std::min(payProb, clamp01(node.coordinatorDutyScale));
+    }
+    if (organism.famineUnit > kCoordinatorFamineBasalSkipThreshold) {
+      payProb = std::min(payProb,
+                         clamp01(1.0f - organism.famineUnit * kCoordinatorFamineBasalSkipGain));
+    }
+    if (payProb < 1.0f - 1.0e-4f && !chaosBernoulli(payProb, rng)) {
       return true;
     }
   }
@@ -73,6 +80,15 @@ bool tryPayNeuronBasalCost(Organism& organism, SkeletonNode& node) {
   if (pool->size() >= kStemCellBasalCostPerTick) {
     neuronConsumeBack(node, kStemCellBasalCostPerTick);
     return true;
+  }
+  if (organism.isCampNom() && node.neuron != NeuronType::Computer &&
+      node.neuron != NeuronType::None) {
+    const std::size_t hubBytes = computerHubFuelBytes(organism);
+    const std::size_t hubVitalFloor =
+        kComputerHubReserveBytes + kComputerHubConservationSlackBytes + kStemCellBasalCostPerTick;
+    if (hubBytes >= hubVitalFloor && hubStoreConsumeBack(organism, kStemCellBasalCostPerTick)) {
+      return true;
+    }
   }
   if (organism.feedbagOracle) {
     SkeletonNode* root = organism.findNode(organism.rootNodeId);
@@ -209,6 +225,134 @@ void emitCampActuatorSignals(Organism& organism, std::uint64_t simTick) {
   static constexpr NeuronType kAllowedDst[] = {NeuronType::Mouth, NeuronType::Perceptor};
   emitOutboundConfidence(organism, actuator->id, confidence, simTick, kAllowedDst,
                          std::size(kAllowedDst));
+}
+
+namespace {
+
+std::size_t stemNodeEquilibriumReserve(const SkeletonNode& node) {
+  if (node.neuron == NeuronType::Computer) {
+    return kComputerHubReserveBytes;
+  }
+  if (node.neuron == NeuronType::Mouth) {
+    return kMouthConveyReserveBytes;
+  }
+  return 0;
+}
+
+std::size_t stemNodeEquilibriumSlack(const SkeletonNode& node) {
+  if (node.neuron == NeuronType::Computer) {
+    return kComputerHubConservationSlackBytes;
+  }
+  return 0;
+}
+
+}  // namespace
+
+bool campMouthAteThisTick(const Organism& organism) {
+  for (const SkeletonNode& mouth : organism.nodes) {
+    if (mouth.alive && mouth.neuron == NeuronType::Mouth && mouth.ateThisTick) {
+      return true;
+    }
+  }
+  return false;
+}
+
+float stemEquilibriumExportScale(const StemEquilibriumParams& params) {
+  if (params.cap == 0) {
+    return 0.0f;
+  }
+  const float fillUnit =
+      clamp01(static_cast<float>(params.currentBytes) / static_cast<float>(params.cap));
+
+  if (params.currentBytes <= params.reserveBytes + params.slackBytes) {
+    return 0.0f;
+  }
+
+  if (params.priorBytes > 0 &&
+      params.currentBytes + params.drainToleranceBytes < params.priorBytes) {
+    return 0.0f;
+  }
+
+  const float reserveUnit =
+      clamp01(static_cast<float>(params.reserveBytes + params.slackBytes) /
+              static_cast<float>(params.cap));
+  const float knee = clamp01(params.exportStartUnit);
+  const float full = std::max(knee + 1.0e-4f, params.exportFullUnit);
+  const float minScale = kStemEquilibriumMinExportScale;
+
+  if (fillUnit <= knee) {
+    if (knee <= reserveUnit + 1.0e-4f) {
+      return minScale;
+    }
+    const float t = clamp01((fillUnit - reserveUnit) / (knee - reserveUnit));
+    return minScale + t * minScale;
+  }
+  if (fillUnit >= full) {
+    return 1.0f;
+  }
+  const float t = clamp01((fillUnit - knee) / (full - knee));
+  return minScale * 2.0f + t * (1.0f - minScale * 2.0f);
+}
+
+float stemHubDispatchExportScale(const StemEquilibriumParams& params) {
+  if (params.cap == 0) {
+    return 0.0f;
+  }
+
+  if (params.currentBytes <= params.reserveBytes + params.slackBytes) {
+    return 0.0f;
+  }
+
+  if (params.priorBytes > 0 &&
+      params.currentBytes + params.drainToleranceBytes < params.priorBytes) {
+    return 0.0f;
+  }
+
+  // Operational dispatch uses the same ramp as peripheral nodes (minimum floor below knee).
+  // Bite-tick hub silence is enforced in stemNodeEquilibriumExportScale for Computer nodes.
+  return stemEquilibriumExportScale(params);
+}
+
+float stemNodeEquilibriumExportScale(const Organism& organism, const SkeletonNode& node) {
+  if (!node.alive || node.neuron == NeuronType::None) {
+    return 0.0f;
+  }
+
+  StemEquilibriumParams params;
+  params.currentBytes = node.store.size();
+  params.priorBytes = node.storeBytesPriorTick;
+  params.cap = nodeStoreNominalCap(organism, node);
+  params.reserveBytes = stemNodeEquilibriumReserve(node);
+  params.slackBytes = stemNodeEquilibriumSlack(node);
+  params.drainToleranceBytes = kStemEquilibriumDrainToleranceBytes;
+  params.exportStartUnit = organism.equilibriumExportStartUnit;
+  params.exportFullUnit = confidenceToUnit(kComputerSatiationConfidence);
+
+  if (node.neuron == NeuronType::Computer) {
+    if (campMouthAteThisTick(organism)) {
+      return 0.0f;
+    }
+    return stemHubDispatchExportScale(params);
+  }
+
+  return stemEquilibriumExportScale(params);
+}
+
+void refreshCampEquilibriumExportScales(Organism& organism) {
+  if (!organismUsesCampNeuronPhases(organism)) {
+    return;
+  }
+
+  const SkeletonNode* hubComputer = findComputerHubNode(organism);
+  organism.hubConservationExportScale =
+      hubComputer != nullptr ? stemNodeEquilibriumExportScale(organism, *hubComputer) : 0.0f;
+
+  for (SkeletonNode& node : organism.nodes) {
+    if (!node.alive || node.neuron == NeuronType::None) {
+      continue;
+    }
+    node.equilibriumExportScale = stemNodeEquilibriumExportScale(organism, node);
+  }
 }
 
 }  // namespace evolab

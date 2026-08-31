@@ -21,6 +21,7 @@ void runLoggedSession(const std::string& logDirectory, int ticks, int debugInter
   evolab::DayCycle dayCycle(evolab::kVisualDayCyclePeriodTicks);
   evolab::EnergonConfig energonConfig;
   energonConfig.populationScaledRain = true;
+  energonConfig.rainPopulationBaseline = 60;
   energonConfig.maxBlobs = 4800;
   evolab::EnergonField energon(42, energonConfig);
   evolab::CellPopulation cells;

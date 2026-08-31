@@ -48,9 +48,11 @@ TEST_CASE("mouth operational conveyance routes bytes to actuator before hub dige
   mToA->etaEnergy = 1.0f;
   mToA->etaSignal = 1.0f;
 
-  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 6); ++i) {
+  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 14); ++i) {
     evolab::neuronStorePush(organism, *mouth, 1);
   }
+  mouth->storeBytesPriorTick = mouth->store.size();
+  organism.equilibriumExportStartUnit = 0.45f;
   actuator->store.clear();
 
   evolab::conveyMouthDownstream(organism, field, 1);
@@ -78,6 +80,8 @@ TEST_CASE("conveyance applies eta energy loss on axon hops", "[energon_conveyanc
   for (int i = 0; i < 40; ++i) {
     evolab::neuronStorePush(organism, *mouth, 1);
   }
+  mouth->storeBytesPriorTick = mouth->store.size();
+  organism.equilibriumExportStartUnit = 0.45f;
   actuator->store.clear();
 
   const std::size_t actuatorBefore = actuator->store.size();
@@ -105,6 +109,8 @@ TEST_CASE("returned axon bytes dissipate at mouth without field spam", "[energon
   for (int i = 0; i < 35; ++i) {
     evolab::neuronStorePush(organism, *perceptor, 2);
   }
+  perceptor->storeBytesPriorTick = perceptor->store.size();
+  organism.equilibriumExportStartUnit = 0.45f;
 
   const std::size_t mouthBefore = mouth->store.size();
   const int blobsBefore = field.activeCount();

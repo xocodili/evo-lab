@@ -106,8 +106,8 @@ TEST_CASE("actuator sprite manifest and image load from assets", "[engine][sprit
   REQUIRE(stroke->frames.size() == 4);
 }
 
-TEST_CASE("mouth taste radius is three times perceptor sense radius", "[camp][mouth]") {
-  REQUIRE(evolab::kMouthTasteRadiusFactor == evolab::kPerceptorSenseRadiusFactor * 3.0f);
-  REQUIRE(evolab::kMouthTasteRadiusFactor == 10.0f);
-  REQUIRE(evolab::kPerceptorSenseRadiusFactor == 10.0f / 3.0f);
+TEST_CASE("mouth taste radius is twice perceptor sense radius", "[camp][mouth]") {
+  REQUIRE(evolab::kMouthTasteRadiusFactor == evolab::kPerceptorSenseRadiusFactor * 2.0f);
+  REQUIRE(evolab::kMouthTasteRadiusFactor == 4.0f);
+  REQUIRE(evolab::kPerceptorSenseRadiusFactor == 2.0f);
 }

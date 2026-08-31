@@ -24,6 +24,11 @@ struct SimDiagnostics {
   bool paused = false;
   int energonCap = 0;
   EnergonStats energon{};
+  float rainGateFullness = 0.0f;
+  float rainSpawnProbability = 0.0f;
+  float rainEffectiveSun = 0.0f;
+  bool rainNightFamine = false;
+  int rainFoodQuotaBytes = 0;
   int liveCells = 0;
   int organisms = 0;
   int stemCells = 0;

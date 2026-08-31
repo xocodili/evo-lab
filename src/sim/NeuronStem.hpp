@@ -36,4 +36,23 @@ void emitCampPreAdvectSignals(Organism& organism, std::uint64_t simTick);
 
 void emitCampActuatorSignals(Organism& organism, std::uint64_t simTick);
 
+// Black Queen equilibrium (Morris et al. mBio 2012 analogue): retain fuel while store drains.
+struct StemEquilibriumParams {
+  std::size_t currentBytes = 0;
+  std::size_t priorBytes = 0;
+  std::size_t cap = 0;
+  std::size_t reserveBytes = 0;
+  std::size_t slackBytes = 0;
+  std::size_t drainToleranceBytes = kStemEquilibriumDrainToleranceBytes;
+  float exportStartUnit = kStemEquilibriumExportStartUnit;
+  float exportFullUnit = 1.0f;
+};
+
+float stemEquilibriumExportScale(const StemEquilibriumParams& params);
+float stemHubDispatchExportScale(const StemEquilibriumParams& params);
+float stemNodeEquilibriumExportScale(const Organism& organism, const SkeletonNode& node);
+void refreshCampEquilibriumExportScales(Organism& organism);
+
+bool campMouthAteThisTick(const Organism& organism);
+
 }  // namespace evolab

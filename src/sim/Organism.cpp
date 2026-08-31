@@ -325,6 +325,9 @@ void Organism::finalizeSpawn(std::mt19937& rng) {
   peripheralStoreCapFactor =
       clampWalletCapFactor(chaosJitterFloat(kDefaultPeripheralStoreCapFactor, rng));
   hubStoreCapFactor = clampWalletCapFactor(chaosJitterFloat(kDefaultHubStoreCapFactor, rng));
+  equilibriumExportStartUnit =
+      std::clamp(chaosJitterFloat(kStemEquilibriumExportStartUnit, rng),
+                 kStemEquilibriumExportStartMin, kStemEquilibriumExportStartMax);
   jitterCloacaPaletteBytes(*this, rng);
 
   for (SkeletonLink& link : links) {

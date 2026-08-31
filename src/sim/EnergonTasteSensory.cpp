@@ -40,7 +40,31 @@ bool energonBlobEligibleForMouthTaste(const EnergonBlob& blob) {
 }
 
 float mouthTasteGridByteWeight(const EnergonBlob& blob) {
-  return energonBlobEligibleForMouthTaste(blob) ? 1.0f : 0.0f;
+  if (!energonBlobEligibleForMouthTaste(blob)) {
+    return 0.0f;
+  }
+  if (blob.cornucopia) {
+    return kMouthTasteSunfallGridWeight;
+  }
+  switch (blob.origin) {
+    case EnergonOrigin::Sunfall:
+      return kMouthTasteSunfallGridWeight;
+    case EnergonOrigin::Fragment:
+      return kMouthTasteFragmentGridWeight;
+    case EnergonOrigin::Cloaca:
+      switch (cloacaBandFromBlob(blob)) {
+        case CloacaBand::Distress:
+          return kMouthTasteDistressCloacaGridWeight;
+        case CloacaBand::Baseline:
+          return kMouthTasteBaselineCloacaGridWeight;
+        default:
+          return 0.0f;
+      }
+    case EnergonOrigin::Waste:
+    case EnergonOrigin::Signal:
+      return 0.0f;
+  }
+  return 0.0f;
 }
 
 void EnergonTasteSensoryGrid::clear() {
@@ -74,7 +98,8 @@ void EnergonTasteSensoryGrid::rebuild(const std::vector<EnergonBlob>& blobs,
     const int lastIndex = std::max(0, static_cast<int>(blob.remaining) - 1);
 
     for (int byteIndex = 0; byteIndex < blob.remaining; ++byteIndex) {
-      const float information = energonInformationValue(energonByteAt(blob, byteIndex));
+      const float information =
+          energonInformationValue(energonByteAt(blob, byteIndex)) * mouthTasteGridByteWeight(blob);
       if (information <= 0.0f) {
         continue;
       }
@@ -184,6 +209,59 @@ EnergonTasteSensoryPeak EnergonTasteSensoryGrid::peakInRadius(float queryX, floa
   peak.worldZ = cellCenterZ(bestIz);
   peak.cellBytes = bestBytes;
   return peak;
+}
+
+float EnergonTasteSensoryGrid::cellBytesAtWorld(float worldX, float worldZ) const {
+  if (density_.empty()) {
+    return 0.0f;
+  }
+  return cellBytesAt(cellIndexX(worldX), cellIndexZ(worldZ));
+}
+
+float EnergonTasteSensoryGrid::resultantVectorMagSqInRadius(float queryX, float queryZ,
+                                                            float radius) const {
+  if (density_.empty() || radius <= 0.0f) {
+    return 0.0f;
+  }
+
+  const float radiusSq = radius * radius;
+  const int minIx = std::max(0, cellIndexX(queryX - radius));
+  const int maxIx = std::min(resolution_ - 1, cellIndexX(queryX + radius));
+  const int minIz = std::max(0, cellIndexZ(queryZ - radius));
+  const int maxIz = std::min(resolution_ - 1, cellIndexZ(queryZ + radius));
+
+  float sumX = 0.0f;
+  float sumZ = 0.0f;
+  float totalMass = 0.0f;
+
+  for (int iz = minIz; iz <= maxIz; ++iz) {
+    for (int ix = minIx; ix <= maxIx; ++ix) {
+      const float bytes = cellBytesAt(ix, iz);
+      if (bytes <= 0.0f) {
+        continue;
+      }
+      const float cx = cellCenterX(ix);
+      const float cz = cellCenterZ(iz);
+      if (!sampleReachable(cx, cz)) {
+        continue;
+      }
+      const float dx = cx - queryX;
+      const float dz = cz - queryZ;
+      if (dx * dx + dz * dz > radiusSq) {
+        continue;
+      }
+      sumX += bytes * dx;
+      sumZ += bytes * dz;
+      totalMass += bytes;
+    }
+  }
+
+  if (totalMass <= 1.0e-4f) {
+    return 0.0f;
+  }
+  const float normX = sumX / totalMass;
+  const float normZ = sumZ / totalMass;
+  return normX * normX + normZ * normZ;
 }
 
 }  // namespace evolab

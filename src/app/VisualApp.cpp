@@ -126,6 +126,7 @@ int runVisualApp(const CliArgs& args) {
   DayCycle dayCycle(kVisualDayCyclePeriodTicks);
   EnergonConfig energonConfig;
   energonConfig.populationScaledRain = true;
+  energonConfig.rainPopulationBaseline = config.nomCount;
   energonConfig.maxBlobs = std::max(4000, config.nomCount * 100);
   EnergonField energon(config.seed, energonConfig);
   CellPopulation cells;
@@ -386,6 +387,14 @@ int runVisualApp(const CliArgs& args) {
     diag.paused = pauseSim;
     diag.energonCap = energonConfig.maxBlobs;
     diag.energon = computeEnergonStats(energon);
+    const int rainPop =
+        effectiveRainPopulation(cells.liveCampNomCount(), energonConfig.rainPopulationBaseline);
+    diag.rainFoodQuotaBytes = static_cast<int>(rainCycleFieldBytesForPopulation(rainPop));
+    diag.rainGateFullness = energonRainGateFullness(
+        diag.energon.wetEdibleBytes, diag.energon.blobCount, energonConfig.maxBlobs, rainPop);
+    diag.rainSpawnProbability = energon.lastSunfallTickStats().spawnProbability;
+    diag.rainEffectiveSun = energon.lastSunfallTickStats().effectiveSunIntensity;
+    diag.rainNightFamine = energon.lastSunfallTickStats().nightFamineRain;
     diag.liveCells = cellStats.liveCells;
     diag.organisms = cellStats.organisms;
     diag.stemCells = cellStats.stemCells;

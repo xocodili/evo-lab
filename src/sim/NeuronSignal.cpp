@@ -186,6 +186,24 @@ std::uint8_t mouthOutboundConfidenceForDst(const SkeletonNode& mouth, NeuronType
   return mouthOutboundConfidence(mouth);
 }
 
+std::uint8_t diurnalLightConfidence(float sunIntensity) {
+  const float sun = std::clamp(sunIntensity, 0.0f, 1.0f);
+  return static_cast<std::uint8_t>(
+      std::lround(sun * static_cast<float>(kNeuronConfidenceMax)));
+}
+
+std::uint8_t perceptorOutboundConfidenceForDst(const SkeletonNode& perceptor, NeuronType dst) {
+  switch (dst) {
+    case NeuronType::Actuator:
+      return perceptor.perceptConfidence;
+    case NeuronType::Mouth:
+    case NeuronType::Computer:
+      return perceptor.perceptDiurnalConfidence;
+    default:
+      return perceptor.perceptConfidence;
+  }
+}
+
 std::uint8_t mouthEnergonDispatchConfidence(const Organism& organism, const SkeletonNode& mouth,
                                             NeuronType dst) {
   const std::size_t cap = peripheralStoreCapBytes(organism);
@@ -205,6 +223,11 @@ std::uint8_t hubFuelConfidence(std::size_t hubBytes, std::uint32_t fullBytes) {
   return fuelStoreToConfidence(hubBytes, fullBytes);
 }
 
+std::uint8_t famineAbundanceConfidence(float famineUnit) {
+  return static_cast<std::uint8_t>(std::lround(
+      std::clamp(1.0f - famineUnit, 0.0f, 1.0f) * static_cast<float>(kNeuronConfidenceMax)));
+}
+
 std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType type,
                                             const SkeletonNode& node) {
   switch (type) {
@@ -214,9 +237,12 @@ std::uint8_t encodeNeuronOutboundConfidence(const Organism& organism, NeuronType
       return node.perceptConfidence;
     case NeuronType::Actuator:
       return actuatorActivityConfidence(organism.lastStrokePaid, organism.lastStrokeBytesPaid);
-    case NeuronType::Computer:
-      return hubFuelConfidence(computerHubFuelBytes(organism),
-                               static_cast<std::uint32_t>(hubStoreCapBytes(organism)));
+    case NeuronType::Computer: {
+      const std::uint8_t hub = hubFuelConfidence(
+          computerHubFuelBytes(organism), static_cast<std::uint32_t>(hubStoreCapBytes(organism)));
+      const std::uint8_t abundance = famineAbundanceConfidence(organism.famineUnit);
+      return static_cast<std::uint8_t>(std::min(static_cast<int>(hub), static_cast<int>(abundance)));
+    }
     default:
       return kNeuronConfidenceNeutral;
   }

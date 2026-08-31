@@ -13,6 +13,11 @@ EnergonStats computeEnergonStats(const EnergonField& field) {
 
   for (const EnergonBlob& blob : field.blobs()) {
     stats.totalBytes += blob.remaining;
+    if (blob.grounded && blob.onWet && blob.remaining > 0) {
+      if (blob.origin == EnergonOrigin::Sunfall || blob.origin == EnergonOrigin::Fragment) {
+        stats.wetEdibleBytes += blob.remaining;
+      }
+    }
     if (!blob.grounded) {
       ++stats.falling;
     } else if (blob.onWet) {
