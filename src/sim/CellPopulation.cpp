@@ -297,7 +297,7 @@ void CellPopulation::tick(const BarrenWorld& world, EnergonField& energon, float
       tickMouthChewMetabolism(node, node.ateThisTick);
     }
     digestMouthToComputer(organism);
-    refreshCampEquilibriumExportScales(organism);
+    refreshStemSurplusExportScales(organism, StemSurplusRefreshPoint::PostDigest);
     conveyMouthDownstream(organism, energon, world.tickCount());
   }
   const OrganismTickContext tickCtx{world,     energon,     cellSize,

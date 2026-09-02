@@ -28,6 +28,8 @@ inline constexpr std::uint32_t kMouthChewDecayPerTick = 2u;
 // Mouth wallet kept local for basal + chew; remainder conveyed downstream each tick.
 inline constexpr std::uint32_t kMouthConveyReserveBytes = 8u;
 inline constexpr std::uint32_t kMouthConveyanceMaxPerTick = 12u;
+// C hub surplus dispatch per tick — one bite-worth so grazing can refill the hub.
+inline constexpr std::uint32_t kComputerHubDispatchMaxPerTick = kBiteNetYieldBytes;
 // Universal axon analog byte (all neuron types): 0–7 on the believe channel.
 // Semantics depend on source neuron — see NeuronSignal.hpp.
 inline constexpr std::uint8_t kNeuronConfidenceMax = 7u;
@@ -56,8 +58,9 @@ inline constexpr float kActuatorMotorIntentMinStroke = 0.08f;
 // Perceptor world-focus outbound uses the same encoding (0=avoid … 7=approach).
 inline constexpr std::uint8_t kPerceptorConfidenceMax = kNeuronConfidenceMax;
 inline constexpr std::uint8_t kPerceptorConfidenceNeutral = kNeuronConfidenceNeutral;
-// CAMP Nom skeleton: Y-star from computer hub — P forward, A/M on ±120° arms (flux cap).
+// CAMP Nom skeleton: legacy Y-star hub arms (dual-computer tests); gen-0 uses torpedo chain.
 inline constexpr float kCampNomArmSeparationRad = 2.094395102f;
+inline constexpr float kCampTorpedoForwardSegmentOffset = 0.0f;
 inline constexpr float kCampPerceptorBindAngle = 0.0f;
 inline constexpr float kCampActuatorBindAngle = -kCampNomArmSeparationRad;
 inline constexpr float kCampMouthBindAngle = kCampNomArmSeparationRad;

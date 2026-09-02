@@ -105,7 +105,7 @@ void tickNeuronViability(Organism& organism, EnergonField& field) {
         organism.nodes.size() > 1) {
       continue;
     }
-    if (!evolab::tryPayNeuronBasalCost(organism, node)) {
+    if (!evolab::tryPayStemBasalCost(organism, node)) {
       if (node.basalArrearsTicks < kNeuronBasalGraceTicks) {
         ++node.basalArrearsTicks;
       } else {
@@ -127,17 +127,7 @@ SkeletonNode* findActuatorNode(Organism& organism);
 void creditMouthStore(Organism& organism, SkeletonNode& node, EnergonField& field,
                       std::uint8_t byte, std::uint32_t units) {
   (void)field;
-  for (std::uint32_t i = 0; i < units; ++i) {
-    if (node.neuron == NeuronType::Mouth && organismUsesCampNeuronPhases(organism)) {
-      if (hubStoreAcceptanceRemaining(organism) > 0) {
-        hubStorePush(organism, byte);
-      } else if (node.store.size() < peripheralStoreCapBytes(organism)) {
-        neuronStorePush(organism, node, byte);
-      }
-      continue;
-    }
-    neuronStorePush(organism, node, byte);
-  }
+  evolab::creditStemFreshEnergon(organism, node, byte, units);
 }
 
 bool blobInRange(const EnergonBlob& blob, float wx, float wz, float radius) {
@@ -194,17 +184,6 @@ MouthContact findMouthContact(const EnergonField& field, float wx, float wz, flo
   return best;
 }
 
-bool tryPayMouthBiteCost(Organism& organism, SkeletonNode& node) {
-  if (node.store.size() >= kBiteCost) {
-    neuronConsumeBack(node, kBiteCost);
-    return true;
-  }
-  if (hubStoreConsumeBack(organism, kBiteCost)) {
-    return true;
-  }
-  return false;
-}
-
 void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float contactWx,
                    float contactWz, float radius, std::uint64_t simTick,
                    const FeedIntent* pmaFeedIntent) {
@@ -226,7 +205,7 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
   }
 
   if (contact.kind == MouthContactKind::EmptyString) {
-    if (!tryPayMouthBiteCost(organism, node)) {
+    if (!evolab::tryPayStemOperationalCost(organism, node, kBiteCost)) {
       killNeuron(organism, node, field);
     }
     return;
@@ -443,11 +422,29 @@ bool payActuatorStrokeCost(Organism& organism, std::uint32_t bytesRequested,
     if (motor == nullptr || !motor->alive) {
       return false;
     }
-    if (motor->store.size() < bytesRequested) {
+    const std::size_t walletAvail = motor->store.size();
+    const std::size_t hubAvail = computerHubFuelBytes(organism);
+    const std::size_t vitalFloor = stemHubVitalSpendFloorBytes();
+    const std::size_t hubSpendable =
+        hubAvail > vitalFloor ? hubAvail - vitalFloor : 0;
+    if (walletAvail + hubSpendable < bytesRequested) {
       return false;
     }
-    neuronConsumeBack(*motor, bytesRequested);
-    fromActuatorStore = bytesRequested;
+
+    std::uint32_t remaining = bytesRequested;
+    const std::uint32_t fromWallet =
+        static_cast<std::uint32_t>(std::min(walletAvail, static_cast<std::size_t>(remaining)));
+    if (fromWallet > 0) {
+      neuronConsumeBack(*motor, fromWallet);
+      fromActuatorStore = fromWallet;
+      remaining -= fromWallet;
+    }
+    if (remaining > 0) {
+      if (!tryConsumeHubVitalFuel(organism, remaining)) {
+        return false;
+      }
+      fromBody = remaining;
+    }
     return true;
   }
 
@@ -516,9 +513,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   ActuatorInteroception interoception{};
   if (organism.isCampNom()) {
     interoception = gatherActuatorInteroception(organism, motorNode->id, simTick);
-    motorIntent = computeCampMotorIntent(
-        interoception, static_cast<std::uint32_t>(motorNode->store.size()),
-        motorNode->coordinatorDutyScale);
+    motorIntent = computeCampMotorIntent(interoception, motorNode->coordinatorDutyScale);
     organism.lastActuatorInteroception = interoception;
     organism.lastMotorIntent = motorIntent;
     organism.lastActuatorNetDrive = motorIntent.netDrive;

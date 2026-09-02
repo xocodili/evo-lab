@@ -341,8 +341,32 @@ void conveyFromMouthOperational(Organism& organism, SkeletonNode& mouth, std::ui
 }
 
 void conveyFromComputerHub(Organism& organism, SkeletonNode& computer, std::uint64_t simTick) {
-  const std::size_t surplus = hubStoreSurplus(organism);
-  if (surplus == 0) {
+  const float exportScale = organism.hubConservationExportScale;
+  if (exportScale <= 1.0e-4f) {
+    return;
+  }
+  if (computer.computerFeedGain <= 1.0e-4f) {
+    return;
+  }
+  if (campMouthAteThisTick(organism)) {
+    return;
+  }
+
+  const std::size_t rawSurplus = hubStoreSurplus(organism);
+  if (rawSurplus == 0) {
+    return;
+  }
+
+  const std::size_t scaledSurplus =
+      static_cast<std::size_t>(std::floor(static_cast<float>(rawSurplus) * exportScale));
+  if (scaledSurplus == 0) {
+    return;
+  }
+
+  const int maxBudget = static_cast<int>(std::lround(
+      static_cast<float>(kComputerHubDispatchMaxPerTick) * computer.computerFeedGain));
+  const int budget = std::min(static_cast<int>(scaledSurplus), maxBudget);
+  if (budget <= 0) {
     return;
   }
 
@@ -360,11 +384,11 @@ void conveyFromComputerHub(Organism& organism, SkeletonNode& computer, std::uint
     return;
   }
 
-  int remaining = static_cast<int>(surplus);
+  int remaining = budget;
   for (int i = 0; i < routeCount && remaining > 0; ++i) {
     OutboundRoute& route = routes[i];
-    int share = static_cast<int>(
-        std::lround(static_cast<float>(surplus) * (route.weight / totalWeight)));
+    int share =
+        static_cast<int>(std::lround(static_cast<float>(budget) * (route.weight / totalWeight)));
     if (i + 1 == routeCount) {
       share = remaining;
     }
@@ -419,7 +443,7 @@ void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t si
     return;
   }
 
-  refreshCampEquilibriumExportScales(organism);
+  refreshStemSurplusExportScales(organism, StemSurplusRefreshPoint::PreConveyance);
 
   if (!organismHasConveySurplus(organism)) {
     return;
@@ -432,7 +456,9 @@ void conveyCampEnergon(Organism& organism, EnergonField& field, std::uint64_t si
       }
       switch (node.neuron) {
         case NeuronType::Computer:
-          conveyFromComputerHub(organism, node, simTick);
+          if (pass == 0) {
+            conveyFromComputerHub(organism, node, simTick);
+          }
           break;
         case NeuronType::Perceptor:
         case NeuronType::Actuator:

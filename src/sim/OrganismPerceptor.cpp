@@ -19,7 +19,6 @@
 #include "sim/Organism.hpp"
 
 #include "sim/NeuronStem.hpp"
-#include "sim/OrganismComputer.hpp"
 
 #include "sim/NeuronFuel.hpp"
 #include "sim/OrganismNeuron.hpp"
@@ -97,7 +96,36 @@ struct InteroceptionPrior {
 
   float movementSmear = 0.0f;
 
+  // Proprioceptive body state (not inbound axon bytes).
+  float bodyHunger = 0.0f;
+  float perceptorFuelUnit = 0.0f;
+  std::uint32_t perceptorFuelBytes = 0;
+  std::uint32_t maxScanPaymentBytes = 0;
+  bool canAffordMaxScanPayment = false;
+  std::uint32_t scanPaymentBytes = 0;
+  bool canAffordPayment = false;
+  bool selfMateReady = false;
+
 };
+
+std::uint32_t perceptorScanPaymentBytes(const Organism& organism, const SkeletonNode& perceptor,
+                                        bool transductionDue) {
+  std::uint32_t bytesDue = kPerceptorScanCostPerTick;
+  if (transductionDue) {
+    bytesDue += kPerceptorTransductionCostPerTick;
+  }
+  if (organism.isCampNom() && perceptor.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f) {
+    bytesDue = std::max<std::uint32_t>(
+        1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(bytesDue) *
+                                                     perceptor.coordinatorDutyScale)));
+  }
+  return bytesDue;
+}
+
+void seedPerceptorScanPaymentInteroception(InteroceptionPrior& prior, std::uint32_t bytesDue) {
+  prior.scanPaymentBytes = bytesDue;
+  prior.canAffordPayment = prior.perceptorFuelBytes >= bytesDue;
+}
 
 
 
@@ -301,17 +329,9 @@ void addNoisyCandidate(std::vector<PerceptCandidate>& out, PerceptFocusKind kind
 
 
 
-float organismHungerPrior(const Organism& organism) {
+float organismHungerPrior(const InteroceptionPrior& prior) {
 
-  const SkeletonNode* mouth = findNeuronNode(organism, NeuronType::Mouth);
-
-  if (mouth == nullptr) {
-
-    return 0.5f;
-
-  }
-
-  return 1.0f - confidenceToUnit(mouthFuelConfidence(*mouth));
+  return prior.bodyHunger;
 
 }
 
@@ -323,11 +343,13 @@ void scanFieldEnergon(const Organism& self, const SkeletonNode& perceptor, float
 
                       std::uint64_t simTick, std::mt19937& rng,
 
+                      const InteroceptionPrior& prior,
+
                       std::vector<PerceptCandidate>& out) {
 
-  const bool selfMateReady = campMateReadyPredicate(self, simTick);
+  const bool selfMateReady = prior.selfMateReady;
 
-  const float hunger = organismHungerPrior(self);
+  const float hunger = prior.bodyHunger;
 
   energon.forEachBlobNear(
 
@@ -435,9 +457,11 @@ void scanOrganisms(const Organism& self, const SkeletonNode& perceptor, float ga
 
                    float senseRadius, const std::vector<Organism>& population, float sunIntensity,
 
-                   std::uint64_t simTick, std::mt19937& rng, std::vector<PerceptCandidate>& out) {
+                   std::uint64_t simTick, std::mt19937& rng, const InteroceptionPrior& prior,
 
-  if (!campMateReadyPredicate(self, simTick)) {
+                   std::vector<PerceptCandidate>& out) {
+
+  if (!prior.selfMateReady) {
 
     return;
 
@@ -555,11 +579,13 @@ void scanBlocks(const BarrenWorld& world, const SkeletonNode& perceptor, float g
 
 
 
-InteroceptionPrior gatherInteroception(const Organism& organism, std::uint32_t perceptorId) {
+InteroceptionPrior gatherInteroception(const Organism& organism, const SkeletonNode& perceptor,
+
+                                       std::uint64_t simTick) {
 
   InteroceptionPrior prior;
 
-  forEachInboundAxon(organism, perceptorId, 0, false, [&](const InboundAxon& inbound) {
+  forEachInboundAxon(organism, perceptor.id, 0, false, [&](const InboundAxon& inbound) {
     if (!isNeuronConfidenceByte(inbound.axon.lastReceived.byte)) {
       return;
     }
@@ -581,6 +607,25 @@ InteroceptionPrior gatherInteroception(const Organism& organism, std::uint32_t p
   prior.satiation = clamp01(prior.satiation);
 
   prior.movementSmear = clamp01(prior.movementSmear);
+
+  prior.perceptorFuelBytes = static_cast<std::uint32_t>(perceptor.store.size());
+  const std::size_t perceptorCap =
+      std::max<std::size_t>(peripheralStoreCapBytes(organism), 1u);
+  prior.perceptorFuelUnit =
+      clamp01(static_cast<float>(prior.perceptorFuelBytes) / static_cast<float>(perceptorCap));
+  prior.maxScanPaymentBytes = perceptorScanPaymentBytes(organism, perceptor, true);
+  prior.canAffordMaxScanPayment = prior.perceptorFuelBytes >= prior.maxScanPaymentBytes;
+
+  if (const SkeletonNode* mouth = findNeuronNode(organism, NeuronType::Mouth)) {
+    prior.bodyHunger = 1.0f - confidenceToUnit(mouthFuelConfidence(*mouth));
+  } else {
+    prior.bodyHunger = 0.5f;
+  }
+  prior.bodyHunger = clamp01(prior.bodyHunger);
+
+  CampBodyInteroception bodyInteroception;
+  gatherCampBodyInteroception(organism, simTick, bodyInteroception);
+  prior.selfMateReady = bodyInteroception.mateReady;
 
   return prior;
 
@@ -975,7 +1020,11 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
-  if (perceptor.store.size() < kPerceptorScanCostPerTick) {
+  InteroceptionPrior prior = gatherInteroception(organism, perceptor, simTick);
+
+
+
+  if (!prior.canAffordMaxScanPayment) {
 
     return;
 
@@ -1001,11 +1050,11 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
   scanFieldEnergon(organism, perceptor, perceptor.gazeHeading, effectiveRadius, energon,
 
-                   sunIntensity, simTick, rng, candidates);
+                   sunIntensity, simTick, rng, prior, candidates);
 
   scanOrganisms(organism, perceptor, perceptor.gazeHeading, effectiveRadius, population,
 
-                sunIntensity, simTick, rng, candidates);
+                sunIntensity, simTick, rng, prior, candidates);
 
   if (!organism.disableTerrainThreatScan) {
     scanBlocks(world, perceptor, perceptor.gazeHeading, effectiveRadius, cellSize, halfExtent,
@@ -1014,17 +1063,11 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
-  std::uint32_t bytesDue = kPerceptorScanCostPerTick;
-  if (!candidates.empty()) {
-    bytesDue += kPerceptorTransductionCostPerTick;
-  }
-  if (organism.isCampNom() && perceptor.coordinatorDutyScale < kCoordinatorMaxDutyScale - 1.0e-4f) {
-    bytesDue = std::max<std::uint32_t>(
-        1u, static_cast<std::uint32_t>(std::lround(static_cast<float>(bytesDue) *
-                                                     perceptor.coordinatorDutyScale)));
-  }
+  const std::uint32_t bytesDue =
+      perceptorScanPaymentBytes(organism, perceptor, !candidates.empty());
+  seedPerceptorScanPaymentInteroception(prior, bytesDue);
 
-  if (perceptor.store.size() < bytesDue) {
+  if (!prior.canAffordPayment) {
 
     return;
 
@@ -1039,8 +1082,6 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
   organism.lastPerceptBytesPaid = bytesDue;
 
 
-
-  const InteroceptionPrior prior = gatherInteroception(organism, perceptor.id);
 
   const float bestFoodScore = bestFoodGoNoGoScore(candidates, prior);
   const bool foodChannelActive =

@@ -37,6 +37,38 @@ class EnergonField;
 
 enum class NeuronType : std::uint8_t { None = 0, Mouth, Perceptor, Computer, Actuator };
 
+// Heritable stem assembly (stem BIND replay — docs/WORLD-BINDING-GRAMMAR.md).
+enum class StemFace : std::uint8_t { North = 0, East = 1, South = 2, West = 3 };
+
+struct StemBindRecord {
+  std::uint32_t hubNodeId = 0;
+  std::uint32_t peripheralNodeId = 0;
+  std::uint8_t hubSlot = 0;
+  std::uint8_t peripheralFace = static_cast<std::uint8_t>(StemFace::North);
+  float restLength = 0.0f;
+  bool muscleBundle = true;
+};
+
+// Colinear chain segment (torpedo): parent → child along heading + segmentAngleOffset.
+struct StemChainRecord {
+  std::uint32_t parentNodeId = 0;
+  std::uint32_t childNodeId = 0;
+  float segmentAngleOffset = 0.0f;
+  float restLength = 0.0f;
+  bool muscleBundle = true;
+};
+
+struct StemLocusSpec {
+  std::uint32_t nodeId = 0;
+  NeuronType type = NeuronType::None;
+};
+
+struct StemAssemblyPlan {
+  std::vector<StemLocusSpec> loci;
+  std::vector<StemBindRecord> binds;
+  std::vector<StemChainRecord> chains;
+};
+
 
 
 // Joint / attachment site. World pose is filled each tick by engine forward kinematics
@@ -249,6 +281,9 @@ public:
   // Nursery / chemotaxis harness: skip terrain boundary dry threat scans (scanBlocks).
   bool disableTerrainThreatScan = false;
   std::uint64_t lastParthenogenesisSuccessTick = 0;
+
+  // Heritable stem assembly: locus inventory + hub bind records (see docs/WORLD-BINDING-GRAMMAR.md).
+  StemAssemblyPlan stemAssembly;
 
   // Proprioception (P neuron): mirror of primary perceptor focus (inspector / debug).
   std::uint8_t lastPerceptConfidence = 0;

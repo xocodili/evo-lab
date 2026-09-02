@@ -73,7 +73,7 @@ TEST_CASE("recursive mini-C throttles full C dispatch after coordinator tick", "
   REQUIRE(computer->coordinatorDutyScale < 1.0f);
 
   evolab::tickComputerPhase(camper, energon, 1);
-  const float unthrottled = evolab::applyMiniCToComputerDispatch(1.0f, 1.0f);
+  const float unthrottled = evolab::applyMiniCToComputerDispatch(1.0f, 1.0f, 1.0f);
   REQUIRE(computer->computerFeedGain < unthrottled);
 }
 
@@ -148,8 +148,9 @@ TEST_CASE("computer outbound reflects famine abundance", "[coordinator][famine]"
 
 TEST_CASE("actuator motor intent scales with coordinator duty", "[coordinator][famine]") {
   evolab::ActuatorInteroception interoception;
-  const evolab::MotorIntent fullDuty = evolab::computeCampMotorIntent(interoception, 8, 1.0f);
-  const evolab::MotorIntent torpor = evolab::computeCampMotorIntent(interoception, 8, 0.15f);
+  evolab::seedActuatorLocomotionFuelInteroception(interoception, 8, 8);
+  const evolab::MotorIntent fullDuty = evolab::computeCampMotorIntent(interoception, 1.0f);
+  const evolab::MotorIntent torpor = evolab::computeCampMotorIntent(interoception, 0.15f);
   REQUIRE(torpor.strokeBytes <= fullDuty.strokeBytes);
   REQUIRE(torpor.tumbleRateScale <= fullDuty.tumbleRateScale);
 }

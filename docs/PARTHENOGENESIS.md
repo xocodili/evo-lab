@@ -85,12 +85,12 @@ G = ( G_seq , G_axon , G_skel derived )
 
 G_seq  = developmental locus string   e.g. [CAMP]
 G_axon = directed edges with (trust[], trustFeed, η_signal, η_energy)
-G_skel = Y-star bones from factory rules per locus
+G_skel = stem assembly plan (loci + bind records) — see WORLD-BINDING-GRAMMAR.md
 ```
 
-**Parthenogenesis** copies parent `G` through the morphogenesis pipeline → instantiates child organism via existing factory paths (`makeCampNomOrganism` generalised to `developFromGenotype(G, wx, wz, endowment)`).
+**Parthenogenesis** copies parent `G` through the morphogenesis pipeline → instantiates child structure via **stem bind replay** (`MorphogenesisKind::Bind` steps) plus locus/axon/link clone steps. World socket geometry (hub slot angles) is **not** inherited per neuron type — it comes from `WorldBinding.hpp`; the child inherits **which binds occurred** in `stemAssembly.binds`.
 
-Baseline anchor: **`[CAMP]`** — 4 loci, 12 axons, 3 links.
+Baseline anchor: **`[CAMP]`** — 4 loci, 12 axons, 3 stem bind records (hub slots 0/1/2).
 
 ---
 
@@ -113,7 +113,7 @@ else
 |---------|---------------|------------|
 | Locus | Copy type char | Dup / del / ins locus |
 | Axon | Copy edge + retarget node ids | Dup / del / ins edge |
-| Link | Copy bone | Add/remove with locus |
+| Bind record | Copy stem bind step | Dup / del / ins bind (future) |
 
 Structural INSERTION at birth differs from R0 ecological INSERTION: here it may add locus + neuron + axon bundle (topology co-evolution — [EVOLUTION.md](EVOLUTION.md) §9).
 
@@ -280,10 +280,16 @@ attemptParthenogenesis(parent):
     Gate 1 on A
     Gate 2 on axon trust / η
 
-  for each link B in parent.G_skel:
+  for each bind R in parent.stemAssembly.binds:
     debit step basal
-    Gate 1 on B
-    Gate 2 on bone params
+    Gate 1 on bind record (dup/del/ins — future)
+    replayStemBind(R)  →  world socket angle from hubSlot; idempotent if link exists
+    Gate 2 on bone params (restLength jitter; hub slot angle preserved)
+
+  for each axon A in parent.G_axon (mapped to child ids):
+    debit step basal
+    Gate 1 on A
+    Gate 2 on axon trust / η
 
   Gate 2 on organism-level phenotype (register, senseRadius, heading)
 

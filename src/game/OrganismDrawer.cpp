@@ -229,6 +229,9 @@ void campVisualNodePosition(const Organism& organism, const SkeletonNode& node,
       node.neuron == NeuronType::Computer || node.neuron == NeuronType::None) {
     return;
   }
+  if (organismHasCampTorpedoChain(organism)) {
+    return;
+  }
   const float armWorld = kNeuralAxonMaxLengthPx * worldPerPx;
   const float bindAngle = campBindAngleForNode(node);
   const float worldYaw = organism.heading + bindAngle;

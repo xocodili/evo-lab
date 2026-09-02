@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sim/NeuralAxon.hpp"
+#include "sim/NeuronTrust.hpp"
 #include "sim/NeuronSignal.hpp"
 #include "sim/Organism.hpp"
 #include "sim/PerceptorFocus.hpp"
@@ -82,5 +83,16 @@ float turnToward(float current, float target, float maxStep);
 void emitOutboundConfidence(Organism& organism, std::uint32_t srcNodeId, std::uint8_t confidence,
                             std::uint64_t simTick, const NeuronType* allowedDst = nullptr,
                             std::size_t allowedCount = 0);
+
+inline NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
+  NeuralAxon axon;
+  axon.srcNodeId = srcId;
+  axon.dstNodeId = dstId;
+  setAllBelieveTrust(axon, kTrustBaseline);
+  axon.trustFeed = kTrustMin;
+  axon.etaEnergy = 1.0f;
+  axon.etaSignal = 1.0f;
+  return axon;
+}
 
 }  // namespace evolab

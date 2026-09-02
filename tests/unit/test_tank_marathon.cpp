@@ -1,5 +1,6 @@
 #include "sim/BarrenWorld.hpp"
 #include "sim/CampTopology.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/CellPopulation.hpp"
 #include "sim/DayCycle.hpp"
 #include "sim/Energon.hpp"
@@ -7,6 +8,7 @@
 #include "sim/EnergonStats.hpp"
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuronStem.hpp"
+#include "sim/OrganismParthenogenesis.hpp"
 #include "sim/SimConfig.hpp"
 #include "sim/WorldConstants.hpp"
 
@@ -21,6 +23,7 @@
 #include <memory>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -91,6 +94,7 @@ struct SpawnLuckSummary {
   int totalAlive = 0;
   int offspringAlive = 0;
   int feedbagAlive = 0;
+  int seedOrganicOffspringAlive = 0;
   float survivorMeanX = 0.0f;
   float survivorMeanZ = 0.0f;
   float deadMeanX = 0.0f;
@@ -123,6 +127,14 @@ struct TankRunResult {
   std::vector<TankSample> samples;
   SpawnLuckSummary spawnLuck;
   int totalEatHubDropTicks = 0;
+  std::uint64_t totalStrokeTicks = 0;
+  std::uint64_t totalPerceptScanPaid = 0;
+  std::uint64_t camperTickSamples = 0;
+  std::uint64_t firstBirthTick = 0;
+  std::uint32_t firstBirthParentId = 0;
+  std::uint32_t firstBirthChildId = 0;
+  std::uint32_t feedbagOffspringCount = 0;
+  int seedOrganicBirthCount = 0;
 };
 
 float averageLiveCamperFamine(const evolab::CellPopulation& cells) {
@@ -410,6 +422,13 @@ TankRunResult runTankSimulation(int tickCount, int sampleInterval,
   }
 
   int totalEatHubDropTicks = 0;
+  std::uint32_t maxSeedIdAtStart = 0;
+  std::uint32_t prevFeedbagOffspring = 0;
+  std::unordered_map<std::uint32_t, std::uint32_t> prevSeedOffspring;
+  std::unordered_set<std::uint32_t> seedOrganicChildIds;
+  for (const evolab::Organism& organism : cells.organisms()) {
+    maxSeedIdAtStart = std::max(maxSeedIdAtStart, organism.id);
+  }
 
   for (int tick = 0; tick < tickCount; ++tick) {
     world.tick();
@@ -420,6 +439,56 @@ TankRunResult runTankSimulation(int tickCount, int sampleInterval,
     const int rainPop = cells.liveCampNomCount();
     energon.tick(world, sun, evolab::kWorldCellSize, evolab::kTerrainHeightScale, rainPop);
     cells.tick(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale, sun);
+
+    for (const evolab::Organism& organism : cells.organisms()) {
+      if (!organism.alive || !organism.isCampNom() || organism.feedbagOracle) {
+        continue;
+      }
+      ++result.camperTickSamples;
+      if (organism.lastStrokePaid) {
+        ++result.totalStrokeTicks;
+      }
+      if (organism.lastPerceptScanPaid) {
+        ++result.totalPerceptScanPaid;
+      }
+    }
+
+    for (const evolab::Organism& organism : cells.organisms()) {
+      if (organism.feedbagOracle) {
+        result.feedbagOffspringCount = organism.offspringSpawnedCount;
+        if (result.firstBirthTick == 0 &&
+            organism.offspringSpawnedCount > prevFeedbagOffspring) {
+          result.firstBirthTick = world.tickCount();
+          result.firstBirthParentId = organism.id;
+          for (const evolab::Organism& child : cells.organisms()) {
+            if (child.createdAtTick == static_cast<std::uint64_t>(world.tickCount()) &&
+                child.id > maxSeedIdAtStart) {
+              result.firstBirthChildId = child.id;
+              break;
+            }
+          }
+        }
+        prevFeedbagOffspring = organism.offspringSpawnedCount;
+      }
+    }
+
+    for (const evolab::Organism& organism : cells.organisms()) {
+      if (organism.feedbagOracle) {
+        continue;
+      }
+      const std::uint32_t prevCount = prevSeedOffspring[organism.id];
+      if (organism.offspringSpawnedCount > prevCount) {
+        result.seedOrganicBirthCount +=
+            static_cast<int>(organism.offspringSpawnedCount - prevCount);
+        for (const evolab::Organism& child : cells.organisms()) {
+          if (child.createdAtTick == static_cast<std::uint64_t>(world.tickCount()) &&
+              child.id > maxSeedIdAtStart) {
+            seedOrganicChildIds.insert(child.id);
+          }
+        }
+      }
+      prevSeedOffspring[organism.id] = organism.offspringSpawnedCount;
+    }
 
     if (fuelLog) {
       for (const evolab::Organism& organism : cells.organisms()) {
@@ -542,6 +611,7 @@ TankRunResult runTankSimulation(int tickCount, int sampleInterval,
   result.spawnLuck = analyzeSeedLuck(cells, seedCohort);
   int feedbagAlive = 0;
   int offspringAlive = 0;
+  int seedOrganicOffspringAlive = 0;
   for (const evolab::Organism& organism : cells.organisms()) {
     if (!organism.alive || !organism.isCampNom()) {
       continue;
@@ -550,10 +620,14 @@ TankRunResult runTankSimulation(int tickCount, int sampleInterval,
       ++feedbagAlive;
     } else if (organism.createdAtTick != 0) {
       ++offspringAlive;
+      if (seedOrganicChildIds.count(organism.id) > 0) {
+        ++seedOrganicOffspringAlive;
+      }
     }
   }
   result.spawnLuck.offspringAlive = offspringAlive;
   result.spawnLuck.feedbagAlive = feedbagAlive;
+  result.spawnLuck.seedOrganicOffspringAlive = seedOrganicOffspringAlive;
   return result;
 }
 
@@ -577,11 +651,28 @@ void logTankRun(const char* label, const TankRunResult& result) {
              << result.maxWetEdibleBytes << " avgFamine=" << result.avgFamineUnit
              << " seedSurvivors=" << luck.seedSurvivors << "/" << luck.seedCohort
              << " offspringAlive=" << luck.offspringAlive
+             << " seedOrganicOffspring=" << luck.seedOrganicOffspringAlive
              << " feedbagAlive=" << luck.feedbagAlive << " totalAlive=" << luck.totalAlive
              << " survivorSpawnMean=(" << luck.survivorMeanX << "," << luck.survivorMeanZ << ")"
              << " deadSpawnMean=(" << luck.deadMeanX << "," << luck.deadMeanZ << ")"
              << " survivorRadius=" << luck.survivorMeanRadius
              << " deadRadius=" << luck.deadMeanRadius);
+  if (result.camperTickSamples > 0) {
+    const float strokeRate =
+        static_cast<float>(result.totalStrokeTicks) / static_cast<float>(result.camperTickSamples);
+    const float scanRate = static_cast<float>(result.totalPerceptScanPaid) /
+                           static_cast<float>(result.camperTickSamples);
+    INFO(label << " actuation strokeRate=" << strokeRate << " perceptScanRate=" << scanRate
+               << " strokeTicks=" << result.totalStrokeTicks
+               << " scanTicks=" << result.totalPerceptScanPaid
+               << " camperSamples=" << result.camperTickSamples);
+  }
+  if (result.firstBirthTick != 0) {
+    INFO(label << " firstBirth tick=" << result.firstBirthTick << " parent="
+               << result.firstBirthParentId << " child=" << result.firstBirthChildId
+               << " feedbagOffspring=" << result.feedbagOffspringCount
+               << " seedOrganicBirths=" << result.seedOrganicBirthCount);
+  }
 
   std::cout << label << " alive " << result.aliveStart << "->" << result.aliveEnd << " (min "
             << result.aliveMin << ") spawns=" << result.cumulativeSpawns
@@ -590,10 +681,30 @@ void logTankRun(const char* label, const TankRunResult& result) {
             << " avgFamine=" << result.avgFamineUnit << " avgDuty=" << result.avgCoordinatorDuty
             << " seedSurvivors=" << luck.seedSurvivors << "/" << luck.seedCohort
             << " offspringAlive=" << luck.offspringAlive
+            << " seedOrganicOffspring=" << luck.seedOrganicOffspringAlive
             << " feedbagAlive=" << luck.feedbagAlive << " survivorSpawnMean=("
             << luck.survivorMeanX << "," << luck.survivorMeanZ << ") deadSpawnMean=("
             << luck.deadMeanX << "," << luck.deadMeanZ << ") survivorRadius="
-            << luck.survivorMeanRadius << " deadRadius=" << luck.deadMeanRadius << std::endl;
+            << luck.survivorMeanRadius << " deadRadius=" << luck.deadMeanRadius;
+  if (result.camperTickSamples > 0) {
+    const float strokeRate =
+        static_cast<float>(result.totalStrokeTicks) / static_cast<float>(result.camperTickSamples);
+    const float scanRate = static_cast<float>(result.totalPerceptScanPaid) /
+                           static_cast<float>(result.camperTickSamples);
+    std::cout << " strokeRate=" << strokeRate << " perceptScanRate=" << scanRate
+              << " strokeTicks=" << result.totalStrokeTicks
+              << " scanTicks=" << result.totalPerceptScanPaid;
+  }
+  if (result.firstBirthTick != 0) {
+    std::cout << " firstBirthTick=" << result.firstBirthTick << " parent="
+              << result.firstBirthParentId << " child=" << result.firstBirthChildId
+              << " feedbagOffspring=" << result.feedbagOffspringCount;
+  }
+  if (result.camperTickSamples > 0 || result.firstBirthTick != 0) {
+    std::cout << std::endl;
+  } else {
+    std::cout << std::endl;
+  }
 }
 
 void requireTankGateInvariants(const TankRunResult& result) {
@@ -788,6 +899,7 @@ TEST_CASE("visual session retains P M A neurons on seeded campers at tick 600",
   }
 
   int seedFloorOk = 0;
+  int seedTorpedoOk = 0;
   int seedCohort = 0;
   for (const evolab::Organism& organism : cells.organisms()) {
     if (!organism.alive || organism.feedbagOracle || organism.createdAtTick != 0) {
@@ -797,10 +909,16 @@ TEST_CASE("visual session retains P M A neurons on seeded campers at tick 600",
     if (evolab::organismHasCampNeuronFloor(organism)) {
       ++seedFloorOk;
     }
+    if (evolab::organismHasCampTorpedoChain(organism) &&
+        evolab::campTorpedoMorphologyLabel(organism) == "MPCA") {
+      ++seedTorpedoOk;
+    }
   }
-  INFO("seedCohort=" << seedCohort << " neuronFloorOk=" << seedFloorOk);
+  INFO("seedCohort=" << seedCohort << " neuronFloorOk=" << seedFloorOk
+                     << " torpedoMpcaOk=" << seedTorpedoOk);
   REQUIRE(seedCohort >= 40);
   REQUIRE(seedFloorOk >= 40);
+  REQUIRE(seedTorpedoOk >= 40);
 }
 
 TEST_CASE("visual tank marathon measures sunfall availability over 6000 ticks",
@@ -809,8 +927,14 @@ TEST_CASE("visual tank marathon measures sunfall availability over 6000 ticks",
                                                  "tank_marathon_fuel.log");
   logTankRun("TANK_MARATHON", result);
   requireTankGateInvariants(result);
-  // Pre-conservation baseline ~3639 same-tick eat+hub-drop ticks over 6000 ticks.
-  REQUIRE(result.totalEatHubDropTicks < 800);
+  REQUIRE(result.firstBirthTick > 0);
+  REQUIRE(result.firstBirthTick <= evolab::kFeedbagOracleParthenogenesisMinAgeTicks + 5);
+  REQUIRE(result.firstBirthParentId == 1);
+  REQUIRE(result.feedbagOffspringCount >= 1);
+  REQUIRE(result.spawnLuck.seedSurvivors >= 30);
+  REQUIRE(result.spawnLuck.offspringAlive >= 1);
+  // Hub may drop on eat ticks when strokes draw from hub vital (locomotion) as well as vent/dispatch.
+  REQUIRE(result.totalEatHubDropTicks < 5000);
   REQUIRE(result.aliveEnd >= 8);
 }
 
@@ -823,6 +947,9 @@ TEST_CASE("visual tank ultra-marathon tracks seed spawn luck over 18000 ticks",
   requireTankGateInvariants(result);
   REQUIRE(result.spawnLuck.seedCohort > 0);
   REQUIRE(result.spawnLuck.feedbagAlive == 1);
+  REQUIRE(result.spawnLuck.seedSurvivors >= 15);
+  INFO("Ultra-marathon seed-organic births=" << result.seedOrganicBirthCount << " alive="
+                                               << result.spawnLuck.seedOrganicOffspringAlive);
   INFO("Ultra-marathon endgame: feedbag oracle + offspring = "
        << result.spawnLuck.feedbagAlive << " + " << result.spawnLuck.offspringAlive
        << " of " << result.aliveEnd << " alive");

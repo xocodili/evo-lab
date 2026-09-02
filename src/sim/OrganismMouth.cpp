@@ -219,6 +219,8 @@ MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint3
 
   prior.tasteGradient = mouth.mouthTasteGradient;
 
+  prior.mouthChewPaused = mouth.mouthChewPaused;
+
 
 
   const AggregatedPerceptSignals percept =
@@ -265,9 +267,11 @@ MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint3
 
 
 
-FeedIntent computeCampFeedIntent(const MouthInteroception& interoception, bool& mouthChewPaused) {
+FeedIntent computeCampFeedIntent(const MouthInteroception& interoception) {
 
   FeedIntent intent;
+
+  bool mouthChewPaused = interoception.mouthChewPaused;
 
 
 
@@ -374,6 +378,8 @@ FeedIntent computeCampFeedIntent(const MouthInteroception& interoception, bool& 
     intent.feedSuppressed = intent.biteDrive < kMouthFeedIntentMinBite;
 
   }
+
+  intent.mouthChewPaused = mouthChewPaused;
 
   return intent;
 

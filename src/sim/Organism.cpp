@@ -127,7 +127,8 @@ void Organism::feed(EnergonField& field, float cellSize, std::uint64_t simTick) 
     if (campPhases) {
       const MouthInteroception mouthInteroception =
           gatherMouthInteroception(*this, node.id, node, simTick);
-      feedIntent = computeCampFeedIntent(mouthInteroception, node.mouthChewPaused);
+      feedIntent = computeCampFeedIntent(mouthInteroception);
+      node.mouthChewPaused = feedIntent.mouthChewPaused;
       lastMouthBiteDrive = feedIntent.biteDrive;
       lastMouthFeedSuppressed = feedIntent.feedSuppressed;
       mouthFeedIntent = &feedIntent;

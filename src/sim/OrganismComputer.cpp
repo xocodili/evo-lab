@@ -11,6 +11,7 @@
 #include "sim/NeuronCoordinator.hpp"
 #include "sim/NeuronTrust.hpp"
 #include "sim/OrganismNeuron.hpp"
+#include "sim/PerceptorFocus.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -29,11 +30,11 @@ float computeComputerMatchScore(const ComputerInteroception& interoception,
   return matchMax > 0 ? static_cast<float>(matchTotal) / static_cast<float>(matchMax) : 0.0f;
 }
 
-float computeComputerFeedGain(const Organism& organism, float matchScore, float ctaPe) {
-  const float hubUnit = confidenceToUnit(hubFuelConfidence(computerHubFuelBytes(organism)));
+float computeComputerFeedGain(const ComputerInteroception& interoception, float matchScore,
+                                float ctaPe) {
+  const float hubUnit = interoception.hubSatiationUnit;
   const float matchGo = matchScore;
-  const float reserveNoGo =
-      computerHubFuelBytes(organism) <= kComputerHubReserveBytes ? (1.0f - matchGo) : 0.0f;
+  const float reserveNoGo = interoception.hubAtReserveFloor ? (1.0f - matchGo) : 0.0f;
   const float repleteNoGo = campHubRepleteNoGo(hubUnit);
   const float ctaNoGo = clamp01(std::abs(ctaPe) * kComputerCtaDisagreementGain);
   const float dispatchDrive = clamp01(matchGo - reserveNoGo - repleteNoGo * 0.35f - ctaNoGo);
@@ -52,9 +53,9 @@ void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& f
   computer.lastComputerMatchScore = computeComputerMatchScore(interoception, computer.computerRegister);
   const float ctaPe = campComputerCtaPredictionError(interoception);
   computer.lastComputerPredictionError = ctaPe;
-  const float conservation = organism.hubConservationExportScale;
+  const float conservation = interoception.conservationExportScale;
   computer.computerFeedGain =
-      computeComputerFeedGain(organism, computer.lastComputerMatchScore, ctaPe) * conservation;
+      computeComputerFeedGain(interoception, computer.lastComputerMatchScore, ctaPe) * conservation;
   computer.computerFeedGain =
       applyMiniCToComputerDispatch(computer.computerFeedGain, computer.coordinatorDutyScale,
                                    conservation);
@@ -62,7 +63,7 @@ void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& f
   if (allowCloacaExpulsion) {
     organism.lastHubSignalExpelledThisTick = false;
     organism.lastCloacaBandExpelled = CloacaBand::None;
-    const CloacaBand band = chooseCloacaBand(organism, simTick);
+    const CloacaBand band = chooseCloacaBandFromInteroception(interoception);
     if (band != CloacaBand::None) {
       const bool expelled = expelCloacaVent(organism, field, computer, band);
       if (expelled) {
@@ -81,6 +82,38 @@ void tickOneComputer(Organism& organism, SkeletonNode& computer, EnergonField& f
 }
 
 }  // namespace
+
+CloacaBand chooseCloacaBandFromInteroception(const ComputerInteroception& interoception) {
+  if (interoception.distress && interoception.distressVentAffordable) {
+    return CloacaBand::Distress;
+  }
+  if (interoception.mateReady) {
+    return CloacaBand::Mate;
+  }
+  if (interoception.hubSatiationUnit >= confidenceToUnit(kComputerSatiationConfidence) &&
+      interoception.baselineVentAffordable) {
+    return CloacaBand::Baseline;
+  }
+  return CloacaBand::None;
+}
+
+void seedComputerProprioInteroception(const Organism& organism, std::uint64_t simTick,
+                                      ComputerInteroception& prior) {
+  prior.hubFuelBytes = static_cast<std::uint32_t>(computerHubFuelBytes(organism));
+  const std::size_t hubCap = std::max<std::size_t>(hubStoreCapBytes(organism), 1u);
+  prior.hubFuelUnit =
+      clamp01(static_cast<float>(prior.hubFuelBytes) / static_cast<float>(hubCap));
+  prior.hubSatiationUnit = confidenceToUnit(hubFuelConfidence(prior.hubFuelBytes));
+  prior.hubAtReserveFloor = prior.hubFuelBytes <= kComputerHubReserveBytes;
+  prior.conservationExportScale = organism.hubConservationExportScale;
+  CampBodyInteroception body;
+  gatherCampBodyInteroception(organism, simTick, body);
+  prior.distress = body.distress;
+  prior.mateReady = body.mateReady;
+  prior.distressVentAffordable = prior.hubFuelBytes >= kCloacaVentCostDistress;
+  prior.baselineVentAffordable =
+      prior.hubFuelBytes >= kComputerHubReserveBytes + kCloacaVentCostBaseline;
+}
 
 ComputerInteroception gatherComputerInteroception(const Organism& organism,
                                                   std::uint32_t computerId,
@@ -106,6 +139,8 @@ ComputerInteroception gatherComputerInteroception(const Organism& organism,
         break;
     }
   });
+
+  seedComputerProprioInteroception(organism, simTick, prior);
 
   return prior;
 }
@@ -206,7 +241,7 @@ void tickComputerPhase(Organism& organism, EnergonField& field, std::uint64_t si
     return;
   }
 
-  refreshCampEquilibriumExportScales(organism);
+  refreshStemSurplusExportScales(organism, StemSurplusRefreshPoint::PreComputer);
 
   bool cloacaPending = true;
   for (SkeletonNode& node : organism.nodes) {

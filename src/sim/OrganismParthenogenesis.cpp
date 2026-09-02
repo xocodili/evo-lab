@@ -12,10 +12,15 @@
 #include "sim/CloacaSignal.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronStem.hpp"
+#include "sim/StemBinding.hpp"
 #include "sim/WaterColumn.hpp"
+#include "sim/WorldBinding.hpp"
 #include "sim/WorldConstants.hpp"
 
+#include "engine/kinematics/Math.hpp"
+
 #include <algorithm>
+#include <iostream>
 #include <cmath>
 #include <random>
 #include <vector>
@@ -24,9 +29,11 @@ namespace evolab {
 
 namespace {
 
+using engine::kinematics::normalizeAngle;
+
 enum class StructuralOp : std::uint8_t { Duplication, Deletion, Insertion };
 
-enum class MorphogenesisKind : std::uint8_t { Locus, Axon, Link };
+enum class MorphogenesisKind : std::uint8_t { Locus, Axon, Link, Bind };
 
 struct MorphogenesisStep {
   MorphogenesisKind kind = MorphogenesisKind::Locus;
@@ -35,16 +42,8 @@ struct MorphogenesisStep {
   std::uint32_t axonDstId = 0;
   std::uint32_t linkParentId = 0;
   std::uint32_t linkChildId = 0;
+  std::uint8_t hubSlot = 0;
 };
-
-void splitCampEndowment(std::size_t total, std::size_t& hubBytes, std::size_t& perceptorBytes,
-                        std::size_t& mouthBytes, std::size_t& actuatorBytes) {
-  hubBytes = total / 2;
-  const std::size_t peripheral = total - hubBytes;
-  perceptorBytes = peripheral / 3;
-  mouthBytes = peripheral / 3;
-  actuatorBytes = peripheral - perceptorBytes - mouthBytes;
-}
 
 float effectiveStructuralRate(const ParthenogenesisPassOptions& options) {
   if (options.structuralRateOverride >= 0.0f && options.structuralRateOverride <= 1.0f) {
@@ -170,8 +169,30 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
       continue;
     }
     link.restLength = chaosJitterFloat(parentLink->restLength, rng);
-    link.jointAngle = chaosJitterFloat(parentLink->jointAngle, rng);
     link.energyEta = chaosJitterFloat(parentLink->energyEta, rng);
+    bool stemGeometryLink = false;
+    for (const StemChainRecord& record : organism.stemAssembly.chains) {
+      if (record.parentNodeId == link.parentNodeId &&
+          record.childNodeId == link.childNodeId) {
+        stemGeometryLink = true;
+        link.jointAngle =
+            normalizeAngle(organism.heading + record.segmentAngleOffset);
+        link.muscleBundle = record.muscleBundle;
+        break;
+      }
+    }
+    for (const StemBindRecord& record : organism.stemAssembly.binds) {
+      if (record.hubNodeId == link.parentNodeId &&
+          record.peripheralNodeId == link.childNodeId) {
+        stemGeometryLink = true;
+        link.jointAngle = hubSocketAngleRad(organism.heading, record.hubSlot);
+        link.muscleBundle = record.muscleBundle;
+        break;
+      }
+    }
+    if (!stemGeometryLink) {
+      link.jointAngle = chaosJitterFloat(parentLink->jointAngle, rng);
+    }
   }
 }
 
@@ -252,52 +273,9 @@ void resetSpawnNodeRuntime(SkeletonNode& node) {
 }
 
 void assignChildCampEndowment(Organism& child) {
-  std::size_t hubBytes = 0;
-  std::size_t perceptorBytes = 0;
-  std::size_t mouthBytes = 0;
-  std::size_t actuatorBytes = 0;
-  splitCampEndowment(kParthenogenesisChildEndowmentBytes, hubBytes, perceptorBytes, mouthBytes,
-                     actuatorBytes);
-
-  int perceptorCount = 0;
-  int mouthCount = 0;
-  int actuatorCount = 0;
-  for (const SkeletonNode& node : child.nodes) {
-    if (!node.alive) {
-      continue;
-    }
-    switch (node.neuron) {
-      case NeuronType::Perceptor:
-        ++perceptorCount;
-        break;
-      case NeuronType::Mouth:
-        ++mouthCount;
-        break;
-      case NeuronType::Actuator:
-        ++actuatorCount;
-        break;
-      default:
-        break;
-    }
-  }
-
-  for (SkeletonNode& node : child.nodes) {
-    if (!node.alive) {
-      continue;
-    }
-    if (node.neuron == NeuronType::Computer) {
-      initComputerHubStore(node, hubBytes + mouthBytes, child);
-    } else if (node.neuron == NeuronType::Perceptor) {
-      const std::size_t share =
-          perceptorBytes / static_cast<std::size_t>(std::max(1, perceptorCount));
-      node.store.assign(share, 0);
-    } else if (node.neuron == NeuronType::Mouth) {
-      node.store.clear();
-    } else if (node.neuron == NeuronType::Actuator) {
-      const std::size_t share = actuatorBytes / static_cast<std::size_t>(std::max(1, actuatorCount));
-      node.store.assign(share, 0);
-    }
-  }
+  EndowCampOptions options;
+  options.clampToWalletCaps = false;
+  endowCampNodesFromSplit(child, splitCampStorage(kParthenogenesisChildEndowmentBytes), options);
 }
 
 Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, float wx, float wz,
@@ -321,6 +299,8 @@ Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, flo
   child.nodes = parent.nodes;
   child.links = parent.links;
   child.neuralAxons = parent.neuralAxons;
+  child.stemAssembly =
+      parent.stemAssembly.binds.empty() ? extractStemAssemblyPlan(parent) : parent.stemAssembly;
 
   ensureCampDevelopmentalAxons(child);
 
@@ -337,15 +317,39 @@ Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, flo
 
 std::vector<MorphogenesisStep> buildMorphogenesisPlan(const Organism& child) {
   std::vector<MorphogenesisStep> plan;
-  plan.reserve(child.nodes.size() + child.neuralAxons.size() + child.links.size());
+  plan.reserve(child.nodes.size() + child.neuralAxons.size() + child.links.size() +
+               child.stemAssembly.binds.size() + child.stemAssembly.chains.size());
   for (const SkeletonNode& node : child.nodes) {
-    plan.push_back({MorphogenesisKind::Locus, node.id, 0, 0, 0, 0});
+    plan.push_back({MorphogenesisKind::Locus, node.id, 0, 0, 0, 0, 0});
+  }
+  for (const StemChainRecord& chain : child.stemAssembly.chains) {
+    plan.push_back({MorphogenesisKind::Bind, 0, 0, 0, chain.parentNodeId, chain.childNodeId, 0});
+  }
+  for (const StemBindRecord& bind : child.stemAssembly.binds) {
+    plan.push_back({MorphogenesisKind::Bind, 0, 0, 0, bind.hubNodeId, bind.peripheralNodeId,
+                    bind.hubSlot});
   }
   for (const NeuralAxon& axon : child.neuralAxons) {
-    plan.push_back({MorphogenesisKind::Axon, 0, axon.srcNodeId, axon.dstNodeId, 0, 0});
+    plan.push_back({MorphogenesisKind::Axon, 0, axon.srcNodeId, axon.dstNodeId, 0, 0, 0});
   }
   for (const SkeletonLink& link : child.links) {
-    plan.push_back({MorphogenesisKind::Link, 0, 0, 0, link.parentNodeId, link.childNodeId});
+    bool coveredByBind = false;
+    for (const StemChainRecord& chain : child.stemAssembly.chains) {
+      if (chain.parentNodeId == link.parentNodeId && chain.childNodeId == link.childNodeId) {
+        coveredByBind = true;
+        break;
+      }
+    }
+    for (const StemBindRecord& bind : child.stemAssembly.binds) {
+      if (bind.hubNodeId == link.parentNodeId && bind.peripheralNodeId == link.childNodeId) {
+        coveredByBind = true;
+        break;
+      }
+    }
+    if (coveredByBind) {
+      continue;
+    }
+    plan.push_back({MorphogenesisKind::Link, 0, 0, 0, link.parentNodeId, link.childNodeId, 0});
   }
   return plan;
 }
@@ -409,15 +413,21 @@ bool applyStructuralOpLocus(Organism& child, std::size_t index, StructuralOp op,
       }
       if (addedLinks.empty()) {
         if (const SkeletonNode* root = findComputerRoot(child)) {
-          SkeletonLink arm;
-          arm.parentNodeId = root->id;
-          arm.childNodeId = newId;
-          arm.restLength = child.links.empty() ? nominalBoneLength(kWorldCellSize)
-                                               : child.links.front().restLength;
-          arm.jointAngle = std::uniform_real_distribution<float>(-kTwoPi, kTwoPi)(rng);
-          arm.energyEta = 0.0f;
-          arm.muscleBundle = true;
-          addedLinks.push_back(arm);
+          const int slot = nextFreeHubSlot(child, root->id);
+          if (slot >= 0) {
+            const float restLength = child.links.empty() ? nominalBoneLength(kWorldCellSize)
+                                                         : child.links.front().restLength;
+            StemBindAttempt attempt;
+            attempt.requireEntropy = false;
+            attempt.requirePayment = false;
+            StemBindResult bound = tryStemBindPeripheralToHub(
+                child, root->id, newId, static_cast<std::uint8_t>(slot), restLength, child.heading,
+                attempt, rng);
+            if (bound.ok) {
+              duplicateAxonMotifForNode(child, source.id, newId);
+              return true;
+            }
+          }
         }
       }
       child.links.insert(child.links.end(), addedLinks.begin(), addedLinks.end());
@@ -480,15 +490,19 @@ bool applyStructuralOpLocus(Organism& child, std::size_t index, StructuralOp op,
       child.nodes.insert(child.nodes.begin() + static_cast<std::ptrdiff_t>(index + 1), inserted);
 
       if (const SkeletonNode* root = findComputerRoot(child)) {
-        SkeletonLink arm;
-        arm.parentNodeId = root->id;
-        arm.childNodeId = newId;
-        arm.restLength = child.links.empty() ? nominalBoneLength(kWorldCellSize)
-                                             : child.links.front().restLength;
-        arm.jointAngle = std::uniform_real_distribution<float>(-kTwoPi, kTwoPi)(rng);
-        arm.energyEta = 0.0f;
-        arm.muscleBundle = true;
-        child.links.push_back(arm);
+        const int slot = nextFreeHubSlot(child, root->id);
+        if (slot >= 0) {
+          StemBindAttempt attempt;
+          attempt.requireEntropy = false;
+          attempt.requirePayment = false;
+          if (tryStemBindPeripheralToHub(child, root->id, newId, static_cast<std::uint8_t>(slot),
+                                         child.links.empty() ? nominalBoneLength(kWorldCellSize)
+                                                             : child.links.front().restLength,
+                                         child.heading, attempt, rng)
+                  .ok) {
+            return true;
+          }
+        }
       }
       return true;
     }
@@ -512,6 +526,9 @@ bool applyStructuralOpLink(Organism& child, std::size_t index, StructuralOp op,
         return false;
       }
       const SkeletonLink& doomed = child.links[index];
+      if (isCampTorpedoChainLinkEdge(doomed.parentNodeId, doomed.childNodeId)) {
+        return false;
+      }
       if (doomed.parentNodeId == child.rootNodeId) {
         const SkeletonNode* peripheral = child.findNode(doomed.childNodeId);
         if (peripheral != nullptr && peripheral->alive &&
@@ -596,6 +613,47 @@ bool applyStructuralOpAxon(std::vector<NeuralAxon>& axons, StructuralOp op, std:
   return false;
 }
 
+bool replayMorphogenesisBindStep(Organism& child, const MorphogenesisStep& step,
+                                 std::mt19937& rng) {
+  for (const SkeletonLink& link : child.links) {
+    if (link.parentNodeId == step.linkParentId && link.childNodeId == step.linkChildId) {
+      return true;
+    }
+  }
+  StemBindAttempt attempt;
+  attempt.requireEntropy = false;
+  attempt.requirePayment = false;
+  float restLength = nominalBoneLength(kWorldCellSize);
+  float segmentOffset = kCampTorpedoForwardSegmentOffset;
+  for (const StemChainRecord& record : child.stemAssembly.chains) {
+    if (record.parentNodeId != step.linkParentId || record.childNodeId != step.linkChildId) {
+      continue;
+    }
+    if (record.restLength > 0.0f) {
+      restLength = record.restLength;
+    }
+    segmentOffset = record.segmentAngleOffset;
+    return tryStemBindChainSegment(child, step.linkParentId, step.linkChildId, segmentOffset,
+                                   restLength, child.heading, attempt, rng)
+        .ok;
+  }
+  for (const StemBindRecord& record : child.stemAssembly.binds) {
+    if (record.hubNodeId != step.linkParentId ||
+        record.peripheralNodeId != step.linkChildId) {
+      continue;
+    }
+    if (record.restLength > 0.0f) {
+      restLength = record.restLength;
+    }
+    return tryStemBindPeripheralToHub(child, step.linkParentId, step.linkChildId, step.hubSlot,
+                                      restLength, child.heading, attempt, rng)
+        .ok;
+  }
+  return tryStemBindPeripheralToHub(child, step.linkParentId, step.linkChildId, step.hubSlot,
+                                    restLength, child.heading, attempt, rng)
+      .ok;
+}
+
 bool applyMorphogenesisStructuralOp(Organism& child, const MorphogenesisStep& step, StructuralOp op,
                                     std::mt19937& rng) {
   switch (step.kind) {
@@ -620,6 +678,16 @@ bool applyMorphogenesisStructuralOp(Organism& child, const MorphogenesisStep& st
         return false;
       }
       return applyStructuralOpLink(child, static_cast<std::size_t>(linkIndex), op, rng);
+    }
+    case MorphogenesisKind::Bind: {
+      const int linkIndex = findLinkIndexByEdge(child, step.linkParentId, step.linkChildId);
+      if (linkIndex < 0) {
+        return false;
+      }
+      const bool changed =
+          applyStructuralOpLink(child, static_cast<std::size_t>(linkIndex), op, rng);
+      child.stemAssembly = extractStemAssemblyPlan(child);
+      return changed;
     }
   }
   return false;
@@ -649,11 +717,13 @@ std::uint32_t structuralOpSurcharge(StructuralOp op) {
 }
 
 int morphogenesisStepCountCamp() {
-  return 4 + static_cast<int>(kCampDevelopmentalAxonCount) + 3;
+  return 4 + static_cast<int>(kCampDevelopmentalAxonCount) +
+         static_cast<int>(kWorldHubSocketCount);
 }
 
 int morphogenesisStepCount(const Organism& child) {
-  return static_cast<int>(child.nodes.size() + child.neuralAxons.size() + child.links.size());
+  return static_cast<int>(child.nodes.size() + child.stemAssembly.binds.size() +
+                          child.neuralAxons.size() + child.links.size());
 }
 
 std::uint32_t pipelineBaseDebit() {
@@ -738,6 +808,11 @@ bool runMorphogenesisPipeline(Organism& child, Organism& parent, std::mt19937& r
         return false;
       }
     }
+    if (step.kind == MorphogenesisKind::Bind) {
+      if (replayMorphogenesisBindStep(child, step, rng)) {
+        ++result.stemBindStepsReplayed;
+      }
+    }
     if (chaosBernoulli(structuralRate, rng)) {
       const StructuralOp op = drawStructuralOp(rng);
       if (applyMorphogenesisStructuralOp(child, step, op, rng)) {
@@ -745,6 +820,8 @@ bool runMorphogenesisPipeline(Organism& child, Organism& parent, std::mt19937& r
       }
     }
   }
+  reconcileStemAssemblyLinks(child, child.heading, rng);
+  child.stemAssembly = extractStemAssemblyPlan(child);
   applyGate2Jitter(child, parent, rng);
   return true;
 }
@@ -781,7 +858,7 @@ bool campGenotypeValid(const Organism& organism) {
 
 bool campSpawnMorphologyValid(const Organism& organism) {
   return campGenotypeValid(organism) && organismHasCampDevelopmentalAxons(organism) &&
-         organismHasCampHubArms(organism);
+         (organismHasCampTorpedoChain(organism) || organismHasCampHubArms(organism));
 }
 
 std::uint32_t estimateParthenogenesisCostCamp() {
@@ -805,8 +882,7 @@ bool eligibleForParthenogenesis(const Organism& organism, const BarrenWorld& wor
   if (!campGenotypeValid(organism)) {
     return false;
   }
-  if (parentHasBasalArrears(organism) &&
-      computerHubFuelBytes(organism) < estimateParthenogenesisRequiredHubBytes()) {
+  if (parentHasBasalArrears(organism)) {
     return false;
   }
   if (organism.lastParthenogenesisSuccessTick != 0 &&
@@ -887,6 +963,10 @@ ParthenogenesisResult attemptParthenogenesis(Organism& parent, const BarrenWorld
           : 0;
 
   if (!campSpawnMorphologyValid(child)) {
+    if (options.captureRejectedMorphology) {
+      result.rejectedMorphology = child;
+      result.rejectedMorphologyCaptured = true;
+    }
     abortSpend(parent, result, bytesSpent, true);
     return result;
   }
@@ -915,6 +995,11 @@ ParthenogenesisResult attemptParthenogenesis(Organism& parent, const BarrenWorld
   parent.lastParthenogenesisSuccessTick = simTick;
   parent.parthenogenesisCelebrationStartTick = simTick;
   parent.parthenogenesisBirthHeading = parent.heading;
+
+  if (parent.feedbagOracle) {
+    std::cout << "[parthenogenesis] feedbag oracle id=" << parent.id << " spawned child id="
+              << childId << " at tick=" << simTick << " bytesSpent=" << bytesSpent << '\n';
+  }
 
   result.spawned = true;
   result.aborted = false;

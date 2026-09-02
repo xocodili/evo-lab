@@ -123,7 +123,7 @@ std::string formatOrganismArchitectureLabel(const Organism& organism, std::uint6
     const SkeletonNode* perceptorNode = findPerceptorNode(organism);
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
-    const std::string genotype = campGenotypeLabel(organism);
+    const std::string genotype = campDisplayTypeLabel(organism);
     const NeuralAxon* pToM = organism.findNeuralAxon(1, 2);
     const NeuralAxon* pToA = organism.findNeuralAxon(1, 4);
     const NeuralAxon* mToA = organism.findNeuralAxon(2, 4);
@@ -311,7 +311,7 @@ std::string formatOrganismHoverSummary(const Organism& organism) {
     const SkeletonNode* perceptorNode = findPerceptorNode(organism);
     const SkeletonNode* mouthNode = findMouthNode(organism);
     const SkeletonNode* actuatorNode = findActuatorNode(organism);
-    const std::string genotype = campGenotypeLabel(organism);
+    const std::string genotype = campDisplayTypeLabel(organism);
     char senseSummary[16] = "—";
     if (organism.lastPerceptScanPaid) {
       std::snprintf(senseSummary, sizeof(senseSummary), "%u/7",

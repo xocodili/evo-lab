@@ -8,6 +8,8 @@
 #include "sim/Organism.hpp"
 #include "sim/OrganismFeedbagOracle.hpp"
 #include "sim/OrganismParthenogenesis.hpp"
+#include "sim/StemBinding.hpp"
+#include "sim/WorldBinding.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <catch2/catch_test_macros.hpp>
@@ -138,6 +140,8 @@ TEST_CASE("wealthy aged parent spawns faithful camp child", "[parthenogenesis][b
   REQUIRE(result.spawned);
   REQUIRE(result.child.alive);
   REQUIRE(result.child.isCampNom());
+  REQUIRE(result.stemBindStepsReplayed == evolab::kWorldHubSocketCount);
+  REQUIRE(evolab::organismStemBindGeometryMatchesCamp(result.child));
   REQUIRE(result.bytesSpent == evolab::estimateParthenogenesisCostCamp());
   REQUIRE(parent.computerHubFuelBytes() + result.bytesSpent == hubBefore);
   REQUIRE(parent.lastParthenogenesisSpawned);
@@ -313,7 +317,7 @@ TEST_CASE("parthenogenesis spawn rejects mouth-only hub wiring", "[parthenogenes
     ++spawned;
     ++nextId;
     REQUIRE(evolab::campSpawnMorphologyValid(result.child));
-    REQUIRE(evolab::organismHasCampHubArms(result.child));
+    REQUIRE(evolab::organismHasCampTorpedoChain(result.child));
     REQUIRE(evolab::organismHasCampDevelopmentalAxons(result.child));
     REQUIRE(result.child.mouthCount() >= 1);
     REQUIRE(result.child.perceptorCount() >= 1);
@@ -364,7 +368,7 @@ TEST_CASE("feedbag reproduction oracle spawns by tick 150", "[parthenogenesis][f
   }
   REQUIRE(child != nullptr);
   REQUIRE(evolab::campSpawnMorphologyValid(*child));
-  REQUIRE(evolab::organismHasCampHubArms(*child));
+  REQUIRE(evolab::organismHasCampTorpedoChain(*child));
   REQUIRE(evolab::organismHasCampDevelopmentalAxons(*child));
 }
 

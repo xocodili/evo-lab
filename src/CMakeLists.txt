@@ -48,6 +48,8 @@ add_library(evolab_sim STATIC
   sim/NeuralAxon.cpp
   sim/Chaos.cpp
   sim/OrganismHgt.cpp
+  sim/WorldBinding.cpp
+  sim/StemBinding.cpp
   sim/OrganismParthenogenesis.cpp
   sim/OrganismFeedbagOracle.cpp
   sim/CellPopulation.cpp

@@ -59,9 +59,11 @@ Track phases when planning features. Ask “which phase does this use case need?
 ```
 Organism.links  →  KinematicSkeleton::buildFromBones
 Organism.heading  →  rootWorldYaw
-yawDelta = 0      →  bind configuration (factory joint angles)
+yawDelta = 0      →  bind configuration (stem bind records → joint angles)
 WaterColumn       →  heightAtXZ callback (Y only)
 ```
+
+**Stem assembly (2026-09-02):** Hub–peripheral `SkeletonLink::jointAngle` values come from **world socket grammar** (`hubSocketAngleRad(heading, hubSlot)`) recorded in `Organism::stemAssembly.binds`. Gen-0 camp and parthenogenesis children use the same physics; see [WORLD-BINDING-GRAMMAR.md](WORLD-BINDING-GRAMMAR.md). Gate 2 morphogenesis **preserves hub slot angles** on bind links and jitters `restLength` only.
 
 ---
 

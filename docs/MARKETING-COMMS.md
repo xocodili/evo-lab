@@ -85,13 +85,14 @@ Technical docs: [HGT-INSERTION.md](HGT-INSERTION.md), [PARTHENOGENESIS.md](PARTH
 | Asset | Path | Use |
 |-------|------|-----|
 | HGT lifecycle (3-panel) | `assets/docs/hgt-camp-nom-lifecycle.png` | Devlogs, talks, README hero |
+| CAMP neural architecture + stem | `assets/docs/camp-neural-architecture-stem.png` | Anatomy devlog, itch.io |
+| Energon regulation (Black Queen hub) | `assets/docs/camp-energon-regulation.png` | Metabolism / stable-pop devlog |
+| Wet tank environment | `assets/docs/camp-environment-setup.png` | World / tide / sunfall devlog |
 | Lexend Deca font | `assets/fonts/LexendDeca-Regular.ttf` | In-app HUD |
 
 ### Planned (not yet created)
 
-- Single-panel CAMP anatomy (inspector-style)
 - Tide / refugia map for geography rollout
-- Parthenogenesis + Grover birth floor (R1)
 
 ---
 

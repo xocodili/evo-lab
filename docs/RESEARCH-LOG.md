@@ -300,3 +300,42 @@ R1 spec: [PARTHENOGENESIS.md](PARTHENOGENESIS.md) — two-layer entropy (structu
 **Interpretation:** Reproductive debit matches design target (259 200 B ≈ 3 fuel-days at 1 B/tick basal duty). Abort path correctly spends init + partial morphogenesis without spawning — unified ledger behaviour. Structural entropy at 100% does not break CAMP viability when developmental axons are immutable (R1 axon-level ops only; full `G_seq` locus operators deferred to R1b).
 
 **Backlog:** 50%/10% structural-rate binomial calibration (mirror death-feast HGT rub); Grover `{P,M,C,A}` floor at birth; inspector HUD for `lastParthenogenesisBytesSpent` / `offspringSpawnedCount`; headless cohort survival with spontaneous parthenogenesis under default tick (no oracle skip).
+
+### 2026-09-02 — Interoception audit, stem dedup, marathon viability
+
+**Interoception closure (P/M/C/A):** All camp neuron intent paths now read organism fuel/state only through gathered interoception at tick time — no side-channel `store.size()` or mutable out-params in intent compute. **A:** locomotion fuel unit/bytes in `ActuatorInteroception`. **C:** hub fuel, satiation, reserve floor, conservation export, distress/mate, vent affordances in `ComputerInteroception`; feed gain and cloaca band from interoception only. **P:** body hunger, scan payment caps, `canAffordMaxScanPayment`, `selfMateReady` via shared body gather. **M:** `mouthChewPaused` in interoception/`FeedIntent`.
+
+**P scan + cloaca centralization:** `perceptorScanPaymentBytes` / `canAffordMaxScanPayment` / `seedPerceptorScanPaymentInteroception`; early scan gate uses worst-case scan+transduction payment. Distress/mate predicates live in `NeuronStem::gatherCampBodyInteroception` (removed P→C header coupling).
+
+**Stem / bind refactor:** Gen-0 camp via `assembleOrganismFromStemPlan()` + `StemAssemblyPlan` replay at parthenogenesis birth. `closeStemNeuralGraphAmongLoci` alone wires canonical 4-locus clique (12 directed axons); redundant post-assembly `ensureCampDevelopmentalAxons` dropped from stem bind path (kept for clone/mutant repair). **Endowment dedup:** single `splitCampStorage` + `endowCampNodesFromSplit` (per-type share split for multi-P/A freaks); parthenogenesis child endowment and `makeRandomCampMutant` route through stem helpers. **Axon helper:** `makeDevelopmentalAxon` consolidated in `OrganismNeuron.hpp`.
+
+**Feedbag / parthenogenesis visibility:** Console log on feedbag spawn; marathon telemetry (`firstBirthTick`, parent/child ids, stroke/scan rates). Parthenogenesis **does** fire at tick **120** for feedbag oracle (parent id=1 → child id=61); easy to miss without log/HUD.
+
+**Marathon (6000 ticks, seed 42, 60 campers):**
+
+| Metric | Value |
+|--------|-------|
+| Alive | 60 → 43 |
+| Seed survivors | ~41/59 |
+| Cumulative energon spawns | ~113k |
+| Stroke rate | ~25.6% |
+| Percept scan rate | ~0.19% |
+| First birth | tick 120, feedbag parent |
+| Offspring alive end | 1 (feedbag line) |
+| Seed-organic offspring (non-feedbag parents) | 0 at 6k; tracked via `seedOrganicBirthCount` in ultra |
+
+**Modularity assessment (~65% for production camp):** Stem owns fuel/bind/endowment/surplus; gather→intent pattern is sound. Remaining duplication: dual-computer test factory manual endowment; unused `kStemBindCooperativeStrength` / `kStemBindAssemblyEpsilonFactor`; parthenogenesis clone-then-bind-replay (often no-op); test factories bypass `StemAssemblyPlan` where morphology is intentionally freakish.
+
+**Population viability framing:** Seed cohort is **metabolically viable** (40+ intact CAMP at tick 600; 30+ survive 6000 ticks) but **reproductively feedbag-led** at marathon horizon — organic seed births need ~270k B hub + age 600 + wet terrain; ultra-marathon gate now tracks `seedOrganicOffspringAlive`. ALife/PhD hook: stem-cell genotype oracle + empirical viability under sunfall/throttle, not hand-authored behaviour trees.
+
+**Next:** R0 HGT dock; trust/RPE on mouth CTA; headless Kaplan-Meier cohort; Grover floor at birth; reduce feedbag-oracle dependence once seed-organic births stable in ultra-marathon.
+
+### 2026-09-02 (b) — Torpedo chain morphology (M→P→C→A, ram nose)
+
+**Literature:** Aquatic prey capture spans a ram–suction spectrum (Norton & Brainerd 1993; Wainwright et al., *J. Exp. Biol.* 2001). Ram suspension feeders swim forward with an open mouth and use forward motion to stream water (and particles) through the oral cavity — distinct from pump/suction feeders that rhythmically expand the buccal cavity (Sanderson & Wassersug 1993; Sanderson et al., Frontiers in Marine Science 2023–2024). For pelagic “tow-net” feeding, the **mouth leads** the body axis; sensors are commonly set back or lateral (e.g. herring, mackerel, paddlefish/basking ram filterers).
+
+**Gen-0 layout:** Colinear **torpedo chain** along `heading`: **M (ram nose) — P — C — A (tail/root)**. Mouth contact is at the foremost node; P sits one segment aft with a forward focus cone (preview corridor before/at ram contact). Actuator at tail; stroke along body heading.
+
+**Stem genotype:** `StemChainRecord` links A→C→P→M; inherited via `StemAssemblyPlan.chains`. Hub-star `binds` retained for legacy test morphologies.
+
+**Validation:** `organismHasCampTorpedoChain()` / skeleton checks; parthenogenesis replays 3 chain bind steps.

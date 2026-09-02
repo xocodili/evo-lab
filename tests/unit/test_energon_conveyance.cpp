@@ -1,3 +1,4 @@
+#include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonConveyance.hpp"
@@ -117,4 +118,57 @@ TEST_CASE("returned axon bytes dissipate at mouth without field spam", "[energon
   evolab::conveyCampEnergon(organism, field, 2);
   REQUIRE(mouth->store.size() == mouthBefore);
   REQUIRE(field.activeCount() == blobsBefore);
+}
+
+TEST_CASE("computer hub dispatch respects conservation export scale",
+          "[energon_conveyance][stem]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.alive = true;
+  evolab::assignComputerHubFuel(organism, 200000, 1);
+
+  evolab::SkeletonNode* computer = organism.findNode(evolab::kCampComputerId);
+  REQUIRE(computer != nullptr);
+  computer->computerFeedGain = 1.0f;
+  computer->storeBytesPriorTick = computer->store.size() + 8;
+
+  const std::size_t hubBefore = evolab::computerHubFuelBytes(organism);
+  evolab::conveyCampEnergon(organism, field, 1);
+  REQUIRE(evolab::computerHubFuelBytes(organism) == hubBefore);
+}
+
+TEST_CASE("computer hub dispatch is capped per tick", "[energon_conveyance][stem]") {
+  evolab::EnergonField field(1, {});
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.alive = true;
+  evolab::assignComputerHubFuel(organism, 200000, 1);
+
+  evolab::SkeletonNode* computer = organism.findNode(evolab::kCampComputerId);
+  evolab::SkeletonNode* perceptor = organism.findNode(evolab::kCampPerceptorId);
+  evolab::SkeletonNode* actuator = organism.findNode(evolab::kCampActuatorId);
+  REQUIRE(computer != nullptr);
+  REQUIRE(perceptor != nullptr);
+  REQUIRE(actuator != nullptr);
+
+  perceptor->store.clear();
+  actuator->store.clear();
+  computer->computerFeedGain = 1.0f;
+  computer->storeBytesPriorTick = computer->store.size();
+  organism.hubConservationExportScale = 1.0f;
+
+  for (evolab::NeuralAxon& axon : organism.neuralAxons) {
+    if (axon.srcNodeId == evolab::kCampComputerId) {
+      axon.trustFeed = evolab::kTrustBaseline;
+      axon.etaEnergy = 1.0f;
+      axon.etaSignal = 1.0f;
+    }
+  }
+
+  const std::size_t hubBefore = evolab::computerHubFuelBytes(organism);
+  evolab::conveyCampEnergon(organism, field, 1);
+  const std::size_t hubAfter = evolab::computerHubFuelBytes(organism);
+  REQUIRE(hubBefore >= hubAfter);
+  REQUIRE(hubBefore - hubAfter <= evolab::kComputerHubDispatchMaxPerTick);
 }

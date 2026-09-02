@@ -334,7 +334,7 @@ Evolution must co-evolve **three coupled graphs**:
 |-------|---------|-------|
 | **`G_seq`** | Developmental locus string `{P,M,C,A}*` | Fixed `[CAMP]` at factory |
 | **`G_axon`** | Directed neural edges (signal + feed) | Fixed 12 axons (all pairs) |
-| **`G_skel`** | Mechanical Y-star bones + `muscleBundle` flags | Fixed CAMP topology |
+| **`G_skel`** | Mechanical Y-star bones + `muscleBundle` flags | **Stem assembly plan** — `Organism::stemAssembly` (loci + bind records); world socket grammar in [WORLD-BINDING-GRAMMAR.md](WORLD-BINDING-GRAMMAR.md) |
 
 **Open problems:**
 
@@ -344,7 +344,9 @@ Evolution must co-evolve **three coupled graphs**:
 - Pruning (`axonMarkedForPruning`) vs deletion operator — structural loss vs trust death.
 - Kinematics: new bones from new loci; render-only vs FK edges (KINEMATICS.md bundle gaps).
 
-**Working rule:** `G_seq` drives **which neurons exist**; `G_axon` drives **who talks to whom**; skeleton follows factory rules from `G_seq`. Topology doc should be its own pass after R0 proves partial-topology HGT.
+**Working rule:** `G_seq` drives **which neurons exist**; `G_axon` drives **who talks to whom**; **`G_skel` is the inherited stem assembly plan** (bind records + loci) executed against **world binding physics** (hub socket count/spacing/glue — not per-type genetics). Gen-0 `[CAMP]` is one fixed plan (`defaultCampStemAssemblyPlan()`); parthenogenesis replays bind steps during morphogenesis. See [WORLD-BINDING-GRAMMAR.md](WORLD-BINDING-GRAMMAR.md).
+
+**Shipped (2026-09-02):** World binding grammar + stem bind replay at factory and parthenogenesis; factory-equivalent Y-star for canonical camp.
 
 ---
 

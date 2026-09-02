@@ -33,8 +33,10 @@ add_executable(evo-lab-tests
   unit/test_energon_conveyance.cpp
   unit/test_regulation_satiety.cpp
   unit/test_tank_marathon.cpp
+  unit/test_locomotion_diagnostic.cpp
   unit/test_hgt_insertion.cpp
   unit/test_parthenogenesis.cpp
+  unit/test_stem_binding.cpp
   unit/test_debug_session.cpp
   unit/test_cornucopia_chemotaxis.cpp
   unit/test_mouth_taste.cpp

@@ -14,6 +14,9 @@
 
 #include "sim/Organism.hpp"
 
+#include "sim/NeuronFuel.hpp"
+#include "sim/NeuronStem.hpp"
+
 #include <algorithm>
 
 #include <cmath>
@@ -45,6 +48,17 @@ float mouthSignalGradientDrive(float mouthSignalDelta) {
 }
 
 }  // namespace
+
+void seedActuatorLocomotionFuelInteroception(ActuatorInteroception& interoception,
+                                            std::uint32_t locomotionFuelBytes,
+                                            std::uint32_t actuatorWalletBytes) {
+  interoception.locomotionFuelBytes = locomotionFuelBytes;
+  const float strokeCost = static_cast<float>(kActuatorStrokeCostPerTick);
+  interoception.actuatorFuelUnit =
+      clamp01(static_cast<float>(actuatorWalletBytes) / std::max(strokeCost, 1.0f));
+  interoception.locomotionFuelUnit =
+      clamp01(static_cast<float>(locomotionFuelBytes) / std::max(strokeCost, 1.0f));
+}
 
 ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
                                                   std::uint32_t actuatorId,
@@ -106,6 +120,11 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
     prior.mouthConfidence = confidenceToUnit(mouthFuelConfidence(*mouth));
   }
 
+  if (const SkeletonNode* actuator = organism.findNode(actuatorId)) {
+    seedActuatorLocomotionFuelInteroception(prior, campLocomotionFuelBytes(organism),
+                                            static_cast<std::uint32_t>(actuator->store.size()));
+  }
+
   prior.approach = clamp01(prior.approach);
   prior.flee = clamp01(prior.flee);
   prior.mouthConfidence = clamp01(prior.mouthConfidence);
@@ -147,7 +166,6 @@ void commitActuatorMouthInboundPrior(Organism& organism, const ActuatorInterocep
 }
 
 MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
-                                  std::uint32_t actuatorFuelBytes,
                                   float coordinatorDutyScale) {
   MotorIntent intent;
 
@@ -182,8 +200,7 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
   const bool hubBrakeActive = interoception.hubSatiation >= hubBrake;
 
   const float maxBytes = static_cast<float>(kActuatorStrokeCostPerTick);
-  const float energyFactor =
-      clamp01(static_cast<float>(actuatorFuelBytes) / std::max(maxBytes, 1.0f));
+  const float energyFactor = clamp01(interoception.locomotionFuelUnit);
   float crawlDrive = clamp01((intent.netDrive + gradientGo * hunger) * duty);
   if (interoception.mouthTasteApproach > kOrganismCampReflexMinValence) {
     crawlDrive = std::max(crawlDrive, hunger * std::max(interoception.mouthTasteApproach,
@@ -191,16 +208,18 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
   }
   const float strokeFloat = crawlDrive * maxBytes * energyFactor;
 
-  if (strokeFloat >= kActuatorMotorIntentMinStroke * maxBytes && actuatorFuelBytes > 0) {
+  if (strokeFloat >= kActuatorMotorIntentMinStroke * maxBytes &&
+      interoception.locomotionFuelBytes > 0) {
     intent.strokeBytes =
         static_cast<std::uint32_t>(std::lround(std::min(strokeFloat, maxBytes)));
     intent.strokeBytes = std::clamp(intent.strokeBytes, 1u, kActuatorStrokeCostPerTick);
-    if (intent.strokeBytes > actuatorFuelBytes) {
-      intent.strokeBytes = actuatorFuelBytes;
+    if (intent.strokeBytes > interoception.locomotionFuelBytes) {
+      intent.strokeBytes = interoception.locomotionFuelBytes;
     }
   }
 
-  intent.motorSuppressed = intent.strokeBytes == 0 && actuatorFuelBytes > 0 && hubBrakeActive;
+  intent.motorSuppressed =
+      intent.strokeBytes == 0 && interoception.locomotionFuelBytes > 0 && hubBrakeActive;
 
   return intent;
 }

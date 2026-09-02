@@ -26,6 +26,10 @@ struct ActuatorInteroception {
   bool mouthTasteSymmetricAmbiguity = false;
   // Temporal Δ of M→A satiation byte (unit space); A ignores absolute satiation level.
   float mouthSignalDelta = 0.0f;
+  // Proprioceptive fuel state (local wallet + body IMF reachable for stroke).
+  float actuatorFuelUnit = 0.0f;
+  float locomotionFuelUnit = 0.0f;
+  std::uint32_t locomotionFuelBytes = 0;
 };
 
 struct MotorIntent {
@@ -50,8 +54,12 @@ ActuatorInteroception gatherActuatorInteroception(const Organism& organism,
                                                   std::uint32_t actuatorId,
                                                   std::uint64_t simTick);
 
+// Test harness / manual interoception: encode proprioceptive IMF readiness on A.
+void seedActuatorLocomotionFuelInteroception(ActuatorInteroception& interoception,
+                                             std::uint32_t locomotionFuelBytes,
+                                             std::uint32_t actuatorWalletBytes = 0);
+
 MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
-                                  std::uint32_t actuatorFuelBytes,
                                   float coordinatorDutyScale = 1.0f);
 
 // P food/threat focus lock suppresses tumble; M taste steers via latch but does not anchor.

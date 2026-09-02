@@ -263,8 +263,7 @@ float coordinatorDutyScaleForNode(const Organism& organism, std::uint32_t nodeId
 
 float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale,
                                    float hubConservationExportScale) {
-  (void)hubConservationExportScale;
-  if (organDispatchGain <= 1.0e-4f) {
+  if (organDispatchGain <= 1.0e-4f || hubConservationExportScale <= 1.0e-4f) {
     return 0.0f;
   }
   const float scaled = organDispatchGain * clamp01(coordinatorDutyScale);

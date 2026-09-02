@@ -8,6 +8,9 @@
 #include "sim/NeuronSignal.hpp"
 #include "sim/OrganismComputer.hpp"
 #include "sim/NeuronCoordinator.hpp"
+#include "sim/NeuronStem.hpp"
+#include "sim/OrganismNeuron.hpp"
+#include "sim/StemBinding.hpp"
 #include "sim/WorldConstants.hpp"
 
 #include <algorithm>
@@ -16,26 +19,6 @@
 namespace evolab {
 
 namespace {
-
-void splitCampStorage(std::size_t total, std::size_t& hubBytes, std::size_t& perceptorBytes,
-                      std::size_t& mouthBytes, std::size_t& actuatorBytes) {
-  hubBytes = total / 2;
-  const std::size_t peripheral = total - hubBytes;
-  perceptorBytes = peripheral / 3;
-  mouthBytes = peripheral / 3;
-  actuatorBytes = peripheral - perceptorBytes - mouthBytes;
-}
-
-NeuralAxon makeDevelopmentalAxon(std::uint32_t srcId, std::uint32_t dstId) {
-  NeuralAxon axon;
-  axon.srcNodeId = srcId;
-  axon.dstNodeId = dstId;
-  setAllBelieveTrust(axon, kTrustBaseline);
-  axon.trustFeed = kTrustMin;
-  axon.etaEnergy = 1.0f;
-  axon.etaSignal = 1.0f;
-  return axon;
-}
 
 void initAllComputerNodeRegisters(Organism& organism) {
   for (SkeletonNode& node : organism.nodes) {
@@ -88,79 +71,8 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
 Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
                              std::size_t storageBytes, std::uint64_t createdAtTick,
                              float boneLength) {
-  Organism organism;
-  organism.id = id;
-  organism.createdAtTick = createdAtTick;
-  organism.rootNodeId = kCampRootNodeId;
-  organism.computerNodeId = kCampComputerId;
-
-  SkeletonNode perceptor;
-  perceptor.id = 1;
-  perceptor.neuron = NeuronType::Perceptor;
-  perceptor.worldX = wx;
-  perceptor.worldZ = wz;
-  perceptor.worldY = wy;
-
-  SkeletonNode mouth;
-  mouth.id = 2;
-  mouth.neuron = NeuronType::Mouth;
-  mouth.worldX = wx;
-  mouth.worldZ = wz;
-  mouth.worldY = wy;
-
-  SkeletonNode computer;
-  computer.id = 3;
-  computer.neuron = NeuronType::Computer;
-  computer.worldX = wx;
-  computer.worldZ = wz;
-  computer.worldY = wy;
-
-  SkeletonNode actuator;
-  actuator.id = 4;
-  actuator.neuron = NeuronType::Actuator;
-  actuator.worldX = wx;
-  actuator.worldZ = wz;
-  actuator.worldY = wy;
-
-  std::size_t hubBytes = 0;
-  std::size_t perceptorBytes = 0;
-  std::size_t mouthBytes = 0;
-  std::size_t actuatorBytes = 0;
-  splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
-  // Mouth wallet starts empty (hungry); its spawn fuel share remains in the hub until conveyed or
-  // bitten food fills the chew buffer — operational reserves are not stomach satiation.
-  initComputerHubStore(computer, hubBytes + mouthBytes, organism);
-  initPeripheralNodeStore(perceptor, perceptorBytes, organism);
-  mouth.store.clear();
-  initPeripheralNodeStore(actuator, actuatorBytes, organism);
-
-  organism.nodes.push_back(perceptor);
-  organism.nodes.push_back(mouth);
-  organism.nodes.push_back(computer);
-  organism.nodes.push_back(actuator);
-
-  auto addCampArm = [&](std::uint32_t childId, float bindAngle) {
-    SkeletonLink link;
-    link.parentNodeId = kCampComputerId;
-    link.childNodeId = childId;
-    link.restLength = boneLength;
-    link.jointAngle = bindAngle;
-    link.energyEta = 0.0f;
-    link.muscleBundle = true;
-    organism.links.push_back(link);
-  };
-
-  addCampArm(kCampPerceptorId, kCampPerceptorBindAngle);
-  addCampArm(kCampActuatorId, kCampActuatorBindAngle);
-  addCampArm(kCampMouthId, kCampMouthBindAngle);
-
-  for (const auto& edge : kCampDevelopmentalAxons) {
-    organism.neuralAxons.push_back(makeDevelopmentalAxon(edge.first, edge.second));
-  }
-
-  initAllComputerNodeRegisters(organism);
-  organism.senseRadiusFactor = kPerceptorSenseRadiusFactor;
-  return organism;
+  return assembleOrganismFromStemPlan(id, wx, wz, wy, storageBytes, createdAtTick, boneLength,
+                                      defaultCampStemAssemblyPlan(), 0.0f);
 }
 
 Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, float wy,
@@ -213,7 +125,11 @@ Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, floa
   std::size_t perceptorBytes = 0;
   std::size_t mouthBytes = 0;
   std::size_t actuatorBytes = 0;
-  splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
+  const CampStorageSplit split = splitCampStorage(storageBytes);
+  hubBytes = split.hubBytes;
+  perceptorBytes = split.perceptorBytes;
+  mouthBytes = split.mouthBytes;
+  actuatorBytes = split.actuatorBytes;
   initComputerHubStore(computerForage, hubBytes + mouthBytes, organism);
   initPeripheralNodeStore(perceptor, perceptorBytes, organism);
   mouth.store.clear();
@@ -302,57 +218,8 @@ Organism makeRandomCampMutant(std::uint32_t id, float wx, float wz, float wy,
         makeDevelopmentalAxon(static_cast<std::uint32_t>(i + 1), static_cast<std::uint32_t>(i)));
   }
 
-  int perceptorCount = 0;
-  int mouthCount = 0;
-  int actuatorCount = 0;
-  for (const SkeletonNode& node : organism.nodes) {
-    switch (node.neuron) {
-      case NeuronType::Perceptor:
-        ++perceptorCount;
-        break;
-      case NeuronType::Mouth:
-        ++mouthCount;
-        break;
-      case NeuronType::Actuator:
-        ++actuatorCount;
-        break;
-      default:
-        break;
-    }
-  }
-
   if (organism.computerNodeId != 0) {
-    std::size_t hubBytes = 0;
-    std::size_t perceptorBytes = 0;
-    std::size_t mouthBytes = 0;
-    std::size_t actuatorBytes = 0;
-    splitCampStorage(storageBytes, hubBytes, perceptorBytes, mouthBytes, actuatorBytes);
-
-    int perceptorIdx = 0;
-    int mouthIdx = 0;
-    int actuatorIdx = 0;
-    (void)perceptorIdx;
-    (void)mouthIdx;
-    (void)actuatorIdx;
-    for (SkeletonNode& node : organism.nodes) {
-      if (node.neuron == NeuronType::Computer) {
-        initComputerHubStore(node, hubBytes + mouthBytes, organism);
-      } else if (node.neuron == NeuronType::Perceptor) {
-        const std::size_t share =
-            perceptorBytes / static_cast<std::size_t>(std::max(1, perceptorCount));
-        initPeripheralNodeStore(node, share, organism);
-        ++perceptorIdx;
-      } else if (node.neuron == NeuronType::Mouth) {
-        (void)mouthIdx;
-        node.store.clear();
-        ++mouthIdx;
-      } else if (node.neuron == NeuronType::Actuator) {
-        const std::size_t share =
-            actuatorBytes / static_cast<std::size_t>(std::max(1, actuatorCount));
-        initPeripheralNodeStore(node, share, organism);
-        ++actuatorIdx;
-      }
-    }
+    endowCampNodesFromSplit(organism, splitCampStorage(storageBytes));
     initAllComputerNodeRegisters(organism);
   } else {
     SkeletonNode* root = organism.findNode(organism.rootNodeId);

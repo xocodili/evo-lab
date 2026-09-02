@@ -36,9 +36,9 @@ void tickCoordinatorPhase(Organism& organism, std::uint64_t simTick);
 
 float coordinatorDutyScaleForNode(const Organism& organism, std::uint32_t nodeId);
 
-// full C organ gain × mini-C duty (clamped to organ minimum dispatch).
+// full C organ gain × mini-C duty; gated by hub surplus export scale.
 float applyMiniCToComputerDispatch(float organDispatchGain, float coordinatorDutyScale,
-                                   float hubConservationExportScale = 1.0f);
+                                   float hubConservationExportScale);
 
 float computeOrganismFamineUnit(const Organism& organism, std::uint64_t simTick);
 

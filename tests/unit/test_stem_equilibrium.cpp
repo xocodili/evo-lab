@@ -1,4 +1,5 @@
 #include "sim/CellConstants.hpp"
+#include "sim/CampTopology.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonConveyance.hpp"
 #include "sim/NeuralAxon.hpp"
@@ -6,6 +7,7 @@
 #include "sim/NeuronSignal.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
+#include "sim/NeuronCoordinator.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -91,7 +93,7 @@ TEST_CASE("stem equilibrium scales all camp neuron types consistently", "[stem][
     }
   }
 
-  evolab::refreshCampEquilibriumExportScales(organism);
+  evolab::refreshStemSurplusExportScales(organism, evolab::StemSurplusRefreshPoint::PreConveyance);
   for (const evolab::SkeletonNode& node : organism.nodes) {
     if (node.neuron == evolab::NeuronType::None) {
       continue;
@@ -99,4 +101,39 @@ TEST_CASE("stem equilibrium scales all camp neuron types consistently", "[stem][
     REQUIRE(node.equilibriumExportScale > 0.0f);
   }
   REQUIRE(organism.hubConservationExportScale > 0.0f);
+}
+
+TEST_CASE("stem vital operational cost draws from hub when mouth wallet empty",
+          "[stem][vital]") {
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(18, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0, 1.0f);
+  evolab::assignComputerHubFuel(camper, evolab::kComputerHubStoreMaxBytes, 1);
+
+  evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
+  REQUIRE(mouth != nullptr);
+  mouth->store.clear();
+
+  const std::size_t hubBefore = camper.computerHubFuelBytes();
+  REQUIRE(evolab::tryPayStemOperationalCost(camper, *mouth, evolab::kBiteCost));
+  REQUIRE(mouth->store.empty());
+  REQUIRE(camper.computerHubFuelBytes() == hubBefore - evolab::kBiteCost);
+}
+
+TEST_CASE("stem vital basal draws from hub for empty camp peripherals", "[stem][vital]") {
+  evolab::Organism camper =
+      evolab::makeCampNomOrganism(18, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0, 1.0f);
+  evolab::assignComputerHubFuel(camper, evolab::kComputerHubStoreMaxBytes, 1);
+
+  evolab::SkeletonNode* perceptor = camper.findNode(evolab::kCampPerceptorId);
+  REQUIRE(perceptor != nullptr);
+  perceptor->store.clear();
+
+  const std::size_t hubBefore = camper.computerHubFuelBytes();
+  REQUIRE(evolab::tryPayStemBasalCost(camper, *perceptor));
+  REQUIRE(perceptor->store.empty());
+  REQUIRE(camper.computerHubFuelBytes() == hubBefore - evolab::kStemCellBasalCostPerTick);
+}
+
+TEST_CASE("mini-C dispatch respects zero hub surplus export scale", "[stem][vital][coordinator]") {
+  REQUIRE(evolab::applyMiniCToComputerDispatch(0.8f, 1.0f, 0.0f) == 0.0f);
 }

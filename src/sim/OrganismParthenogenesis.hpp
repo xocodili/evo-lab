@@ -13,6 +13,7 @@ class BarrenWorld;
 struct ParthenogenesisPassOptions {
   float structuralRateOverride = -1.0f;
   bool skipEligibilityChecks = false;
+  bool captureRejectedMorphology = false;
 };
 
 struct ParthenogenesisResult {
@@ -20,7 +21,10 @@ struct ParthenogenesisResult {
   bool aborted = false;
   std::uint32_t bytesSpent = 0;
   std::uint32_t childId = 0;
+  std::uint32_t stemBindStepsReplayed = 0;
+  bool rejectedMorphologyCaptured = false;
   Organism child;
+  Organism rejectedMorphology;
 };
 
 bool campGenotypeValid(const Organism& organism);

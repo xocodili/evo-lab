@@ -9,6 +9,14 @@
 
 #include <random>
 
+namespace {
+
+void seedLocomotionFuel(evolab::ActuatorInteroception& interoception, std::uint32_t bytes = 8) {
+  evolab::seedActuatorLocomotionFuelInteroception(interoception, bytes, bytes);
+}
+
+}  // namespace
+
 TEST_CASE("camp locomotion anchored on P food lock without bearing window", "[camp][tumble]") {
   evolab::ActuatorInteroception interoception;
   interoception.perceptorLocked = true;
@@ -24,7 +32,8 @@ TEST_CASE("M taste steers but does not anchor locomotion", "[camp][tumble]") {
   interoception.mouthTasteBearing = 0.9f;
   interoception.mouthTasteSymmetricAmbiguity = false;
   REQUIRE_FALSE(evolab::campLocomotionAnchored(interoception));
-  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception, 8);
+  seedLocomotionFuel(interoception);
+  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception);
   REQUIRE(intent.tumbleRateScale > 0.0f);
 }
 
@@ -37,7 +46,8 @@ TEST_CASE("symmetric M taste is not an energon anchor", "[camp][tumble]") {
 
 TEST_CASE("flat interoception allows tumble scaling", "[camp][tumble]") {
   evolab::ActuatorInteroception interoception;
-  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception, 8);
+  seedLocomotionFuel(interoception);
+  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception);
   REQUIRE(intent.tumbleRateScale > 0.0f);
 }
 
@@ -46,7 +56,8 @@ TEST_CASE("anchored interoception zeroes tumble rate scale", "[camp][tumble]") {
   interoception.perceptorLocked = true;
   interoception.focusKind = evolab::PerceptFocusKind::Food;
   interoception.approach = 0.6f;
-  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception, 8);
+  seedLocomotionFuel(interoception);
+  const evolab::MotorIntent intent = evolab::computeCampMotorIntent(interoception);
   REQUIRE(intent.tumbleRateScale == Catch::Approx(0.0f));
 }
 

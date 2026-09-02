@@ -6,6 +6,7 @@
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuronStem.hpp"
+#include "sim/StemBinding.hpp"
 
 #include <cmath>
 #include <random>
@@ -68,8 +69,11 @@ bool compatibleDockTarget(const NeuralAxon& axon, const Organism& recipient,
   if (recipient.neuralAxons.size() >= kAxonChannelCapacity) {
     return false;
   }
-  const NeuronType expected = uncappedNeuronType(axon);
-  if (expected != NeuronType::None && target.neuron != expected) {
+  if (!stemGlueMatches(kStemGlueLabel, kStemGlueLabel)) {
+    return false;
+  }
+  const NeuronType openType = uncappedNeuronType(axon);
+  if (openType != NeuronType::None && target.neuron != openType) {
     return false;
   }
   return true;

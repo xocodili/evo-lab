@@ -169,7 +169,19 @@ At spawn, CAMP developmental axons use believe baseline **100%** and feed baseli
 
 Directed **axon feed** with **η loss on payload**, **believe + feed gating**, and **M-only field ingress**. Hub surplus dispatches from **`bodyStorage`** when above `kComputerHubReserveBytes`.
 
-**Modules:** `NeuronFuel.hpp/cpp`, `EnergonConveyance.hpp/cpp` (`conveyCampEnergon`).
+**Modules:** `NeuronStem.hpp/cpp` (vital + surplus metabolism), `NeuronFuel.hpp/cpp`, `EnergonConveyance.hpp/cpp` (`conveyCampEnergon`).
+
+#### Stem-cell layer (`NeuronStem`)
+
+All P/M/C/A neurons extend the same stem substrate:
+
+| Layer | Role | Examples |
+|-------|------|----------|
+| **Vital** | Keep nodes alive above hub reserve | basal 1 B/tick, empty-string mastication tax, fresh bite → hub, hub vital draw for empty P/M/A |
+| **Surplus** | Black Queen export ramps | `equilibriumExportScale`, bite-tick hub silence (`eqC=0`) |
+| **Neuron extension** | Type-specific behaviour | P scan, M feed intent, C dispatch register, A stroke |
+
+Surplus scales refresh at three tick points: post-digest, pre-computer, pre-conveyance.
 
 #### Substrate
 
@@ -187,14 +199,14 @@ Directed **axon feed** with **η loss on payload**, **believe + feed gating**, a
 
 | Class | Origin | May leave via |
 |-------|--------|----------------|
-| **Fresh** | Field bite at M | Digest → hub, then axons |
+| **Fresh** | Field bite at M | Hub-first credit (camp), then axon surplus export |
 | **Returned** | Axon hop rejected at wallet | Dissipates at source (entropy) |
 
 Death-release (neuron killed → store spat at node) stays distinct from field policy.
 
 #### Ingress (field → M)
 
-Unchanged bite economics: gross **9 B**, mastication tax **1 B** → net **+8 B** credited as **Fresh** (`kBiteNetYieldBytes`). Mouth surplus above **`kNeuronStoreMaxBytes`** digests to hub or routes on conveyance — no field spam on overflow.
+Gross **9 B**, mastication tax **1 B** → net **+8 B** credited as **Fresh** (`kBiteNetYieldBytes`). **Camp mouths credit the C hub first** (`creditStemFreshEnergon`); local mouth wallet is operational reserve. Empty-string contact pays the 1 B tax from node wallet or hub vital floor. Mouth surplus above **`kNeuronStoreMaxBytes`** digests to hub on later ticks.
 
 #### Conveyance phase
 

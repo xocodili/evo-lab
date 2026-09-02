@@ -78,7 +78,7 @@ float muscleTargetYawDelta(const Organism& organism, std::uint32_t parentId,
   const float tension = campAxonBundleTension(organism, parentId, childId);
   float yawDelta = tension * kAxonBundleFlexGain;
   if (organism.lastActuatorStrokeFlexBoost > 0.0f) {
-    if (childId == kCampActuatorId) {
+    if (parentId == kCampActuatorId) {
       yawDelta += organism.lastActuatorStrokeFlexBoost * kActuatorStrokeFlexGain;
     } else if (childId == kCampPerceptorId || childId == kCampMouthId) {
       yawDelta -= organism.lastActuatorStrokeFlexBoost * kAxonBundleTrailFlexGain;
@@ -127,7 +127,7 @@ std::vector<engine::kinematics::MuscleCommand> buildMuscleCommands(
     command.targetYawDelta = muscleTargetYawDelta(organism, parentJoint.nodeId, joint.nodeId);
     command.stiffness = kAxonBundleFlexStiffness;
     command.damping = kMusclePdDamping;
-    if (organism.lastStrokePaid && joint.nodeId == kCampActuatorId &&
+    if (organism.lastStrokePaid && parentJoint.nodeId == kCampActuatorId &&
         organism.lastActuatorStrokeFlexBoost > 0.0f) {
       command.stiffness *= kStrokeMuscleStiffnessBoost;
     }
@@ -141,7 +141,15 @@ float campKeelYawTorque(const Organism& organism) {
   if (!organism.isCampNom()) {
     return 0.0f;
   }
-  const SkeletonNode* hub = organism.findNode(kCampRootNodeId);
+  if (organismHasCampTorpedoChain(organism)) {
+    const float tensionAC =
+        campAxonBundleTension(organism, kCampActuatorId, kCampComputerId);
+    const float tensionCP =
+        campAxonBundleTension(organism, kCampComputerId, kCampPerceptorId);
+    const float tensionPM = campAxonBundleTension(organism, kCampPerceptorId, kCampMouthId);
+    return (tensionPM - tensionCP) * 0.35f + (tensionCP - tensionAC) * 0.25f;
+  }
+  const SkeletonNode* hub = organism.findNode(kCampComputerId);
   if (hub == nullptr) {
     return 0.0f;
   }

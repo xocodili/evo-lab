@@ -2,6 +2,8 @@
 
 
 
+#include "sim/OrganismComputer.hpp"
+
 #include "sim/CampNeuronGating.hpp"
 #include "sim/CellConstants.hpp"
 
@@ -229,23 +231,11 @@ CloacaBand cloacaBandFromBlob(const EnergonBlob& blob) {
 
 bool campDistressPredicate(const Organism& organism) {
 
-  if (computerHubFuelBytes(organism) < kComputerHubReserveBytes) {
+  ComputerInteroception interoception;
 
-    return true;
+  seedComputerProprioInteroception(organism, 0, interoception);
 
-  }
-
-  for (const SkeletonNode& node : organism.nodes) {
-
-    if (node.alive && node.basalArrearsTicks > 0) {
-
-      return true;
-
-    }
-
-  }
-
-  return hubFuelConfidence(computerHubFuelBytes(organism)) < 3u;
+  return interoception.distress;
 
 }
 
@@ -253,69 +243,11 @@ bool campDistressPredicate(const Organism& organism) {
 
 bool campMateReadyPredicate(const Organism& organism, std::uint64_t simTick) {
 
-  if (!organism.isCampNom() || !organism.alive) {
+  ComputerInteroception interoception;
 
-    return false;
+  seedComputerProprioInteroception(organism, simTick, interoception);
 
-  }
-
-  if (hubFuelConfidence(computerHubFuelBytes(organism)) < kComputerSatiationConfidence) {
-
-    return false;
-
-  }
-
-  const SkeletonNode* mouth = findNeuronNode(organism, NeuronType::Mouth);
-
-  if (mouth == nullptr ||
-
-      mouth->store.size() < static_cast<std::size_t>(kMouthInhibitActuatorConfidence)) {
-
-    return false;
-
-  }
-
-  const SkeletonNode* perceptor = findNeuronNode(organism, NeuronType::Perceptor);
-
-  const SkeletonNode* actuator = findNeuronNode(organism, NeuronType::Actuator);
-
-  if (perceptor == nullptr || actuator == nullptr) {
-
-    return false;
-
-  }
-
-  if (perceptor->store.size() < kPerceptorScanCostPerTick) {
-
-    return false;
-
-  }
-
-  if (actuator->store.size() < kActuatorStrokeCostPerTick) {
-
-    return false;
-
-  }
-
-  if (organism.lastPerceptFocusKind == PerceptFocusKind::Threat &&
-
-      organism.lastPerceptConfidence < kNeuronConfidenceNeutral) {
-
-    return false;
-
-  }
-
-  const std::uint64_t age =
-
-      simTick > organism.createdAtTick ? simTick - organism.createdAtTick : 0u;
-
-  if (age < kMateMinAgeTicks) {
-
-    return false;
-
-  }
-
-  return computerHubFuelBytes(organism) >= kComputerHubReserveBytes + kCloacaVentCostMate;
+  return interoception.mateReady;
 
 }
 
@@ -323,33 +255,11 @@ bool campMateReadyPredicate(const Organism& organism, std::uint64_t simTick) {
 
 CloacaBand chooseCloacaBand(const Organism& organism, std::uint64_t simTick) {
 
-  if (campDistressPredicate(organism) &&
+  ComputerInteroception interoception;
 
-      computerHubFuelBytes(organism) >= kCloacaVentCostDistress) {
+  seedComputerProprioInteroception(organism, simTick, interoception);
 
-    return CloacaBand::Distress;
-
-  }
-
-  if (campMateReadyPredicate(organism, simTick)) {
-
-    return CloacaBand::Mate;
-
-  }
-
-  const float satiation =
-
-      confidenceToUnit(hubFuelConfidence(computerHubFuelBytes(organism)));
-
-  if (satiation >= confidenceToUnit(kComputerSatiationConfidence) &&
-      organism.hubConservationExportScale > 0.01f &&
-      computerHubFuelBytes(organism) >= kComputerHubReserveBytes + kCloacaVentCostBaseline) {
-
-    return CloacaBand::Baseline;
-
-  }
-
-  return CloacaBand::None;
+  return chooseCloacaBandFromInteroception(interoception);
 
 }
 

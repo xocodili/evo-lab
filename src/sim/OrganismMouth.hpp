@@ -20,18 +20,20 @@ struct MouthInteroception {
   PerceptFocusKind focusKind = PerceptFocusKind::None;
   float tasteSalience = 0.0f;
   float tasteGradient = 0.0f;
+  bool mouthChewPaused = false;
 };
 
 struct FeedIntent {
   float biteDrive = 0.0f;
   bool allowFoodBite = false;
   bool feedSuppressed = false;
+  bool mouthChewPaused = false;
 };
 
 MouthInteroception gatherMouthInteroception(const Organism& organism, std::uint32_t mouthId,
                                             const SkeletonNode& mouth, std::uint64_t simTick);
 
-FeedIntent computeCampFeedIntent(const MouthInteroception& interoception, bool& mouthChewPaused);
+FeedIntent computeCampFeedIntent(const MouthInteroception& interoception);
 
 void runMouthTastePhase(Organism& organism, const EnergonField& energon, float cellSize,
                         std::uint64_t simTick);
