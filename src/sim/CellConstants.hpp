@@ -107,10 +107,11 @@ inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 // Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
 inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
 inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
-// Chemotaxis horizon in multiples of cellSize (~nom body scale). Near-sighted P cone;
-// M taste reaches ~2× P (medium range). Berg & Purcell run-and-tumble bias is body-length
-// scaled, not map-spanning (Gardiner & Atema 2010; Hueter et al. 2004 JEB).
-inline constexpr float kPerceptorSenseRadiusFactor = 2.0f;
+// Chemotaxis horizon in multiples of cellSize (~nom body scale). Ram-nose torpedo: P sits one
+// segment aft of M — doubled P horizon (4×) previews the corridor before mouth contact; M taste
+// stays at 4× (decoupled from 2×P) so bite/taste overlap does not grow with P. Berg & Purcell
+// run-and-tumble bias is body-length scaled (Gardiner & Atema 2010; Hueter et al. 2004 JEB).
+inline constexpr float kPerceptorSenseRadiusFactor = 4.0f;
 inline constexpr float kPerceptorFocusLockThreshold = 0.05f;
 inline constexpr float kPerceptorFocusReleaseThreshold = 0.02f;
 // Berg-style run bias: outbound confidence nudged by Δ food Go/NoGo score vs prior paid scan.
@@ -163,8 +164,8 @@ inline constexpr float kMouthContactRadiusFactor = 0.65f;
 // cellSize and hoovered patches. Slightly wider than bite contact so near-misses latch.
 inline constexpr float kMouthStickyRadiusFactor = 0.75f;
 // Extra-oral taste buds: omnidirectional chemo sampling at the mouth (barbel / olfaction
-// analogue). Medium reach — wider than P focus cone but not map-spanning.
-inline constexpr float kMouthTasteRadiusFactor = kPerceptorSenseRadiusFactor * 2.0f;
+// analogue). Medium reach — fixed 4× cellSize (was 2×P when P was 2×; decoupled for ram nose).
+inline constexpr float kMouthTasteRadiusFactor = 4.0f;
 inline constexpr float kMouthTasteSalienceFloor = 0.25f;
 // Berg-style temporal ΔC bias on run/tumble when P has no lock.
 inline constexpr float kMouthTasteTemporalGain = 3.0f;

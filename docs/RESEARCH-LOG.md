@@ -339,3 +339,22 @@ R1 spec: [PARTHENOGENESIS.md](PARTHENOGENESIS.md) — two-layer entropy (structu
 **Stem genotype:** `StemChainRecord` links A→C→P→M; inherited via `StemAssemblyPlan.chains`. Hub-star `binds` retained for legacy test morphologies.
 
 **Validation:** `organismHasCampTorpedoChain()` / skeleton checks; parthenogenesis replays 3 chain bind steps.
+
+### 2026-09-02 (c) — Viability retune (2× P range) + forward agenda
+
+**Perception tweak:** `kPerceptorSenseRadiusFactor` **2.0 → 4.0**; `kMouthTasteRadiusFactor` held at **4.0** (decoupled from 2×P) so ram-nose M and aft P no longer share the same effective patch — reduces twitchy run/tumble from overlapping mouth/taste and focus cone.
+
+**Marathon gates (post-retune):**
+
+| Horizon | Alive | Seed survivors | Notes |
+|---------|-------|----------------|-------|
+| 6k | 43 | 41/59 | stroke ~22%, percept scan ~0.18% |
+| 18k (ultra) | 24 | **20/59** | min alive 23; feedbag + 3 offspring; 0 seed-organic births |
+
+**Playtest:** ~9k ticks — original seed campers still alive (qualitative); aligns with ultra seed-survivor curve.
+
+**Deferred — aging & senescence (not now):** Current cohort has **no age-linked mortality**; survival success is metabolic + behavioural only. For later evolution stages, add **aging / senescence** as explicit selection pressure — turnover, parent–offspring replacement, and “rocket fuel” for the evolution hose (otherwise long-lived well-fed gen-0 anchors dominate indefinitely). Kind baseline first; senescence when reproduction ecology is ready.
+
+**Next session — kinematics (longboat, not worm):** Colinear **MPCA** chain should behave like a **longboat**: **keel steering**, coherent body axis, segment flex on stroke — not a twitchy worm. Revisit `NeuronMusculature` keel yaw, articulated FK/dynamics, axon-bundle flex, and [KINEMATICS.md](KINEMATICS.md) / [KINEMATICS-PHYSICS-DESIGN.md](KINEMATICS-PHYSICS-DESIGN.md) trail-lag / negative yaw on aft segments. Goal: stroke at A propagates smooth heading hold; P/M lag appropriately behind ram nose M.
+
+**Still later:** R0 HGT dock; trust/RPE on mouth CTA; headless Kaplan-Meier; Grover floor at birth; seed-organic births without feedbag oracle.

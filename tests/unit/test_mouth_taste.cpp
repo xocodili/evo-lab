@@ -51,6 +51,35 @@ bool findWetSite(const evolab::BarrenWorld& world, float cellSize, float& wx, fl
   return false;
 }
 
+bool placeWetFoodAheadOfMouth(const evolab::BarrenWorld& world, float cellSize,
+                              const evolab::SkeletonNode& mouth, float bearing, float distance,
+                              float& foodX, float& foodZ) {
+  foodX = mouth.worldX + std::sin(bearing) * distance;
+  foodZ = mouth.worldZ + std::cos(bearing) * distance;
+  return world.isWetWorld(foodX, foodZ, cellSize);
+}
+
+bool findWetFoodNearMouth(const evolab::BarrenWorld& world, float cellSize,
+                          const evolab::SkeletonNode& mouth, float preferredBearing,
+                          float distance, float& foodX, float& foodZ) {
+  if (placeWetFoodAheadOfMouth(world, cellSize, mouth, preferredBearing, distance, foodX, foodZ)) {
+    return true;
+  }
+  constexpr int kBearingSteps = 16;
+  for (int step = 1; step < kBearingSteps; ++step) {
+    const float delta = static_cast<float>(step) * 6.2831853f / static_cast<float>(kBearingSteps);
+    if (placeWetFoodAheadOfMouth(world, cellSize, mouth, preferredBearing + delta, distance,
+                                 foodX, foodZ)) {
+      return true;
+    }
+    if (placeWetFoodAheadOfMouth(world, cellSize, mouth, preferredBearing - delta, distance,
+                                 foodX, foodZ)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 TEST_CASE("mouth taste ignores dry land energon", "[camp][mouth][taste]") {
@@ -154,27 +183,23 @@ TEST_CASE("mouth taste senses food outside perceptor gaze cone", "[camp][mouth][
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, wx, wz, 1.0f, evolab::kTicksPerStemCellDay, 0,
                                   evolab::kWorldCellSize);
+  camper.heading = 0.0f;
 
-  const float foodBearing = 0.55f;
+  // Lateral food — outside P forward cone (±45°) but inside omnidirectional M taste.
+  const float foodBearing = 1.15f;
   const float foodDistance = evolab::kWorldCellSize * 2.5f;
+
+  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
   evolab::SkeletonNode* perceptor = camper.findNode(evolab::kCampPerceptorId);
   REQUIRE(mouth != nullptr);
   REQUIRE(perceptor != nullptr);
 
-  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  const float foodX = mouth->worldX + std::sin(foodBearing) * foodDistance;
-  const float foodZ = mouth->worldZ + std::cos(foodBearing) * foodDistance;
-  REQUIRE(world.isWetWorld(foodX, foodZ, evolab::kWorldCellSize));
+  float foodX = 0.0f;
+  float foodZ = 0.0f;
+  REQUIRE(findWetFoodNearMouth(world, evolab::kWorldCellSize, *mouth, foodBearing, foodDistance,
+                               foodX, foodZ));
   energon.injectBlob(evolab::makeCornucopiaBlob(foodX, foodZ, 0x42));
-
-  const float blindHeading = foodBearing + 3.14159265f;
-  camper.heading = blindHeading;
-  camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  mouth = camper.findNode(evolab::kCampMouthId);
-  perceptor = camper.findNode(evolab::kCampPerceptorId);
-  REQUIRE(mouth != nullptr);
-  REQUIRE(perceptor != nullptr);
 
   const float senseRadius = evolab::kWorldCellSize * evolab::kPerceptorSenseRadiusFactor;
   REQUIRE_FALSE(pointInFocusCone(perceptor->worldX, perceptor->worldZ, camper.heading,
@@ -203,13 +228,14 @@ TEST_CASE("mouth taste temporal gradient turns positive when approaching food",
   evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
   REQUIRE(mouth != nullptr);
 
-  const float foodBearing = 0.0f;
-  const float startDistance = evolab::kWorldCellSize * 3.0f;
+  const float foodBearing = 0.35f;
+  const float startDistance = evolab::kWorldCellSize * 2.5f;
   camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   mouth = camper.findNode(evolab::kCampMouthId);
-  const float foodX = mouth->worldX + std::sin(foodBearing) * startDistance;
-  const float foodZ = mouth->worldZ + std::cos(foodBearing) * startDistance;
-  REQUIRE(world.isWetWorld(foodX, foodZ, evolab::kWorldCellSize));
+  float foodX = 0.0f;
+  float foodZ = 0.0f;
+  REQUIRE(findWetFoodNearMouth(world, evolab::kWorldCellSize, *mouth, foodBearing, startDistance,
+                               foodX, foodZ));
   energon.injectBlob(evolab::makeCornucopiaBlob(foodX, foodZ, 0x42));
   camper.heading = foodBearing;
   const float halfExtent =
@@ -339,18 +365,19 @@ TEST_CASE("mouth taste latch holds bearing across ticks", "[camp][mouth][taste][
   float wz = 0.0f;
   REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
   evolab::Organism camper =
-      evolab::makeCampNomOrganism(1, wx, wz, 0.0f, evolab::kTicksPerStemCellDay, 0,
+      evolab::makeCampNomOrganism(1, wx, wz, 1.0f, evolab::kTicksPerStemCellDay, 0,
                                   evolab::kWorldCellSize);
+  camper.heading = 0.0f;
   camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
   REQUIRE(mouth != nullptr);
-  mouth = camper.findNode(evolab::kCampMouthId);
 
-  const float foodBearing = 0.0f;
+  const float foodBearing = 0.35f;
   const float foodDist = evolab::kWorldCellSize * 2.5f;
-  const float foodX = mouth->worldX + std::sin(foodBearing) * foodDist;
-  const float foodZ = mouth->worldZ + std::cos(foodBearing) * foodDist;
-  REQUIRE(world.isWetWorld(foodX, foodZ, evolab::kWorldCellSize));
+  float foodX = 0.0f;
+  float foodZ = 0.0f;
+  REQUIRE(findWetFoodNearMouth(world, evolab::kWorldCellSize, *mouth, foodBearing, foodDist, foodX,
+                               foodZ));
   energon.injectBlob(evolab::makeCornucopiaBlob(foodX, foodZ, 0x42));
 
   const float halfExtent =
@@ -377,22 +404,24 @@ TEST_CASE("mouth taste latch switch costs bytes", "[camp][mouth][taste][latch]")
   float wz = 0.0f;
   REQUIRE(findWetSite(world, evolab::kWorldCellSize, wx, wz));
   evolab::Organism camper =
-      evolab::makeCampNomOrganism(1, wx, wz, 0.0f, evolab::kTicksPerStemCellDay, 0,
+      evolab::makeCampNomOrganism(1, wx, wz, 1.0f, evolab::kTicksPerStemCellDay, 0,
                                   evolab::kWorldCellSize);
+  camper.heading = 0.0f;
   camper.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
   evolab::SkeletonNode* mouth = camper.findNode(evolab::kCampMouthId);
   REQUIRE(mouth != nullptr);
-  mouth = camper.findNode(evolab::kCampMouthId);
 
-  const float foodBearing = 0.0f;
-  const float farDist = evolab::kWorldCellSize * 3.0f;
+  const float foodBearing = 0.35f;
+  const float farDist = evolab::kWorldCellSize * 2.8f;
   const float nearDist = evolab::kWorldCellSize * 1.8f;
-  const float farX = mouth->worldX + std::sin(foodBearing) * farDist;
-  const float farZ = mouth->worldZ + std::cos(foodBearing) * farDist;
-  const float nearX = mouth->worldX + std::sin(foodBearing) * nearDist;
-  const float nearZ = mouth->worldZ + std::cos(foodBearing) * nearDist;
-  REQUIRE(world.isWetWorld(farX, farZ, evolab::kWorldCellSize));
-  REQUIRE(world.isWetWorld(nearX, nearZ, evolab::kWorldCellSize));
+  float farX = 0.0f;
+  float farZ = 0.0f;
+  float nearX = 0.0f;
+  float nearZ = 0.0f;
+  REQUIRE(findWetFoodNearMouth(world, evolab::kWorldCellSize, *mouth, foodBearing, farDist, farX,
+                               farZ));
+  REQUIRE(findWetFoodNearMouth(world, evolab::kWorldCellSize, *mouth, foodBearing, nearDist, nearX,
+                               nearZ));
   energon.injectBlob(evolab::makeCornucopiaBlob(farX, farZ, 0x22));
 
   const float halfExtent =
