@@ -43,6 +43,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
                                          float eyeY, float eyeZ, const engine::Mat4& mvp,
                                          int viewportW, int viewportH, std::uint64_t simTick = 0,
                                          float fixedSimHz = 60.0f, float cellSize = 1.0f,
-                                         bool showNeuronDiagnostics = true);
+                                         bool showNeuronDiagnostics = true,
+                                         bool spritesAvailable = true);
 
 }  // namespace evolab::game

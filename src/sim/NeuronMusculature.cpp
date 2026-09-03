@@ -57,8 +57,7 @@ float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
   }
 
   if (child->neuron == NeuronType::Actuator) {
-    tension += organism.lastStrokePaid ? 0.55f : -0.08f;
-    tension += organism.lastActuatorNetDrive * 0.25f;
+    tension += organism.lastActuatorNetDrive * 0.35f;
   } else if (child->neuron == NeuronType::Mouth) {
     tension += (mouthFuelConfidence(*child) / static_cast<float>(kNeuronConfidenceMax) - 0.5f) * 0.45f;
   } else if (child->neuron == NeuronType::Perceptor) {
@@ -75,16 +74,7 @@ namespace {
 
 float muscleTargetYawDelta(const Organism& organism, std::uint32_t parentId,
                            std::uint32_t childId) {
-  const float tension = campAxonBundleTension(organism, parentId, childId);
-  float yawDelta = tension * kAxonBundleFlexGain;
-  if (organism.lastActuatorStrokeFlexBoost > 0.0f) {
-    if (parentId == kCampActuatorId) {
-      yawDelta += organism.lastActuatorStrokeFlexBoost * kActuatorStrokeFlexGain;
-    } else if (childId == kCampPerceptorId || childId == kCampMouthId) {
-      yawDelta -= organism.lastActuatorStrokeFlexBoost * kAxonBundleTrailFlexGain;
-    }
-  }
-  return yawDelta;
+  return campAxonBundleTension(organism, parentId, childId) * kAxonBundleFlexGain;
 }
 
 }  // namespace
@@ -104,7 +94,7 @@ void applyCampJointFlexLimits(engine::kinematics::KinematicSkeleton& skeleton) {
 std::vector<engine::kinematics::MuscleCommand> buildMuscleCommands(
     const Organism& organism, const engine::kinematics::KinematicSkeleton& skeleton) {
   std::vector<engine::kinematics::MuscleCommand> commands;
-  if (!organism.isCampNom()) {
+  if (!organism.usesArticulatedLocomotion()) {
     return commands;
   }
 
@@ -127,49 +117,20 @@ std::vector<engine::kinematics::MuscleCommand> buildMuscleCommands(
     command.targetYawDelta = muscleTargetYawDelta(organism, parentJoint.nodeId, joint.nodeId);
     command.stiffness = kAxonBundleFlexStiffness;
     command.damping = kMusclePdDamping;
-    if (organism.lastStrokePaid && parentJoint.nodeId == kCampActuatorId &&
-        organism.lastActuatorStrokeFlexBoost > 0.0f) {
-      command.stiffness *= kStrokeMuscleStiffnessBoost;
-    }
     commands.push_back(command);
   }
 
   return commands;
 }
 
-float campKeelYawTorque(const Organism& organism) {
-  if (!organism.isCampNom()) {
-    return 0.0f;
-  }
-  if (organismHasCampTorpedoChain(organism)) {
-    const float tensionAC =
-        campAxonBundleTension(organism, kCampActuatorId, kCampComputerId);
-    const float tensionCP =
-        campAxonBundleTension(organism, kCampComputerId, kCampPerceptorId);
-    const float tensionPM = campAxonBundleTension(organism, kCampPerceptorId, kCampMouthId);
-    return (tensionPM - tensionCP) * 0.35f + (tensionCP - tensionAC) * 0.25f;
-  }
-  const SkeletonNode* hub = organism.findNode(kCampComputerId);
-  if (hub == nullptr) {
-    return 0.0f;
-  }
-  const float tensionP = campAxonBundleTension(organism, hub->id, kCampPerceptorId);
-  const float tensionM = campAxonBundleTension(organism, hub->id, kCampMouthId);
-  const float tensionA = campAxonBundleTension(organism, hub->id, kCampActuatorId);
-  return (tensionP - tensionM) + (tensionA - (tensionP + tensionM) * 0.5f) * 0.35f;
-}
-
-void queueCampStrokeImpulse(Organism& organism, float mechanicalThrust, float thrustHeading) {
+void queueCampStrokeImpulse(Organism& organism, std::uint32_t effectorNodeId, float mechanicalThrust,
+                            float thrustHeading) {
   const float dirX = std::sin(thrustHeading);
   const float dirZ = std::cos(thrustHeading);
 
-  organism.pendingImpulseNodeId = kCampActuatorId;
+  organism.pendingImpulseNodeId = effectorNodeId;
   organism.pendingImpulseX = dirX * mechanicalThrust;
   organism.pendingImpulseZ = dirZ * mechanicalThrust;
-  organism.lastActuatorStrokeFlexBoost = mechanicalThrust;
-
-  const float keelTorque = campKeelYawTorque(organism) * mechanicalThrust * kAxonBundleKeelYawGain;
-  organism.bodyDynamics.rootYawRate += keelTorque * kBodyInvInertia;
 }
 
 }  // namespace evolab

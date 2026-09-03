@@ -1,6 +1,8 @@
 #pragma once
 
+#include "engine/kinematics/ForwardKinematicsScratch.hpp"
 #include "engine/kinematics/KinematicLocalPose.hpp"
+#include "engine/kinematics/KinematicNodeLookup.hpp"
 #include "engine/kinematics/KinematicSkeleton.hpp"
 #include "engine/kinematics/Math.hpp"
 
@@ -22,14 +24,52 @@ struct KinematicNodePose {
 
 namespace detail {
 
-template <typename NodeRange>
-std::size_t nodeIndexById(const NodeRange& nodes, std::uint32_t nodeId) {
-  for (std::size_t i = 0; i < nodes.size(); ++i) {
-    if (nodes[i].id == nodeId) {
-      return i;
-    }
+template <typename NodeLike, std::size_t Extent, typename HeightAtXZ>
+bool solveForwardKinematicsImpl(const KinematicSkeleton& skeleton,
+                                std::span<const float> jointYawDeltas, float rootWorldYaw,
+                                std::span<NodeLike, Extent> nodes, HeightAtXZ&& heightAtXZ,
+                                ForwardKinematicsScratch& scratch,
+                                const NodeSpanIndex<NodeLike>& nodeIndex) {
+  if (!skeleton.valid() || jointYawDeltas.size() != skeleton.jointCount()) {
+    return false;
   }
-  return nodes.size();
+
+  const std::size_t jointCount = skeleton.jointCount();
+  scratch.ensureJointCount(jointCount);
+
+  for (std::size_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
+    const KinematicSkeleton::Joint& joint = skeleton.joint(jointIndex);
+    const std::size_t nodeIndexInSpan = nodeIndex.indexOf(joint.nodeId);
+    if (nodeIndexInSpan == kInvalidNodeSpanIndex) {
+      return false;
+    }
+
+    const float localYaw =
+        joint.constraint.resolve(joint.bindLocalYaw, jointYawDeltas[jointIndex]);
+
+    if (joint.parentIndex < 0) {
+      scratch.worldYaw[jointIndex] = normalizeAngle(rootWorldYaw + localYaw);
+      scratch.worldX[jointIndex] = nodes[nodeIndexInSpan].worldX;
+      scratch.worldZ[jointIndex] = nodes[nodeIndexInSpan].worldZ;
+    } else {
+      const std::size_t parentIndex = static_cast<std::size_t>(joint.parentIndex);
+      scratch.worldYaw[jointIndex] =
+          normalizeAngle(scratch.worldYaw[parentIndex] + localYaw);
+      scratch.worldX[jointIndex] =
+          scratch.worldX[parentIndex] +
+          std::sin(scratch.worldYaw[jointIndex]) * joint.restLength;
+      scratch.worldZ[jointIndex] =
+          scratch.worldZ[parentIndex] +
+          std::cos(scratch.worldYaw[jointIndex]) * joint.restLength;
+    }
+
+    NodeLike& node = nodes[nodeIndexInSpan];
+    node.worldX = scratch.worldX[jointIndex];
+    node.worldZ = scratch.worldZ[jointIndex];
+    node.worldY = heightAtXZ(scratch.worldX[jointIndex], scratch.worldZ[jointIndex]);
+  }
+
+  return true;
 }
 
 }  // namespace detail
@@ -38,46 +78,31 @@ std::size_t nodeIndexById(const NodeRange& nodes, std::uint32_t nodeId) {
 template <typename NodeLike, std::size_t Extent, typename HeightAtXZ>
 bool solveForwardKinematics(const KinematicSkeleton& skeleton, const KinematicLocalPose& localPose,
                             float rootWorldYaw, std::span<NodeLike, Extent> nodes,
+                            HeightAtXZ&& heightAtXZ, ForwardKinematicsScratch& scratch) {
+  NodeSpanIndex<NodeLike> nodeIndex(nodes);
+  return detail::solveForwardKinematicsImpl(
+      skeleton, localPose.deltas(), rootWorldYaw, nodes,
+      std::forward<HeightAtXZ>(heightAtXZ), scratch, nodeIndex);
+}
+
+template <typename NodeLike, std::size_t Extent, typename HeightAtXZ>
+bool solveForwardKinematics(const KinematicSkeleton& skeleton, const KinematicLocalPose& localPose,
+                            float rootWorldYaw, std::span<NodeLike, Extent> nodes,
                             HeightAtXZ&& heightAtXZ) {
-  if (!skeleton.valid() || localPose.size() != skeleton.jointCount()) {
-    return false;
-  }
+  ForwardKinematicsScratch scratch;
+  return solveForwardKinematics(skeleton, localPose, rootWorldYaw, nodes,
+                                std::forward<HeightAtXZ>(heightAtXZ), scratch);
+}
 
-  const std::size_t jointCount = skeleton.jointCount();
-  std::vector<float> worldYaw(jointCount, 0.0f);
-  std::vector<float> worldX(jointCount, 0.0f);
-  std::vector<float> worldZ(jointCount, 0.0f);
-
-  for (std::size_t jointIndex = 0; jointIndex < jointCount; ++jointIndex) {
-    const KinematicSkeleton::Joint& joint = skeleton.joint(jointIndex);
-    const std::size_t nodeIndex = detail::nodeIndexById(nodes, joint.nodeId);
-    if (nodeIndex >= nodes.size()) {
-      return false;
-    }
-
-    const float localYaw =
-        joint.constraint.resolve(joint.bindLocalYaw, localPose.yawDelta(jointIndex));
-
-    if (joint.parentIndex < 0) {
-      worldYaw[jointIndex] = normalizeAngle(rootWorldYaw + localYaw);
-      worldX[jointIndex] = nodes[nodeIndex].worldX;
-      worldZ[jointIndex] = nodes[nodeIndex].worldZ;
-    } else {
-      const std::size_t parentIndex = static_cast<std::size_t>(joint.parentIndex);
-      worldYaw[jointIndex] = normalizeAngle(worldYaw[parentIndex] + localYaw);
-      worldX[jointIndex] =
-          worldX[parentIndex] + std::sin(worldYaw[jointIndex]) * joint.restLength;
-      worldZ[jointIndex] =
-          worldZ[parentIndex] + std::cos(worldYaw[jointIndex]) * joint.restLength;
-    }
-
-    NodeLike& node = nodes[nodeIndex];
-    node.worldX = worldX[jointIndex];
-    node.worldZ = worldZ[jointIndex];
-    node.worldY = heightAtXZ(worldX[jointIndex], worldZ[jointIndex]);
-  }
-
-  return true;
+template <typename NodeLike, std::size_t Extent, typename HeightAtXZ>
+bool solveForwardKinematicsFromDeltas(const KinematicSkeleton& skeleton,
+                                        std::span<const float> jointYawDeltas, float rootWorldYaw,
+                                        std::span<NodeLike, Extent> nodes, HeightAtXZ&& heightAtXZ,
+                                        ForwardKinematicsScratch& scratch,
+                                        const NodeSpanIndex<NodeLike>& nodeIndex) {
+  return detail::solveForwardKinematicsImpl(
+      skeleton, jointYawDeltas, rootWorldYaw, nodes, std::forward<HeightAtXZ>(heightAtXZ),
+      scratch, nodeIndex);
 }
 
 template <typename NodeLike, std::size_t Extent>
@@ -92,7 +117,7 @@ void translateNodesXZ(std::span<NodeLike, Extent> nodes, float dx, float dz) {
 template <typename NodeLike, std::size_t Extent, typename BoneLike, typename HeightAtXZ>
 bool solveTreeForwardKinematics(std::span<NodeLike, Extent> nodes,
                                 std::span<const BoneLike> bones, std::uint32_t rootNodeId,
-                                float heading, HeightAtXZ&& heightAtXZ) {
+                                float rootWorldYaw, HeightAtXZ&& heightAtXZ) {
   std::vector<KinematicBone> engineBones;
   engineBones.reserve(bones.size());
   for (const BoneLike& bone : bones) {
@@ -110,15 +135,15 @@ bool solveTreeForwardKinematics(std::span<NodeLike, Extent> nodes,
   }
 
   const KinematicLocalPose localPose = KinematicLocalPose::zeros(skeleton.jointCount());
-  return solveForwardKinematics(skeleton, localPose, heading, nodes,
+  return solveForwardKinematics(skeleton, localPose, rootWorldYaw, nodes,
                                 std::forward<HeightAtXZ>(heightAtXZ));
 }
 
 inline bool solveTreeForwardKinematicsFlat(std::span<KinematicNodePose> nodes,
                                            std::span<const KinematicBone> bones,
-                                           std::uint32_t rootNodeId, float heading,
+                                           std::uint32_t rootNodeId, float rootWorldYaw,
                                            float worldY = 0.0f) {
-  return solveTreeForwardKinematics(nodes, bones, rootNodeId, heading,
+  return solveTreeForwardKinematics(nodes, bones, rootNodeId, rootWorldYaw,
                                     [worldY](float /*x*/, float /*z*/) { return worldY; });
 }
 

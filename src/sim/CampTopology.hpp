@@ -13,7 +13,8 @@ inline constexpr std::uint32_t kCampPerceptorId = 1;
 inline constexpr std::uint32_t kCampMouthId = 2;
 inline constexpr std::uint32_t kCampComputerId = 3;
 inline constexpr std::uint32_t kCampActuatorId = 4;
-inline constexpr std::uint32_t kCampRootNodeId = kCampActuatorId;
+// Kinematic root is the primary (lowest-id) live mouth — first component in the dev pipeline.
+inline constexpr std::uint32_t kCampRootNodeId = kCampMouthId;
 
 inline constexpr std::pair<std::uint32_t, std::uint32_t> kCampTorpedoChainLinks[] = {
     {kCampActuatorId, kCampComputerId},
@@ -64,5 +65,17 @@ std::string campTorpedoMorphologyLabel(const Organism& organism);
 
 // Inspector / HUD type string: torpedo morphology when applicable, else genotype.
 std::string campDisplayTypeLabel(const Organism& organism);
+
+// Lowest-id live mouth — stable kinematic root across duplicate-mouth mutations.
+const SkeletonNode* findPrimaryMouthNode(const Organism& organism);
+
+// Sync rootNodeId to primary mouth when one exists; otherwise keep a live fallback.
+void ensureKinematicRootNodeId(Organism& organism);
+
+// Camp torpedo / hub-arm / articulated organisms integrate at the primary mouth.
+bool organismUsesMouthKinematicRoot(const Organism& organism);
+
+// Articulated body dynamics (not the same as canonical isCampNom() topology gate).
+bool organismUsesArticulatedLocomotion(const Organism& organism);
 
 }  // namespace evolab

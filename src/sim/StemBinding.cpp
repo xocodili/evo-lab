@@ -192,7 +192,7 @@ Organism assembleOrganismFromStemPlan(std::uint32_t id, float wx, float wz, floa
   }
 
   if (!plan.chains.empty()) {
-    organism.rootNodeId = kCampActuatorId;
+    organism.rootNodeId = kCampMouthId;
     organism.stemAssembly.chains.clear();
     for (const StemChainRecord& record : plan.chains) {
       const float length = record.restLength > 0.0f ? record.restLength : boneLength;

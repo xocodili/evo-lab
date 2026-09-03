@@ -108,5 +108,5 @@ TEST_CASE("actuator sprite manifest and image load from assets", "[engine][sprit
 
 TEST_CASE("perceptor and mouth taste radii after ram-nose retune", "[camp][mouth]") {
   REQUIRE(evolab::kPerceptorSenseRadiusFactor == 4.0f);
-  REQUIRE(evolab::kMouthTasteRadiusFactor == 4.0f);
+  REQUIRE(evolab::kMouthTasteRadiusFactor == 4.0f * 1.33f);
 }

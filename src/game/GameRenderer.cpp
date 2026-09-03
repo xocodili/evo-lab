@@ -406,7 +406,7 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
   const OrganismDrawBatch batch = buildOrganismDrawBatch(
       organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH, simTick, fixedSimHz, kWorldCellSize,
-      showNeuronDiagnostics_);
+      showNeuronDiagnostics_, spritesLoaded_);
 
   engine::gl::GlContext& g = engine::gl::gl();
   g.viewport(0, 0, viewportW, viewportH);

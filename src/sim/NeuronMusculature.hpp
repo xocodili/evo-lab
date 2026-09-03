@@ -16,8 +16,7 @@ void applyCampJointFlexLimits(engine::kinematics::KinematicSkeleton& skeleton);
 float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
                             std::uint32_t childId);
 
-float campKeelYawTorque(const Organism& organism);
-
-void queueCampStrokeImpulse(Organism& organism, float mechanicalThrust, float thrustHeading);
+void queueCampStrokeImpulse(Organism& organism, std::uint32_t effectorNodeId, float mechanicalThrust,
+                            float thrustHeading);
 
 }  // namespace evolab

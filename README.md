@@ -42,19 +42,94 @@ Public **work-in-progress**: experimental, fun to run, behaviour and APIs will c
 
 ## Requirements
 
+### Play a release build (itch.io download)
+
+- **Windows 10/11 (64-bit)** — current public builds are Windows `.exe` only
+- **GPU with OpenGL 3.3+** and up-to-date graphics drivers
+- **No compiler or CMake required** — extract the zip and run; you do **not** need to build from source unless you want to develop or run tests
+
+### Build from source (developers)
+
 - **CMake** 3.20+
 - **C++20** compiler
 - Windows build tested with **MinGW** (WinLibs LLVM)
 
-## Build
+## Play (itch.io / release zip)
+
+**You do not need to build the project to play.** The itch download should be a **zip folder**, not a lone `evo-lab.exe`.
+
+### 1. Extract the whole zip
+
+Unzip into a normal folder (e.g. `C:\Games\evo-lab\`). Do **not** copy only `evo-lab.exe` to the Desktop — the game looks for data files **next to the executable**.
+
+### 2. Folder layout (must look like this)
+
+```text
+evo-lab/
+  evo-lab.exe
+  assets/
+    fonts/
+      LexendDeca-Regular.ttf
+  resources/
+    sprites/
+      mouth_sprites.json
+      mouth_sprites.png
+      perceptor_sprites.json
+      perceptor_sprites.png
+      actuator_sprites.json
+      actuator_sprites.png
+```
+
+If `assets/` or `resources/` is missing, the sim may still open but the HUD font and neuron sprites will not load correctly. Re-download the **full** zip from itch, or build locally (below) — CMake copies these files beside the exe automatically.
+
+### 3. Run
+
+**Double-click** `evo-lab.exe`, or from PowerShell in that folder:
 
 ```powershell
+cd path\to\evo-lab
+.\evo-lab.exe
+```
+
+Optional flags:
+
+```powershell
+.\evo-lab.exe --seed 42 --resolution 128 --nom-count 60
+.\evo-lab.exe --help
+```
+
+**Controls:** drag = orbit · scroll = zoom · **Space** = pause · **R** = regenerate world · **Esc** = quit
+
+Hover a Nom for the live inspector (P/M/C/A stores, axon signals, focus).
+
+### Troubleshooting (Windows)
+
+| Symptom | What to try |
+|---------|-------------|
+| Nothing happens / window flashes | Run from PowerShell in the `evo-lab` folder and read stderr. Check OpenGL 3.3+ drivers. |
+| Windows SmartScreen blocks the exe | **More info → Run anyway** (unsigned indie build). |
+| No HUD text / plain circles instead of sprites | Exe was moved without `assets/` and `resources/` — use the full zip layout above. |
+| Black screen after load | Update GPU drivers; check `startup.trace` in the same folder as the exe for the last startup step. |
+
+Headless smoke (no window):
+
+```powershell
+.\evo-lab.exe --headless --frames 120 --seed 42 --exit
+```
+
+## Build from source
+
+For contributors, testers, or if the itch zip is incomplete.
+
+```powershell
+git clone <repo-url> evo-lab
+cd evo-lab
 cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target evo-lab evo-lab-tests
 ctest --test-dir build --output-on-failure
 ```
 
-## Run
+Run the built game (assets are copied next to the exe by CMake):
 
 ```powershell
 .\build\src\evo-lab.exe
@@ -63,11 +138,11 @@ ctest --test-dir build --output-on-failure
 
 **Archetypes:** `nom` (default CAMP), `stem`, `actuator`
 
-**Controls:** drag = orbit · scroll = zoom · **Space** = pause · **R** = regenerate world
-
-Hover a Nom for live inspector readout (P/M/C/A stores, axon signals, focus).
+**Packaging for itch:** zip everything under `build\src\` (exe + `assets\` + `resources\`), not the exe alone.
 
 ## Tests
+
+Requires a local build (`evo-lab-tests` target):
 
 ```powershell
 .\build\tests\evo-lab-tests.exe "[hgt]"
@@ -76,7 +151,7 @@ Hover a Nom for live inspector readout (P/M/C/A stores, axon signals, focus).
 .\build\tests\evo-lab-tests.exe "[water]"
 ```
 
-Headless (no GPU):
+Headless (no GPU), from a build tree:
 
 ```powershell
 .\build\src\evo-lab.exe --headless --frames 120 --seed 42 --exit

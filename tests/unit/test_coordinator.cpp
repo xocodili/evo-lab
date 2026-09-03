@@ -50,7 +50,7 @@ TEST_CASE("camp nom coordinator runs on every neuron node", "[coordinator][camp]
 TEST_CASE("computer register seeds from mini-C proto template", "[coordinator][camp]") {
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
-  const evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  const evolab::SkeletonNode* computer = camper.findNode(evolab::kCampComputerId);
   REQUIRE(computer != nullptr);
   REQUIRE(computer->computerRegister[0] == computer->coordinatorRegister[0]);
   REQUIRE(computer->computerRegister[1] == computer->coordinatorRegister[0]);
@@ -63,7 +63,7 @@ TEST_CASE("recursive mini-C throttles full C dispatch after coordinator tick", "
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
                                   evolab::kWorldCellSize);
-  evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  evolab::SkeletonNode* computer = camper.findNode(evolab::kCampComputerId);
   REQUIRE(computer != nullptr);
 
   computer->coordinatorRegister[0] = evolab::kNeuronConfidenceMax;
@@ -92,7 +92,7 @@ TEST_CASE("famine stress lowers duty when hub empty and field barren", "[coordin
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, evolab::kTicksPerStemCellDay, 0,
                                   evolab::kWorldCellSize);
-  evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  evolab::SkeletonNode* computer = camper.findNode(evolab::kCampComputerId);
   REQUIRE(computer != nullptr);
   computer->store.clear();
 
@@ -136,7 +136,7 @@ TEST_CASE("feast suppresses famine when hub and field food are abundant", "[coor
 TEST_CASE("computer outbound reflects famine abundance", "[coordinator][famine]") {
   evolab::Organism camper =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 120, 0, evolab::kWorldCellSize);
-  const evolab::SkeletonNode* computer = camper.findNode(evolab::kCampRootNodeId);
+  const evolab::SkeletonNode* computer = camper.findNode(evolab::kCampComputerId);
   REQUIRE(computer != nullptr);
   camper.famineUnit = 0.9f;
   camper.famineConfidence = evolab::famineAbundanceConfidence(camper.famineUnit);

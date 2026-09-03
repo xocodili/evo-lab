@@ -13,6 +13,7 @@
 #include "sim/EnergonString.hpp"
 #include "sim/Organism.hpp"
 #include "sim/NeuronFuel.hpp"
+#include "sim/NeuronMusculature.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/PerceptorFocus.hpp"
 #include "sim/TideAdvection.hpp"
@@ -175,7 +176,8 @@ TEST_CASE("camp skeleton forms torpedo chain M-P-C-A after kinematics", "[nom]")
   REQUIRE(mouth != nullptr);
   REQUIRE(computer != nullptr);
   REQUIRE(actuator != nullptr);
-  REQUIRE(organism.rootNodeId == evolab::kCampRootNodeId);
+  REQUIRE(organism.rootNodeId == evolab::kCampMouthId);
+  REQUIRE(evolab::kCampRootNodeId == evolab::kCampMouthId);
   REQUIRE(evolab::organismHasCampTorpedoChain(organism));
 
   const auto edgeLen = [](const evolab::SkeletonNode& a, const evolab::SkeletonNode& b) {
@@ -193,30 +195,34 @@ TEST_CASE("camp skeleton forms torpedo chain M-P-C-A after kinematics", "[nom]")
   REQUIRE(evolab::campDisplayTypeLabel(organism) == "MPCA");
 }
 
-TEST_CASE("axon bundle flex bends camp arms under actuator stroke", "[nom][musculature]") {
+TEST_CASE("axial stroke impulse propagates along camp chain", "[nom][musculature]") {
   evolab::BarrenWorld world(7, 32);
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
   organism.heading = 0.0f;
-  organism.lastStrokePaid = false;
-  organism.lastActuatorNetDrive = 0.0f;
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   const evolab::SkeletonNode* computerRest = organism.findNode(3);
+  const evolab::SkeletonNode* mouthRest = organism.findNode(2);
   REQUIRE(computerRest != nullptr);
-  const float restZ = computerRest->worldZ;
+  REQUIRE(mouthRest != nullptr);
+  const float hubZ = computerRest->worldZ;
+  const float mouthZ = mouthRest->worldZ;
 
-  organism.lastStrokePaid = true;
-  organism.lastActuatorNetDrive = 0.9f;
-  organism.lastStrokeBytesPaid = evolab::kActuatorStrokeCostPerTick;
-  organism.lastActuatorStrokeFlexBoost =
+  const float mechanicalThrust =
       static_cast<float>(evolab::kActuatorStrokeCostPerTick) * evolab::kActuatorThrustPerStrokeByte *
       evolab::kActuatorTranslationEta;
+  evolab::queueCampStrokeImpulse(organism, evolab::kCampActuatorId, mechanicalThrust,
+                                 organism.heading);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
-  const evolab::SkeletonNode* computerFlex = organism.findNode(3);
-  REQUIRE(computerFlex != nullptr);
-  REQUIRE(std::abs(computerFlex->worldZ - restZ) > 0.02f);
+  const evolab::SkeletonNode* computerAfter = organism.findNode(3);
+  const evolab::SkeletonNode* mouthAfter = organism.findNode(2);
+  REQUIRE(computerAfter != nullptr);
+  REQUIRE(mouthAfter != nullptr);
+  REQUIRE(computerAfter->worldZ > hubZ + mechanicalThrust * 0.5f);
+  REQUIRE(mouthAfter->worldZ > computerAfter->worldZ);
+  REQUIRE(mouthAfter->worldZ >= mouthZ - 0.02f);
 }
 
 TEST_CASE("camp actuator stroke records displacement after kinematics", "[nom][musculature]") {
@@ -239,7 +245,7 @@ TEST_CASE("camp actuator stroke records displacement after kinematics", "[nom][m
   REQUIRE(organism.lastDisplacement > 0.0f);
 }
 
-TEST_CASE("camp stroke moves root along heading not A-arm bearing", "[nom][musculature]") {
+TEST_CASE("camp stroke moves mouth root along heading not A-arm bearing", "[nom][musculature]") {
   evolab::BarrenWorld world(7, 32);
   float wetX = 0.0f;
   float wetZ = 0.0f;

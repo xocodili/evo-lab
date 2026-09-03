@@ -311,8 +311,6 @@ public:
   bool lastHubSignalExpelledThisTick = false;
   CloacaBand lastCloacaBandExpelled = CloacaBand::None;
   std::uint32_t computerNodeId = 0;
-  // Transient stroke flex injected into buildMuscleCommands (CAMP bundle locomotion).
-  float lastActuatorStrokeFlexBoost = 0.0f;
 
   // Articulated-body dynamics (engine E1/E2 — impulse at A, muscle PD flex).
   engine::kinematics::ArticulatedBodyState bodyDynamics;
@@ -348,6 +346,13 @@ public:
 
   // FK-only pass from current bodyDynamics joint state (after clamp / pose edits).
   void syncKinematicsPose(const BarrenWorld& world, float cellSize, float heightScale);
+
+  // True when updateKinematics runs articulated dynamics (not static FK-only).
+  bool usesArticulatedLocomotion() const;
+
+  // Clamp root to world bounds; articulated bodies propagate delta without FK reset.
+  void finalizeKinematicsBoundary(const BarrenWorld& world, float cellSize, float heightScale,
+                                  float halfExtent);
 
   void advectRoot(const BarrenWorld& world, const EnergonField& energon, float cellSize,
 

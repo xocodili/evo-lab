@@ -1,7 +1,5 @@
 #pragma once
 
-#include "engine/kinematics/KinematicBone.hpp"
-
 #include <cstdint>
 
 namespace evolab::engine::kinematics {

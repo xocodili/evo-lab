@@ -89,6 +89,8 @@ Representative filters:
 | Perceptor / mouth / tumble | `[perceptor]`, `[camp][mouth]`, `[camp][tumble]` |
 | Parthenogenesis (unit) | `[parthenogenesis]` |
 | Nom morphology | `[nom]` |
+| Kinematics / mouth-root | `[engine][kinematics]`, `[kinematics]`, `[musculature]`, `[nom][kinematics][finite]` |
+| Locomotion smoke (250–600 tick) | `[diagnostic][locomotion]` |
 
 ---
 

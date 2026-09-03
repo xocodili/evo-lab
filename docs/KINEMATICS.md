@@ -11,8 +11,8 @@
 
 | Layer | Responsibility |
 |--------|----------------|
-| **`evolab_engine::kinematics`** | Skeleton data, local pose, FK, constraints, rigid XZ moves — **no sim deps** |
-| **`evolab_sim`** | `Organism::updateKinematics` — terrain/water height callback |
+| **`evolab_engine::kinematics`** | Skeleton, FK, articulated dynamics, bone constraints, medium drag — **no sim deps** |
+| **`evolab_sim`** | `OrganismKinematics.cpp` + `NeuronMusculature.cpp` — height callback, muscle/impulse adapters |
 | **`evolab_game`** | Draw bones/nodes from solved world poses |
 
 Industry pattern we follow: **bind pose → local pose → FK → (future) IK/constraints pass → render**.
@@ -24,11 +24,38 @@ Industry pattern we follow: **bind pose → local pose → FK → (future) IK/co
 | File | Purpose |
 |------|---------|
 | `KinematicBone.hpp` | Authoring edge: parent, child, restLength, bind local yaw |
-| `KinematicSkeleton.hpp/.cpp` | Runtime tree: parent indices, bind pose, per-joint constraints |
+| `ForwardKinematics.hpp` | Hierarchical FK + legacy `solveTreeForwardKinematics` wrapper |
+| `KinematicSkeleton.hpp/.cpp` | Runtime tree: parent indices, bind pose, cached joint depth, per-joint constraints |
 | `KinematicLocalPose.hpp` | Runtime yaw deltas on bind (0 = rest) |
 | `JointConstraint.hpp` | min/max local yaw, stiffness hook |
-| `ForwardKinematics.hpp` | Hierarchical FK + legacy `solveTreeForwardKinematics` wrapper |
+| `KinematicNodeLookup.hpp` | `NodeSpanIndex` — O(1) node id → span index (built once per tick) |
+| `ForwardKinematicsScratch.hpp` | Reusable FK workspace (no per-solve heap alloc on hot path) |
+| `ArticulatedBodyState.hpp` | Floating-base state: `rootWorldYaw`, rootVel*, joint yaw deltas/velocities |
+| `ArticulatedDynamics.hpp/.inl` | Muscle PD → FK → root integration → medium drag → impulses → constraints |
+| `BoneDistanceConstraint.hpp` | Rest-length PBD along tree edges |
+| `NodeMediumDrag.hpp` | Non-root ambient flow coupling (S4) |
 | `Math.hpp` | `normalizeAngle`, constants |
+
+---
+
+## Kinematic root vs effector (sim policy)
+
+Every articulated tree needs exactly one **kinematic root** for FK/dynamics integration. That is `Organism::rootNodeId` passed to `KinematicSkeleton::buildFromBones`.
+
+That is **not** the same as “where force is applied” or “where the brain lives”:
+
+| Role | Torpedo MPCA (gen-0) | Hub-star (legacy) | Dual-computer test harness |
+|------|----------------------|-------------------|----------------------------|
+| **Kinematic root** | Mouth M (primary / lowest id) | Mouth M on M-arm | Computer C-forage (id 3) |
+| **Stroke effector** | A (tail, not root) | A (arm tip) | A (id 5) — impulse not wired |
+| **Advection anchor** | `rootNodeId` (mouth) | `rootNodeId` | `rootNodeId` |
+| **Articulated dynamics** | ✅ `usesArticulatedLocomotion()` | ✅ when muscle links + actuator | ❌ no muscle skeleton |
+
+**Engine rule:** one floating-base root integrates linear/yaw velocity at the **mouth** (primary live mouth when duplicates exist). **Any node** may receive an `ExternalImpulse` (stroke at tail); bone constraints pin the **effector** during the stroke solve so thrust propagates toward the nose.
+
+**Sim rule (today):** `queueCampStrokeImpulse(organism, effectorNodeId, …)` — caller passes the paying actuator’s id, not a hard-coded camp constant. `ensureKinematicRootNodeId()` keeps `rootNodeId` on the lowest-id live mouth; if that mouth is deleted, root reassigns to the next mouth on the next kinematics tick / parthenogenesis deletion.
+
+**Multi-actuation:** emergent — engine accepts multiple impulses per tick; sim does not loop actuators explicitly. Duplicate mouths do not create duplicate roots; duplicate actuators bill independently when their stroke fires.
 
 ---
 
@@ -58,8 +85,8 @@ Track phases when planning features. Ask “which phase does this use case need?
 
 ```
 Organism.links  →  KinematicSkeleton::buildFromBones
-Organism.heading  →  rootWorldYaw
-yawDelta = 0      →  bind configuration (stem bind records → joint angles)
+Organism.heading  →  diagnostic mirror of bodyDynamics.rootWorldYaw (sim bridge; spawn init layer 2)
+bodyDynamics      →  ArticulatedBodyState (integrated root pose + joint state)
 WaterColumn       →  heightAtXZ callback (Y only)
 ```
 
@@ -107,11 +134,11 @@ When checking progress, ask:
 
 | Gap | Today | Needed for keel / flagellum fidelity |
 |-----|--------|--------------------------------------|
-| **Locomotion coupling** | Impulse at A + muscle PD; tide vs stroke via root velocity | Contact, drag tuning, optional sustained pose holds |
+| **Locomotion coupling** | Impulse at A + muscle PD + per-node medium drag (S4); tide via root velocity | Contact, optional sustained pose holds |
 | **Bundle as force path** | Tension is a visual/posture scalar (`campAxonBundleTension`) | Force/torque along muscle-bundle edges; stiff vs flex links; stroke energy split between translation and bend |
-| **Heading vs body axis** | `organism.heading` steers chemotaxis/tumble; stroke flex is cosmetic to translation | Optional body-axis heading from hub→A geometry; IK (phase 4) so A aims before stroke |
+| **Heading vs body axis** | `organism.heading` steers chemotaxis; stroke projected on spine axis at A (S2) | **S5:** proprio compares intent bearing vs measured body axis for trust learning |
 | **Effector analog (phase 5)** | Discrete 0/1/2-byte stroke per tick | Continuous or phased joint targets from P/M/C/A confidence — rhythmic stroke cycle (phase 6) |
-| **Tide / advect consistency** | Root advect + fan delta to siblings after stroke | Per-node or post-FK advect so bundles do not “shear” relative to solved pose |
+| **Tide / advect consistency** | Per-node medium drag + root tide in `stepArticulatedBody` (S4) | Dry vs wet drag coefficients per habitat |
 | **Closing render edges** | M–A triangle base in `links` but not FK tree | Decide: FK edge, constraint-only, or pure render — affects keel triangle stability |
 
 **Implementation touchpoints:** `queueCampStrokeImpulse`, `buildMuscleCommands`, `stepArticulatedBody`, `OrganismKinematics.cpp`, `OrganismDetail::tickActuatorOrganism`. Phases **4–6** in the rollout table below are the planned closure for mouth reach, analog effectors, and swim rhythm.

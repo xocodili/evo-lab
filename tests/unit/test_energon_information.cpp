@@ -1,3 +1,4 @@
+#include "sim/CellConstants.hpp"
 #include "sim/EnergonConveyance.hpp"
 #include "sim/EnergonInformation.hpp"
 #include "sim/NeuronFuel.hpp"
@@ -44,9 +45,11 @@ TEST_CASE("conveyance hop applies thermal cooling to delivered bytes", "[energon
   mToA->etaSignal = 1.0f;
 
   constexpr std::uint8_t kWarmByte = 220;
-  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 4); ++i) {
+  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 14); ++i) {
     evolab::neuronStorePush(organism, *mouth, kWarmByte);
   }
+  mouth->storeBytesPriorTick = mouth->store.size();
+  organism.equilibriumExportStartUnit = 0.45f;
   actuator->store.clear();
 
   evolab::conveyMouthDownstream(organism, field, 1);

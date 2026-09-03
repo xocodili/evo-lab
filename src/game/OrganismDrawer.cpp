@@ -406,7 +406,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
                                          float eyeY, float eyeZ, const engine::Mat4& mvp,
                                          int viewportW, int viewportH, std::uint64_t simTick,
                                          float fixedSimHz, float cellSize,
-                                         bool showNeuronDiagnostics) {
+                                         bool showNeuronDiagnostics, bool spritesAvailable) {
   OrganismDrawBatch batch;
   batch.cellVerts.reserve(organisms.size() * 128);
 
@@ -513,19 +513,22 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
           (root->neuron == NeuronType::Actuator && organism.hasActuatorNeurons()) ||
           organismUsesCampSkeletonVisual(organism);
       if (showHeading && headingAnchor != nullptr) {
-        float ax = headingAnchor->worldX;
-        float ay = headingAnchor->worldY;
-        float az = headingAnchor->worldZ;
-        visualPos(*headingAnchor, ax, ay, az);
-        const float worldPerPx =
-            worldUnitsPerPixel(mvp, viewportW, viewportH, ax, ay, az);
-        const float chevronLen = kNeuralAxonMaxLengthPx * worldPerPx;
-        const float strokePulse = organism.lastStrokePaid ? 1.35f : 1.0f;
-        const float chevronR = organism.lastStrokePaid ? 0.55f : 0.28f;
-        const float chevronG = organism.lastStrokePaid ? 1.0f : 0.98f;
-        appendHeadingChevron(batch.cellVerts, ax, ay, az, organism.heading, chevronLen * strokePulse,
-                             chevronR, chevronG, 1.0f,
-                             alpha * (organism.lastStrokePaid ? 1.0f : 0.75f));
+        const bool torpedoChain = organismHasCampTorpedoChain(organism);
+        if (!torpedoChain) {
+          float ax = headingAnchor->worldX;
+          float ay = headingAnchor->worldY;
+          float az = headingAnchor->worldZ;
+          visualPos(*headingAnchor, ax, ay, az);
+          const float worldPerPx =
+              worldUnitsPerPixel(mvp, viewportW, viewportH, ax, ay, az);
+          const float chevronLen = kNeuralAxonMaxLengthPx * worldPerPx;
+          const float strokePulse = organism.lastStrokePaid ? 1.35f : 1.0f;
+          const float chevronR = organism.lastStrokePaid ? 0.55f : 0.28f;
+          const float chevronG = organism.lastStrokePaid ? 1.0f : 0.98f;
+          appendHeadingChevron(batch.cellVerts, ax, ay, az, organism.heading,
+                               chevronLen * strokePulse, chevronR, chevronG, 1.0f,
+                               alpha * (organism.lastStrokePaid ? 1.0f : 0.75f));
+        }
       }
     }
 
@@ -573,23 +576,47 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
       }
 
       if (node.neuron == NeuronType::Mouth) {
-        batch.spriteInstances.push_back(makeSpriteInstance(
-            "mouth", organism.lastMouthHadFoodContact ? "mouth_eating" : "mouth_idle", vx, vy, vz,
-            kMouthSpriteDiameterPx, worldPerPx, alpha, simTimeSec));
+        if (spritesAvailable) {
+          batch.spriteInstances.push_back(makeSpriteInstance(
+              "mouth", organism.lastMouthHadFoodContact ? "mouth_eating" : "mouth_idle", vx, vy, vz,
+              kMouthSpriteDiameterPx, worldPerPx, alpha, simTimeSec));
+        } else {
+          r = 1.0f;
+          g = 0.55f;
+          b = 0.22f;
+          appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
+                              halfSize);
+        }
         continue;
       }
       if (node.neuron == NeuronType::Perceptor) {
-        const char* clip = node.focusLocked ? "eye_open" : "eye_half_lidded";
-        batch.spriteInstances.push_back(makeSpriteInstance("perceptor", clip, vx, vy, vz,
-                                                           kPerceptorSpriteDiameterPx, worldPerPx,
-                                                           alpha, simTimeSec));
+        if (spritesAvailable) {
+          const char* clip = node.focusLocked ? "eye_open" : "eye_half_lidded";
+          batch.spriteInstances.push_back(makeSpriteInstance("perceptor", clip, vx, vy, vz,
+                                                             kPerceptorSpriteDiameterPx, worldPerPx,
+                                                             alpha, simTimeSec));
+        } else {
+          r = 0.35f;
+          g = 0.78f;
+          b = 0.95f;
+          appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
+                              halfSize);
+        }
         continue;
       }
       if (node.neuron == NeuronType::Actuator) {
-        const char* clip = organism.lastStrokePaid ? "flagella_stroke" : "flagella_idle";
-        batch.spriteInstances.push_back(makeSpriteInstance("actuator", clip, vx, vy, vz,
-                                                           kActuatorSpriteDiameterPx, worldPerPx,
-                                                           alpha, simTimeSec));
+        if (spritesAvailable) {
+          const char* clip = organism.lastStrokePaid ? "flagella_stroke" : "flagella_idle";
+          batch.spriteInstances.push_back(makeSpriteInstance("actuator", clip, vx, vy, vz,
+                                                             kActuatorSpriteDiameterPx, worldPerPx,
+                                                             alpha, simTimeSec));
+        } else {
+          r = 0.55f;
+          g = 0.95f;
+          b = 0.45f;
+          appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
+                              halfSize);
+        }
         continue;
       }
       if (node.neuron == NeuronType::Computer) {

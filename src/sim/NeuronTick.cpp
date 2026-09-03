@@ -33,12 +33,11 @@ void advectPassiveDrift(Organism& organism, const OrganismTickContext& ctx,
 
 void finalizeAdvectPose(Organism& organism, const OrganismTickContext& ctx) {
   organism.updateKinematics(ctx.world, ctx.cellSize, ctx.heightScale);
+  organism.finalizeKinematicsBoundary(ctx.world, ctx.cellSize, ctx.heightScale, ctx.halfExtent);
   SkeletonNode* root = organism.findNode(organism.rootNodeId);
   if (root == nullptr) {
     return;
   }
-  clampWorldPosition(root->worldX, root->worldZ, ctx.halfExtent, ctx.cellSize * 0.25f);
-  organism.syncKinematicsPose(ctx.world, ctx.cellSize, ctx.heightScale);
   organism.landAdjacent =
       organismLandAdjacent(ctx.world, root->worldX, root->worldZ, ctx.cellSize);
   organism_detail::finalizeCampActuatorProprioception(organism, ctx.simTick);

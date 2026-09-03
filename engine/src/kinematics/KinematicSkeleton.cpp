@@ -33,11 +33,27 @@ KinematicSkeleton KinematicSkeleton::buildFromBones(std::span<const KinematicBon
     }
   }
 
-  if (skeleton.joints_.size() == 1 && !bones.empty()) {
-    // Root was listed only as a leaf in malformed input — still valid single-node skeleton.
-  }
-
+  skeleton.finalizeTopology();
   return skeleton;
+}
+
+void KinematicSkeleton::finalizeTopology() {
+  jointDepthFromRoot_.assign(joints_.size(), 0);
+  bool progress = true;
+  while (progress) {
+    progress = false;
+    for (std::size_t jointIndex = 0; jointIndex < joints_.size(); ++jointIndex) {
+      const Joint& joint = joints_[jointIndex];
+      if (joint.parentIndex < 0) {
+        continue;
+      }
+      const int parentDepth = jointDepthFromRoot_[static_cast<std::size_t>(joint.parentIndex)];
+      if (parentDepth + 1 > jointDepthFromRoot_[jointIndex]) {
+        jointDepthFromRoot_[jointIndex] = parentDepth + 1;
+        progress = true;
+      }
+    }
+  }
 }
 
 std::size_t KinematicSkeleton::jointIndex(std::uint32_t nodeId) const {

@@ -43,9 +43,17 @@ public:
 
   std::size_t jointIndex(std::uint32_t nodeId) const;
 
+  // Tree depth from root joint (0 at root). Cached at build time for medium drag.
+  int jointDepth(std::size_t jointIndex) const { return jointDepthFromRoot_.at(jointIndex); }
+
+  const std::vector<int>& jointDepths() const { return jointDepthFromRoot_; }
+
 private:
+  void finalizeTopology();
+
   std::uint32_t rootNodeId_ = 0;
   std::vector<Joint> joints_;
+  std::vector<int> jointDepthFromRoot_;
   std::unordered_map<std::uint32_t, std::size_t> idToIndex_;
 };
 

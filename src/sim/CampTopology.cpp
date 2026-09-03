@@ -216,29 +216,33 @@ std::string campTorpedoMorphologyLabel(const Organism& organism) {
     return campGenotypeLabel(organism);
   }
 
+  const SkeletonNode* mouth = findPrimaryMouthNode(organism);
+  if (mouth == nullptr) {
+    return campGenotypeLabel(organism);
+  }
+
   std::string label;
   label.reserve(kCampTorpedoChainSegmentCount + 1);
-  std::uint32_t nodeId = kCampRootNodeId;
+  std::uint32_t nodeId = mouth->id;
   for (std::size_t step = 0; step <= kCampTorpedoChainSegmentCount; ++step) {
     const SkeletonNode* node = organism.findNode(nodeId);
     if (node == nullptr || !node->alive) {
       return campGenotypeLabel(organism);
     }
     label.push_back(campNeuronLetter(node->neuron));
-    std::uint32_t childId = 0;
-    for (const auto& edge : kCampTorpedoChainLinks) {
-      if (edge.first == nodeId) {
-        childId = edge.second;
+    std::uint32_t parentId = 0;
+    for (const SkeletonLink& link : organism.links) {
+      if (link.childNodeId == nodeId) {
+        parentId = link.parentNodeId;
         break;
       }
     }
-    if (childId == 0) {
+    if (parentId == 0) {
       break;
     }
-    nodeId = childId;
+    nodeId = parentId;
   }
 
-  std::reverse(label.begin(), label.end());
   return label;
 }
 
@@ -247,6 +251,74 @@ std::string campDisplayTypeLabel(const Organism& organism) {
     return campTorpedoMorphologyLabel(organism);
   }
   return campGenotypeLabel(organism);
+}
+
+const SkeletonNode* findPrimaryMouthNode(const Organism& organism) {
+  const SkeletonNode* best = nullptr;
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.neuron != NeuronType::Mouth || !node.alive) {
+      continue;
+    }
+    if (best == nullptr || node.id < best->id) {
+      best = &node;
+    }
+  }
+  return best;
+}
+
+bool organismUsesArticulatedLocomotion(const Organism& organism) {
+  if (!organism.alive || organism.disableNurseryLocomotion) {
+    return false;
+  }
+  if (!organism.hasLiveActuatorNeurons()) {
+    return false;
+  }
+  bool hasMuscleLink = false;
+  for (const SkeletonLink& link : organism.links) {
+    if (link.muscleBundle) {
+      hasMuscleLink = true;
+      break;
+    }
+  }
+  if (!hasMuscleLink) {
+    return false;
+  }
+  if (findPrimaryMouthNode(organism) != nullptr) {
+    return true;
+  }
+  const SkeletonNode* root = organism.findNode(organism.rootNodeId);
+  return root != nullptr && root->alive;
+}
+
+bool organismUsesMouthKinematicRoot(const Organism& organism) {
+  if (findPrimaryMouthNode(organism) == nullptr) {
+    return false;
+  }
+  return organismHasCampTorpedoSkeleton(organism) || organismHasCampHubArms(organism) ||
+         organismUsesArticulatedLocomotion(organism);
+}
+
+void ensureKinematicRootNodeId(Organism& organism) {
+  if (organismUsesMouthKinematicRoot(organism)) {
+    if (const SkeletonNode* mouth = findPrimaryMouthNode(organism)) {
+      organism.rootNodeId = mouth->id;
+      return;
+    }
+  }
+  const SkeletonNode* root = organism.findNode(organism.rootNodeId);
+  if (root != nullptr && root->alive) {
+    return;
+  }
+  if (const SkeletonNode* mouth = findPrimaryMouthNode(organism)) {
+    organism.rootNodeId = mouth->id;
+    return;
+  }
+  for (const SkeletonNode& node : organism.nodes) {
+    if (node.alive) {
+      organism.rootNodeId = node.id;
+      return;
+    }
+  }
 }
 
 bool organismHasCampTopology(const Organism& organism) {

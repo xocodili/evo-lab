@@ -69,17 +69,16 @@ inline constexpr float kCampNomLinkJointAngle = 0.0f;
 inline constexpr float kAxonBundleMaxFlexRad = 0.38f;
 inline constexpr float kAxonBundleFlexGain = 0.34f;
 inline constexpr float kAxonBundleFlexStiffness = 0.82f;
-// Bundle-coupled stroke: lateral arms trail; keel torque from asymmetry.
-inline constexpr float kActuatorStrokeFlexGain = 3.2f;
-inline constexpr float kAxonBundleTrailFlexGain = 1.1f;
-inline constexpr float kAxonBundleKeelYawGain = 14.0f;
 
 inline constexpr float kBodyLinearDrag = 0.12f;
+// Distal chain nodes feel tide/current (marathon avgDisp ~0.019/tick @ strokeRate ~0.29).
+inline constexpr float kBodyNodeLinearDrag = 0.08f;
+inline constexpr float kBodyNodeDragDepthGain = 0.35f;
 inline constexpr float kBodyYawDamping = 0.15f;
 inline constexpr float kBodyInvMass = 1.0f;
 inline constexpr float kBodyInvInertia = 0.35f;
 inline constexpr float kMusclePdDamping = 0.28f;
-inline constexpr float kStrokeMuscleStiffnessBoost = 2.4f;
+inline constexpr int kBoneDistanceConstraintIterations = 16;
 inline constexpr std::size_t kComputerRegisterBytes = 8u;
 inline constexpr std::uint32_t kComputerHubStoreMaxBytes = kStemCellStorageMaxBytes;
 inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay / 4u;
@@ -165,7 +164,7 @@ inline constexpr float kMouthContactRadiusFactor = 0.65f;
 inline constexpr float kMouthStickyRadiusFactor = 0.75f;
 // Extra-oral taste buds: omnidirectional chemo sampling at the mouth (barbel / olfaction
 // analogue). Medium reach — fixed 4× cellSize (was 2×P when P was 2×; decoupled for ram nose).
-inline constexpr float kMouthTasteRadiusFactor = 4.0f;
+inline constexpr float kMouthTasteRadiusFactor = 4.0f * 1.33f;
 inline constexpr float kMouthTasteSalienceFloor = 0.25f;
 // Berg-style temporal ΔC bias on run/tumble when P has no lock.
 inline constexpr float kMouthTasteTemporalGain = 3.0f;

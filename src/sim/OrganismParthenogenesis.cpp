@@ -453,7 +453,9 @@ bool applyStructuralOpLocus(Organism& child, std::size_t index, StructuralOp op,
                          }),
           child.links.end());
       if (child.rootNodeId == doomedId) {
-        if (const SkeletonNode* replacement = findComputerRoot(child)) {
+        if (const SkeletonNode* replacement = findPrimaryMouthNode(child)) {
+          child.rootNodeId = replacement->id;
+        } else if (const SkeletonNode* replacement = findComputerRoot(child)) {
           child.rootNodeId = replacement->id;
           child.computerNodeId = replacement->id;
         } else if (!child.nodes.empty()) {

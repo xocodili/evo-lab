@@ -358,3 +358,13 @@ R1 spec: [PARTHENOGENESIS.md](PARTHENOGENESIS.md) — two-layer entropy (structu
 **Next session — kinematics (longboat, not worm):** Colinear **MPCA** chain should behave like a **longboat**: **keel steering**, coherent body axis, segment flex on stroke — not a twitchy worm. Revisit `NeuronMusculature` keel yaw, articulated FK/dynamics, axon-bundle flex, and [KINEMATICS.md](KINEMATICS.md) / [KINEMATICS-PHYSICS-DESIGN.md](KINEMATICS-PHYSICS-DESIGN.md) trail-lag / negative yaw on aft segments. Goal: stroke at A propagates smooth heading hold; P/M lag appropriately behind ram nose M.
 
 **Still later:** R0 HGT dock; trust/RPE on mouth CTA; headless Kaplan-Meier; Grover floor at birth; seed-organic births without feedbag oracle.
+
+### 2026-09-03 — Itch deploy + visual flicker (render-only)
+
+**Distribution (tonight):** Fresh **itch.io** deploy needs a **full Release build zip**, not the exe alone. Package everything under `build\src\` (`evo-lab.exe`, `assets/`, `resources/`). See README **Play (itch zip)** section. User handling deploy tonight.
+
+**Visual flicker (“two heads”):** While running, campers can read as double-headed / oversized; **paused** they look like normal single MPCA chains. Diagnosis: heading chevron was drawn at **A (tail)** while **M (ram nose)** leads — two forward-facing indicators at opposite ends of the chain, plus stroke-pulse chevron scaling. Structural morphology is fine.
+
+**Render fix (only):** Torpedo MPCA chains skip the heading chevron; mouth sprite + chain links carry direction. Hub-star morphologies unchanged. **Kinematics/longboat work deferred** — to be designed together before any sim changes.
+
+**Next session — kinematics (longboat, not worm):** Discuss first; no drive-by constant retunes. See [KINEMATICS.md](KINEMATICS.md) / [KINEMATICS-PHYSICS-DESIGN.md](KINEMATICS-PHYSICS-DESIGN.md).

@@ -113,3 +113,17 @@ Technical docs: [HGT-INSERTION.md](HGT-INSERTION.md), [PARTHENOGENESIS.md](PARTH
 - [ ] Distinguishes **chemical HGT** (mouth bytes) vs **structural INSERTION** (dock)
 - [ ] Does not imply mating/reproduction if not shipped
 - [ ] File stored under `assets/docs/` with descriptive name
+
+---
+
+## 7. itch.io release packaging
+
+**Do not upload the exe alone.** Players need the full folder layout from a **Release build**:
+
+1. Configure and build: `cmake --build build --config Release`
+2. Zip **contents of** `build\src\` (not the repo root): `evo-lab.exe`, `assets\`, `resources\`
+3. Upload zip to itch; set Windows executable to `evo-lab.exe`
+
+Missing `assets/fonts/` or `resources/sprites/` → silent or broken UI. See root `README.md` **Play (itch zip)**.
+
+**Scheduled 2026-09-03:** Fresh deploy with torpedo MPCA + perception retune — requires tonight’s full build zip.

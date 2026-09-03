@@ -501,7 +501,6 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
   organism.lastActuatorInteroception = {};
   organism.lastMotorIntent = {};
   organism.lastActuatorOutboundSignal = 0;
-  organism.lastActuatorStrokeFlexBoost = 0.0f;
   organism.lastInWater =
       world.isWetWorld(motorNode->worldX, motorNode->worldZ, cellSize);
   organism.lastTideDelta = world.waterLevelDelta();
@@ -563,20 +562,23 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
 
     const float thrustX = std::sin(organism.heading) * mechanicalThrust;
     const float thrustZ = std::cos(organism.heading) * mechanicalThrust;
-    if (organism.isCampNom()) {
+    if (organism.usesArticulatedLocomotion()) {
       float thrustHeading = organism.heading;
-      if (interoception.perceptorLocked && interoception.focusKind == PerceptFocusKind::Threat &&
+      if (organism.isCampNom() && interoception.perceptorLocked &&
+          interoception.focusKind == PerceptFocusKind::Threat &&
           interoception.flee > interoception.approach) {
         thrustHeading = normalizeAngle(interoception.gazeHeading + interoception.focusBearing +
                                        3.14159265f);
       }
-      queueCampStrokeImpulse(organism, mechanicalThrust, thrustHeading);
-      organism.campActuatorProprio.pending = true;
-      organism.campActuatorProprio.startX = startX;
-      organism.campActuatorProprio.startZ = startZ;
-      organism.campActuatorProprio.actuatorId = motorNode->id;
-      organism.campActuatorProprio.interoception = interoception;
-      organism.campActuatorProprio.motorIntent = motorIntent;
+      queueCampStrokeImpulse(organism, motorNode->id, mechanicalThrust, thrustHeading);
+      if (organism.isCampNom()) {
+        organism.campActuatorProprio.pending = true;
+        organism.campActuatorProprio.startX = startX;
+        organism.campActuatorProprio.startZ = startZ;
+        organism.campActuatorProprio.actuatorId = motorNode->id;
+        organism.campActuatorProprio.interoception = interoception;
+        organism.campActuatorProprio.motorIntent = motorIntent;
+      }
     } else {
       translateOrganismXZ(organism, thrustX, thrustZ);
     }
@@ -592,7 +594,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     applyShoreAdvection(tideTargetX, tideTargetZ, velocity, halfExtent, cellSize * 0.25f);
     organism.lastTideVelX = tideTargetX - root->worldX;
     organism.lastTideVelZ = tideTargetZ - root->worldZ;
-    if (!organism.isCampNom()) {
+    if (!organism.usesArticulatedLocomotion()) {
       root->worldX = tideTargetX;
       root->worldZ = tideTargetZ;
       for (SkeletonNode& node : organism.nodes) {
@@ -607,7 +609,6 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     organism.lastTideVelX = 0.0f;
     organism.lastTideVelZ = 0.0f;
   }
-  clampWorldPosition(root->worldX, root->worldZ, halfExtent, cellSize * 0.25f);
 
   evolab::emitCampActuatorSignals(organism, simTick);
 
