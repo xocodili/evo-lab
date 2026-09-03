@@ -99,12 +99,31 @@ private:
 
 void presentTerrainFrame(game::GameRenderer& renderer, const game::TerrainMesh& mesh,
                          const BarrenWorld& world, const engine::OrbitCamera& camera, int viewW,
-                         int viewH) {
+                         int viewH, int viewX = 0, int viewY = 0) {
   const float waterLevel = world.waterLevel();
   renderer.beginFrame(0.53f, 0.75f, 0.92f);
-  renderer.drawTerrain(camera, viewW, viewH);
+  renderer.drawTerrain(camera, viewW, viewH, viewX, viewY);
   if (std::abs(world.waterLevelDelta()) <= 0.001f) {
-    renderer.drawWaterPlane(mesh, waterLevel * kTerrainHeightScale, camera, viewW, viewH);
+    renderer.drawWaterPlane(mesh, world.waterLevel() * kTerrainHeightScale, camera, viewW, viewH, viewX,
+                            viewY);
+  }
+}
+
+void centerCameraOnPopulation(engine::OrbitCamera& camera, const CellPopulation& cells) {
+  float sumX = 0.0f;
+  float sumZ = 0.0f;
+  int count = 0;
+  for (const Organism& organism : cells.organisms()) {
+    if (!organism.alive || !organism.isCampNom()) {
+      continue;
+    }
+    sumX += organism.rootWorldX();
+    sumZ += organism.rootWorldZ();
+    ++count;
+  }
+  if (count > 0) {
+    camera.targetX = sumX / static_cast<float>(count);
+    camera.targetZ = sumZ / static_cast<float>(count);
   }
 }
 
@@ -133,8 +152,10 @@ int runVisualApp(const CliArgs& args) {
   game::TerrainMesh mesh = game::buildTerrainMesh(world.heightmap(), kWorldCellSize);
   trace.step("mesh");
   seedPopulation(cells, config, world, kWorldCellSize, kTerrainHeightScale);
-  cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
-                                         world.tickCount());
+  if (args.feedbagOracle) {
+    cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
+                                           world.tickCount());
+  }
   trace.step("seed");
 
   const CellPopulationStats seedStats = cells.stats();
@@ -168,6 +189,7 @@ int runVisualApp(const CliArgs& args) {
   engine::OrbitCamera camera;
   camera.pitch = 0.55f;
   camera.distance = 140.0f;
+  centerCameraOnPopulation(camera, cells);
 
   game::GameRenderer renderer;
   {
@@ -193,6 +215,7 @@ int runVisualApp(const CliArgs& args) {
       trace.step("renderer_init_failed");
       return 1;
     }
+    renderer.setRenderDebug(args.renderDebug);
     trace.step("renderer");
 
     renderer.uploadTerrainGeometry(mesh);
@@ -204,7 +227,8 @@ int runVisualApp(const CliArgs& args) {
     const int bootW = bootLayout.contentW > 0 ? bootLayout.contentW : bootViewport.w;
     const int bootH = bootLayout.contentH > 0 ? bootLayout.contentH : bootViewport.h;
 
-    presentTerrainFrame(renderer, mesh, world, camera, bootW, bootH);
+    presentTerrainFrame(renderer, mesh, world, camera, bootW, bootH, bootLayout.offsetX,
+                        bootLayout.offsetY);
     platform.swap();
     platform.pumpEvents();
     trace.step("terrain_present");
@@ -216,7 +240,7 @@ int runVisualApp(const CliArgs& args) {
   bool uiReady = false;
 
   bool pauseSim = false;
-  bool showNeuronDiagnostics = true;
+  bool showNeuronDiagnostics = false;
   bool mouseDown = false;
   int frameIndex = 0;
   std::uint64_t visualSeed = config.seed;
@@ -246,7 +270,7 @@ int runVisualApp(const CliArgs& args) {
   } else {
     std::cout << "Visual frame cap: off (sim " << config.fixedSimHz << " Hz)\n";
   }
-  std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, R=regenerate, V=neuron overlays, Esc=quit\n";
+  std::cout << "Controls: drag=orbit, WASD=pan, scroll=zoom, Space=pause, C=recenter, R=regenerate, V=neuron overlays, Esc=quit\n";
   std::cout << "Hover a Nom to inspect architecture.\n";
   std::cout.flush();
   trace.step("ready");
@@ -286,10 +310,17 @@ int runVisualApp(const CliArgs& args) {
       SimConfig regenConfig = config;
       regenConfig.seed = visualSeed;
       seedPopulation(cells, regenConfig, world, kWorldCellSize, kTerrainHeightScale);
-      cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
-                                             world.tickCount());
+      if (args.feedbagOracle) {
+        cells.installFeedbagReproductionOracle(world, kWorldCellSize, kTerrainHeightScale,
+                                               world.tickCount());
+      }
+      centerCameraOnPopulation(camera, cells);
       std::cout << "Regenerated world seed=" << visualSeed << '\n';
       std::cout.flush();
+    }
+
+    if (input.keyC) {
+      centerCameraOnPopulation(camera, cells);
     }
 
     if (input.keySpace) {
@@ -406,17 +437,22 @@ int runVisualApp(const CliArgs& args) {
 
     const int viewW = viewport.contentW > 0 ? viewport.contentW : drawable.w;
     const int viewH = viewport.contentH > 0 ? viewport.contentH : drawable.h;
+    const int viewX = viewport.offsetX;
+    const int viewY = viewport.offsetY;
 
     renderer.beginFrame(skyR, skyG, skyB);
-    renderer.drawTerrain(camera, viewW, viewH);
+    renderer.drawTerrain(camera, viewW, viewH, viewX, viewY);
     if (std::abs(world.waterLevelDelta()) <= 0.001f) {
-      renderer.drawWaterPlane(mesh, diag.waterLevel * kTerrainHeightScale, camera, viewW, viewH);
+      renderer.drawWaterPlane(mesh, diag.waterLevel * kTerrainHeightScale, camera, viewW, viewH, viewX,
+                              viewY);
     }
 
     if (frameIndex >= 1) {
-      renderer.drawEnergon(energon.blobs(), camera, viewW, viewH);
+      const int energonCap =
+          renderer.renderDebug() ? game::GameRenderer::kRenderDebugEnergonCap : 0;
+      renderer.drawEnergon(energon.blobs(), camera, viewW, viewH, viewX, viewY, energonCap);
       renderer.drawOrganisms(cells.organisms(), camera, viewW, viewH, world.tickCount(),
-                             config.fixedSimHz);
+                             config.fixedSimHz, &world, viewX, viewY);
 
       const std::uint32_t hoveredId =
           game::pickOrganismAtScreen(cells.organisms(), camera, viewW, viewH, pickMouseX, pickMouseY);

@@ -13,6 +13,7 @@
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/StemBinding.hpp"
+#include "sim/OrganismKinematicBirth.hpp"
 #include "sim/WaterColumn.hpp"
 #include "sim/WorldBinding.hpp"
 #include "sim/WorldConstants.hpp"
@@ -136,6 +137,7 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
   organism.cloacaMateByte = parent.cloacaMateByte;
   jitterCloacaPaletteBytes(organism, rng);
   organism.heading = chaosJitterHeading(parent.heading, rng);
+  organism.bodyDynamics.rootWorldYaw = organism.heading;
   for (SkeletonNode& node : organism.nodes) {
     if (node.neuron != NeuronType::Computer) {
       continue;
@@ -176,7 +178,7 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
           record.childNodeId == link.childNodeId) {
         stemGeometryLink = true;
         link.jointAngle =
-            normalizeAngle(organism.heading + record.segmentAngleOffset);
+            normalizeAngle(organism.bodyDynamics.rootWorldYaw + record.segmentAngleOffset);
         link.muscleBundle = record.muscleBundle;
         break;
       }
@@ -185,7 +187,7 @@ void jitterOrganismGate2(Organism& organism, const Organism& parent, std::mt1993
       if (record.hubNodeId == link.parentNodeId &&
           record.peripheralNodeId == link.childNodeId) {
         stemGeometryLink = true;
-        link.jointAngle = hubSocketAngleRad(organism.heading, record.hubSlot);
+        link.jointAngle = hubSocketAngleRad(organism.bodyDynamics.rootWorldYaw, record.hubSlot);
         link.muscleBundle = record.muscleBundle;
         break;
       }
@@ -286,6 +288,8 @@ Organism cloneParentStructure(const Organism& parent, std::uint32_t childId, flo
   child.alive = true;
   child.rootNodeId = parent.rootNodeId;
   child.computerNodeId = parent.computerNodeId;
+  child.bodyDynamics = {};
+  child.kinematicsBirthApplied_ = false;
   child.heading = parent.heading;
   child.senseRadiusFactor = parent.senseRadiusFactor;
   child.tumbleRateFactor = parent.tumbleRateFactor;
@@ -830,7 +834,7 @@ bool runMorphogenesisPipeline(Organism& child, Organism& parent, std::mt19937& r
 
 void finalizeCampBirth(Organism& child, const BarrenWorld& world, float cellSize,
                        float heightScale) {
-  child.updateKinematics(world, cellSize, heightScale);
+  initializeArticulatedSpawnPose(child, world, cellSize, heightScale, child.heading);
   child.landAdjacent =
       organismLandAdjacent(world, child.rootWorldX(), child.rootWorldZ(), cellSize);
 }

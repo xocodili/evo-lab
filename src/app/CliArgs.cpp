@@ -140,6 +140,10 @@ CliArgs parseCliArgs(int argc, char** argv) {
         throw std::runtime_error("Missing value for --debug");
       }
       args.debugIntervalMs = parseDebugIntervalMs(argv[++i]);
+    } else if (arg == "--feedbag-oracle") {
+      args.feedbagOracle = true;
+    } else if (arg == "--render-debug") {
+      args.renderDebug = true;
     } else {
       throw std::runtime_error("Unknown argument: " + std::string(arg));
     }
@@ -164,6 +168,8 @@ void printHelp() {
             << "  --sim-hz N           Fixed simulation rate (default: 60)\n"
             << "  --max-fps N          Cap visual frame rate (default: 60; 0 = uncapped)\n"
             << "  --debug MS           Session debug log interval (evo-lab.session.log)\n"
+            << "  --feedbag-oracle     Enable feedbag reproduction oracle on first camp nom\n"
+            << "  --render-debug       Billboards-only campers; cap energon draw for clarity\n"
             << "  --exit               Exit after headless run (for smoke tests)\n"
             << "  --version            Print version and exit\n"
             << "  --help               Show this help\n\n"
@@ -172,6 +178,7 @@ void printHelp() {
             << "  WASD                 pan camera\n"
             << "  scroll               zoom\n"
             << "  Space                pause/resume sim\n"
+            << "  C                    recenter camera on population\n"
             << "  R                    regenerate world\n";
 }
 

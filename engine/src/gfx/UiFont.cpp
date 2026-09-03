@@ -38,6 +38,44 @@ struct LoadedFont {
 
 void buildGlyphCache(LoadedFont& font);
 const CachedGlyph* lookupGlyph(const LoadedFont& font, unsigned char ch);
+int measureCodepointWidth(const LoadedFont& font, int codepoint);
+void drawCodepoint(const LoadedFont& font, std::vector<unsigned char>& rgba, int atlasW, int atlasH,
+                   int penX, int baselineY, int codepoint, unsigned char textR,
+                   unsigned char textG, unsigned char textB);
+
+int nextUtf8Codepoint(const std::string& text, std::size_t& index) {
+  if (index >= text.size()) {
+    return -1;
+  }
+  const unsigned char lead = static_cast<unsigned char>(text[index]);
+  if (lead < 0x80) {
+    ++index;
+    return static_cast<int>(lead);
+  }
+  if ((lead & 0xE0) == 0xC0 && index + 1 < text.size()) {
+    const int codepoint = static_cast<int>((lead & 0x1F) << 6) |
+                          static_cast<int>(text[index + 1] & 0x3F);
+    index += 2;
+    return codepoint;
+  }
+  if ((lead & 0xF0) == 0xE0 && index + 2 < text.size()) {
+    const int codepoint = static_cast<int>((lead & 0x0F) << 12) |
+                          static_cast<int>((text[index + 1] & 0x3F) << 6) |
+                          static_cast<int>(text[index + 2] & 0x3F);
+    index += 3;
+    return codepoint;
+  }
+  if ((lead & 0xF8) == 0xF0 && index + 3 < text.size()) {
+    const int codepoint = static_cast<int>((lead & 0x07) << 18) |
+                          static_cast<int>((text[index + 1] & 0x3F) << 12) |
+                          static_cast<int>((text[index + 2] & 0x3F) << 6) |
+                          static_cast<int>(text[index + 3] & 0x3F);
+    index += 4;
+    return codepoint;
+  }
+  ++index;
+  return static_cast<int>(lead);
+}
 
 bool isTrueTypeFont(const std::vector<unsigned char>& bytes) {
   if (bytes.size() < 4) {
@@ -85,15 +123,12 @@ bool loadFontFile(LoadedFont& font, const std::string& path, float pointSize) {
 
 int measureLineWidth(const LoadedFont& font, const std::string& line) {
   int width = 0;
-  for (unsigned char ch : line) {
-    if (const CachedGlyph* glyph = lookupGlyph(font, ch)) {
-      width += glyph->advance;
-      continue;
+  for (std::size_t index = 0; index < line.size();) {
+    const int codepoint = nextUtf8Codepoint(line, index);
+    if (codepoint < 0) {
+      break;
     }
-    int advance = 0;
-    int lsb = 0;
-    stbtt_GetCodepointHMetrics(&font.info, ch, &advance, &lsb);
-    width += static_cast<int>(advance * font.scale);
+    width += measureCodepointWidth(font, codepoint);
   }
   return width;
 }
@@ -171,6 +206,44 @@ const CachedGlyph* lookupGlyph(const LoadedFont& font, unsigned char ch) {
   return glyph.valid ? &glyph : nullptr;
 }
 
+int measureCodepointWidth(const LoadedFont& font, int codepoint) {
+  if (codepoint >= 0 && codepoint < 128) {
+    if (const CachedGlyph* glyph = lookupGlyph(font, static_cast<unsigned char>(codepoint))) {
+      return glyph->advance;
+    }
+  }
+  int advance = 0;
+  int lsb = 0;
+  stbtt_GetCodepointHMetrics(&font.info, codepoint, &advance, &lsb);
+  return static_cast<int>(advance * font.scale);
+}
+
+void drawCodepoint(const LoadedFont& font, std::vector<unsigned char>& rgba, int atlasW, int atlasH,
+                   int penX, int baselineY, int codepoint, unsigned char textR,
+                   unsigned char textG, unsigned char textB) {
+  if (codepoint >= 0 && codepoint < 128) {
+    if (const CachedGlyph* glyph = lookupGlyph(font, static_cast<unsigned char>(codepoint))) {
+      blitCachedGlyph(rgba, atlasW, atlasH, penX + glyph->x0, baselineY + glyph->y0, *glyph, textR,
+                      textG, textB);
+      return;
+    }
+  }
+
+  int x0 = 0;
+  int y0 = 0;
+  int x1 = 0;
+  int y1 = 0;
+  stbtt_GetCodepointBitmapBox(&font.info, codepoint, font.scale, font.scale, &x0, &y0, &x1, &y1);
+  int gw = 0;
+  int gh = 0;
+  unsigned char* bitmap =
+      stbtt_GetCodepointBitmap(&font.info, 0, font.scale, codepoint, &gw, &gh, 0, 0);
+  if (bitmap != nullptr) {
+    blitGlyph(rgba, atlasW, atlasH, penX + x0, baselineY + y0, bitmap, gw, gh, textR, textG, textB);
+    stbtt_FreeBitmap(bitmap, nullptr);
+  }
+}
+
 }  // namespace
 
 struct UiFont::State {
@@ -236,32 +309,13 @@ bool UiFont::renderTextBitmap(const std::string& text, std::vector<unsigned char
   int baselineY = kPad + static_cast<int>(font.ascent * font.scale);
   for (const std::string& line : lines) {
     int penX = kPad;
-    for (unsigned char ch : line) {
-      if (const CachedGlyph* glyph = lookupGlyph(font, ch)) {
-        blitCachedGlyph(rgba, outW, outH, penX + glyph->x0, baselineY + glyph->y0, *glyph, textR,
-                        textG, textB);
-        penX += glyph->advance;
-        continue;
+    for (std::size_t index = 0; index < line.size();) {
+      const int codepoint = nextUtf8Codepoint(line, index);
+      if (codepoint < 0) {
+        break;
       }
-
-      int advance = 0;
-      int lsb = 0;
-      stbtt_GetCodepointHMetrics(&font.info, ch, &advance, &lsb);
-
-      int x0 = 0;
-      int y0 = 0;
-      int x1 = 0;
-      int y1 = 0;
-      stbtt_GetCodepointBitmapBox(&font.info, ch, font.scale, font.scale, &x0, &y0, &x1, &y1);
-      int gw = 0;
-      int gh = 0;
-      unsigned char* bitmap =
-          stbtt_GetCodepointBitmap(&font.info, 0, font.scale, ch, &gw, &gh, 0, 0);
-      if (bitmap) {
-        blitGlyph(rgba, outW, outH, penX + x0, baselineY + y0, bitmap, gw, gh, textR, textG, textB);
-        stbtt_FreeBitmap(bitmap, nullptr);
-      }
-      penX += static_cast<int>(advance * font.scale);
+      drawCodepoint(font, rgba, outW, outH, penX, baselineY, codepoint, textR, textG, textB);
+      penX += measureCodepointWidth(font, codepoint);
     }
     baselineY += static_cast<int>(lineAdvance);
   }

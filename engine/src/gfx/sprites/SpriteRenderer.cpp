@@ -156,6 +156,9 @@ void SpriteRenderer::draw(const SpriteAtlasLibrary& library,
   }
 
   engine::gl::GlContext& g = engine::gl::gl();
+  g.disable(engine::gl::GlEnum::kDepthTest);
+  g.enable(engine::gl::GlEnum::kBlend);
+  g.blendFunc(engine::gl::GlEnum::kSrcAlpha, engine::gl::GlEnum::kOneMinusSrcAlpha);
   g.bindVertexArray(vao_);
   g.bindBuffer(engine::gl::GlEnum::kArrayBuffer, vbo_);
   g.bufferData(engine::gl::GlEnum::kArrayBuffer,

@@ -2,6 +2,7 @@
 
 #include "engine/kinematics/Math.hpp"
 
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CampNeuronGating.hpp"
 
 #include "sim/CellConstants.hpp"
@@ -226,17 +227,14 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
 
 namespace {
 
-void turnTowardTarget(Organism& organism, float targetHeading, float turnRate) {
-  const float bearingError = std::abs(normalizeAngle(targetHeading - organism.heading));
-  const float adaptScale = clamp01(bearingError / kOrganismCampChemotaxisAdaptRad);
-  organism.heading = turnToward(organism.heading, targetHeading,
-                                kOrganismMaxTurnPerTick * turnRate * adaptScale);
+void steerBodyTowardTarget(Organism& organism, float targetHeading, float turnRate) {
+  applyCampBodyYawSteering(organism, targetHeading, turnRate);
 }
 
 }  // namespace
 
-void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
-                               const MotorIntent& intent) {
+void applyCampChemotaxisSteering(Organism& organism, const ActuatorInteroception& interoception,
+                                 const MotorIntent& intent) {
   const bool flee = interoception.flee > interoception.approach;
   const float drive = flee ? interoception.flee : interoception.approach;
   const float fleeOffset = flee ? 3.14159265f : 0.0f;
@@ -245,7 +243,7 @@ void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception&
       drive >= kOrganismCampReflexMinValence) {
     const float targetHeading =
         normalizeAngle(interoception.gazeHeading + interoception.focusBearing + fleeOffset);
-    turnTowardTarget(organism, targetHeading, intent.turnRateScale);
+    steerBodyTowardTarget(organism, targetHeading, intent.turnRateScale);
   }
 
   if (interoception.mouthTasteApproach > kOrganismCampReflexMinValence) {
@@ -262,9 +260,9 @@ void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception&
         clamp01((interoception.mouthTasteApproach * kMouthTasteTurnGain +
                  std::max(0.0f, interoception.mouthTasteGradient) * 0.15f) *
                 mouthTurnWeight * mouthTurnScale);
-    const float targetHeading =
-        normalizeAngle(organism.heading + interoception.mouthTasteBearing + fleeOffset);
-    turnTowardTarget(organism, targetHeading, tasteTurn);
+    const float targetHeading = normalizeAngle(campLocomotionBodyYaw(organism) +
+                                               interoception.mouthTasteBearing + fleeOffset);
+    steerBodyTowardTarget(organism, targetHeading, tasteTurn);
   }
 }
 

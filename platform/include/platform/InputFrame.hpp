@@ -5,6 +5,7 @@ namespace evolab::platform {
 struct InputFrame {
   bool quit = false;
   bool keyR = false;
+  bool keyC = false;
   bool keySpace = false;
   bool keyV = false;
   int scrollDelta = 0;

@@ -88,12 +88,13 @@ void Organism::advectRoot(const BarrenWorld& world, const EnergonField& energon,
   runOrganismAdvect(*this, ctx);
 }
 
-void Organism::metabolise(const BarrenWorld& world, float cellSize, float heightScale) {
+void Organism::metabolise(const BarrenWorld& /*world*/, float /*cellSize*/,
+                          float /*heightScale*/) {
   if (!alive) {
     return;
   }
-
-  updateKinematics(world, cellSize, heightScale);
+  // Vital basal metabolism runs in tickNeuronViability (OrganismDetail).
+  // Articulated kinematics runs once per tick in finalizeAdvectPose (NeuronTick).
 }
 
 void Organism::tickAxonTransitBasal() {

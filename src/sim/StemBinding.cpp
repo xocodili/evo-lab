@@ -1,5 +1,6 @@
 #include "sim/StemBinding.hpp"
 
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
@@ -89,6 +90,8 @@ StemAssemblyPlan extractStemAssemblyPlan(const Organism& organism) {
   }
 
   if (organismHasCampTorpedoChain(organism)) {
+    const float refYaw =
+        organism.kinematicsBirthApplied_ ? organism.bodyDynamics.rootWorldYaw : organism.heading;
     for (const auto& edge : kCampTorpedoChainLinks) {
       for (const SkeletonLink& link : organism.links) {
         if (link.parentNodeId != edge.first || link.childNodeId != edge.second) {
@@ -98,7 +101,7 @@ StemAssemblyPlan extractStemAssemblyPlan(const Organism& organism) {
         record.parentNodeId = link.parentNodeId;
         record.childNodeId = link.childNodeId;
         record.segmentAngleOffset =
-            normalizeAngle(link.jointAngle - organism.heading);
+            normalizeAngle(link.jointAngle - refYaw);
         record.restLength = link.restLength;
         record.muscleBundle = link.muscleBundle;
         plan.chains.push_back(record);
@@ -113,6 +116,9 @@ StemAssemblyPlan extractStemAssemblyPlan(const Organism& organism) {
     return plan;
   }
 
+  const float refYaw =
+      organism.kinematicsBirthApplied_ ? organism.bodyDynamics.rootWorldYaw : organism.heading;
+
   for (const SkeletonLink& link : organism.links) {
     if (link.parentNodeId != hub->id) {
       continue;
@@ -120,7 +126,7 @@ StemAssemblyPlan extractStemAssemblyPlan(const Organism& organism) {
     StemBindRecord record;
     record.hubNodeId = link.parentNodeId;
     record.peripheralNodeId = link.childNodeId;
-    record.hubSlot = inferStemHubSlotFromAngle(organism.heading, link.jointAngle);
+    record.hubSlot = inferStemHubSlotFromAngle(refYaw, link.jointAngle);
     record.peripheralFace = static_cast<std::uint8_t>(StemFace::North);
     record.restLength = link.restLength;
     record.muscleBundle = link.muscleBundle;
@@ -168,7 +174,7 @@ Organism assembleOrganismFromStemPlan(std::uint32_t id, float wx, float wz, floa
   Organism organism;
   organism.id = id;
   organism.createdAtTick = createdAtTick;
-  organism.heading = heading;
+  seedCampLocomotionBodyYaw(organism, heading);
   organism.stemAssembly = plan;
 
   std::mt19937 rng =

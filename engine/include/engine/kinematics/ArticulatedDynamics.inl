@@ -4,6 +4,7 @@
 #include "engine/kinematics/BoneDistanceConstraint.hpp"
 #include "engine/kinematics/KinematicNodeLookup.hpp"
 #include "engine/kinematics/NodeMediumDrag.hpp"
+#include "engine/kinematics/WorldPoseSync.hpp"
 #include "engine/kinematics/Math.hpp"
 
 #include <algorithm>
@@ -188,11 +189,11 @@ bool stepArticulatedBody(const KinematicSkeleton& skeleton, ArticulatedBodyState
     return false;
   }
 
-  bool poseDeformed = false;
+  bool worldPoseDeformed = false;
   if (params.nodeLinearDrag > 0.0f) {
     applyPerNodeMediumDrag(skeleton, nodes, nodeIndex, params.mediumVelX, params.mediumVelZ,
                            params.nodeLinearDrag, params.nodeDragDepthGain);
-    poseDeformed = true;
+    worldPoseDeformed = true;
   }
 
   const float rootX = rootNode.worldX;
@@ -212,6 +213,7 @@ bool stepArticulatedBody(const KinematicSkeleton& skeleton, ArticulatedBodyState
       const float displacement = axial * params.invMass;
       target.worldX += axisX * displacement;
       target.worldZ += axisZ * displacement;
+      worldPoseDeformed = true;
 
       const float lateralX = impulse.impulseX - axisX * axial;
       const float lateralZ = impulse.impulseZ - axisZ * axial;
@@ -221,6 +223,7 @@ bool stepArticulatedBody(const KinematicSkeleton& skeleton, ArticulatedBodyState
     } else {
       state.rootVelX += impulse.impulseX * params.invMass;
       state.rootVelZ += impulse.impulseZ * params.invMass;
+      worldPoseDeformed = true;
 
       const float leverX = target.worldX - rootX;
       const float leverZ = target.worldZ - rootZ;
@@ -229,18 +232,19 @@ bool stepArticulatedBody(const KinematicSkeleton& skeleton, ArticulatedBodyState
     }
   }
 
-  if (params.solveBoneConstraints && !impulses.empty() && skeleton.jointCount() >= 2) {
+  if (params.solveBoneConstraints && skeleton.jointCount() >= 2) {
     BoneDistanceConstraintParams boneParams;
-    boneParams.pinnedNodeId = impulses[0].nodeId;
-    boneParams.hasPinnedNode = true;
     boneParams.iterationCount = std::max(1, params.boneConstraintIterations);
     boneParams.stiffness = std::clamp(params.boneConstraintStiffness, 0.0f, 1.0f);
+    boneParams.pinnedNodeId = skeleton.rootNodeId();
+    boneParams.hasPinnedNode = true;
     solveBoneDistanceConstraints(skeleton, nodes, boneParams);
-    poseDeformed = true;
+    worldPoseDeformed = true;
   }
 
-  if (poseDeformed) {
-    refreshNodeWorldY(skeleton, nodes, nodeIndex, std::forward<HeightAtXZ>(heightAtXZ));
+  refreshNodeWorldY(skeleton, nodes, nodeIndex, std::forward<HeightAtXZ>(heightAtXZ));
+  if (worldPoseDeformed) {
+    syncJointYawDeltasFromWorld(skeleton, nodes, state);
   }
 
   return true;

@@ -37,12 +37,14 @@ add_library(evolab_sim STATIC
   sim/NeuronFuel.cpp
   sim/CloacaSignal.cpp
   sim/CampTopology.cpp
+  sim/CampLocomotionBody.cpp
   sim/NeuronStem.cpp
   sim/NeuronMusculature.cpp
   sim/EnergonConveyance.cpp
   sim/OrganismComputer.cpp
   sim/NeuronCoordinator.cpp
   sim/OrganismKinematics.cpp
+  sim/OrganismKinematicBirth.cpp
   sim/OrganismFactories.cpp
   sim/NeuronTick.cpp
   sim/NeuralAxon.cpp

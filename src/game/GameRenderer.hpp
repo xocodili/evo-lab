@@ -6,6 +6,7 @@
 #include "engine/gfx/sprites/SpriteRenderer.hpp"
 #include "game/TerrainMesh.hpp"
 
+#include "sim/BarrenWorld.hpp"
 #include "sim/Energon.hpp"
 #include "sim/Organism.hpp"
 
@@ -17,6 +18,8 @@ namespace evolab::game {
 
 class GameRenderer {
 public:
+  static constexpr int kRenderDebugEnergonCap = 512;
+
   GameRenderer();
   ~GameRenderer();
 
@@ -30,15 +33,20 @@ public:
   void beginFrame(float clearR, float clearG, float clearB);
   void uploadTerrainGeometry(const TerrainMesh& mesh);
   void uploadTerrainColors(const TerrainMesh& mesh);
-  void drawTerrain(const engine::OrbitCamera& camera, int viewportW, int viewportH);
+  void drawTerrain(const engine::OrbitCamera& camera, int viewportW, int viewportH, int viewportX = 0,
+                   int viewportY = 0);
   void drawWaterPlane(const TerrainMesh& mesh, float waterLevelScaled, const engine::OrbitCamera& camera,
-                      int viewportW, int viewportH);
+                      int viewportW, int viewportH, int viewportX = 0, int viewportY = 0);
   void drawEnergon(const std::vector<EnergonBlob>& blobs, const engine::OrbitCamera& camera,
-                   int viewportW, int viewportH);
+                   int viewportW, int viewportH, int viewportX = 0, int viewportY = 0,
+                   int maxBlobs = 0);
   void drawOrganisms(const std::vector<Organism>& organisms, const engine::OrbitCamera& camera,
                      int viewportW, int viewportH, std::uint64_t simTick = 0,
-                     float fixedSimHz = 60.0f);
+                     float fixedSimHz = 60.0f, const BarrenWorld* world = nullptr,
+                     int viewportX = 0, int viewportY = 0);
 
+  void setRenderDebug(bool enabled) { renderDebug_ = enabled; }
+  bool renderDebug() const { return renderDebug_; }
   void setShowNeuronDiagnostics(bool enabled) { showNeuronDiagnostics_ = enabled; }
   bool showNeuronDiagnostics() const { return showNeuronDiagnostics_; }
 
@@ -50,7 +58,11 @@ private:
   bool initialized_ = false;
   bool terrainGeometryUploaded_ = false;
   bool spritesLoaded_ = false;
-  bool showNeuronDiagnostics_ = true;
+  bool mouthAtlasLoaded_ = false;
+  bool perceptorAtlasLoaded_ = false;
+  bool actuatorAtlasLoaded_ = false;
+  bool showNeuronDiagnostics_ = false;
+  bool renderDebug_ = false;
 
   engine::gfx::ShaderProgram terrainProgram_;
   engine::gfx::ShaderProgram waterProgram_;

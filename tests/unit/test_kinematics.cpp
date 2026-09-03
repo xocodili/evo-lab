@@ -7,6 +7,12 @@
 #include "engine/kinematics/Math.hpp"
 #include "engine/kinematics/NodeMediumDrag.hpp"
 
+#include "sim/BarrenWorld.hpp"
+#include "sim/CampTopology.hpp"
+#include "sim/OrganismKinematicBirth.hpp"
+#include "sim/SimConfig.hpp"
+#include "sim/WorldConstants.hpp"
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -56,6 +62,29 @@ void solveChainFk(const KinematicSkeleton& skeleton, std::span<KinematicNodePose
 }
 
 }  // namespace
+
+TEST_CASE("camp birth layout expands torpedo chain from mouth anchor", "[engine][kinematics][birth]") {
+  evolab::BarrenWorld world(42, 128, evolab::makeTideFromConfig(evolab::SimConfig{}));
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f, 0.25f);
+  evolab::initializeArticulatedSpawnPose(organism, world, evolab::kWorldCellSize,
+                                         evolab::kTerrainHeightScale, 0.25f);
+
+  const evolab::SkeletonNode* mouth = organism.findNode(evolab::kCampMouthId);
+  const evolab::SkeletonNode* actuator = organism.findNode(evolab::kCampActuatorId);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(actuator != nullptr);
+  REQUIRE(organism.kinematicsBirthApplied_);
+  REQUIRE(organism.bodyDynamics.rootWorldYaw == Catch::Approx(0.25f).margin(1e-4f));
+  REQUIRE(organism.heading == Catch::Approx(0.25f).margin(1e-4f));
+
+  const float spread = std::hypot(actuator->worldX - mouth->worldX, actuator->worldZ - mouth->worldZ);
+  REQUIRE(spread > 2.5f);
+  REQUIRE(organism.bodyDynamics.rootVelX == Catch::Approx(0.0f));
+  for (float delta : organism.bodyDynamics.jointYawDelta) {
+    REQUIRE(delta == Catch::Approx(0.0f));
+  }
+}
 
 TEST_CASE("kinematic skeleton caches joint depth from root", "[engine][kinematics]") {
   const KinematicSkeleton skeleton = buildColinearChain(3, 1.0f);
@@ -215,6 +244,80 @@ TEST_CASE("axial impulse at root propagates to distal node with bone constraints
   REQUIRE(nodes[3].worldZ == Catch::Approx(noseZBefore + 0.05f).margin(0.06f));
   REQUIRE(evolab::engine::kinematics::maxBoneLengthError(skeleton, std::span(nodes)) ==
           Catch::Approx(0.0f).margin(0.02f));
+}
+
+TEST_CASE("medium drag without impulse still restores bone lengths when constraints enabled",
+          "[engine][kinematics][dynamics]") {
+  const KinematicSkeleton skeleton = buildColinearChain(3, 1.0f);
+  std::array<KinematicNodePose, 4> nodes = {{
+      {1, 0.0f, 0.0f, 0.0f},
+      {2, 0.0f, 0.0f, 0.0f},
+      {3, 0.0f, 0.0f, 0.0f},
+      {4, 0.0f, 0.0f, 0.0f},
+  }};
+  solveChainFk(skeleton, std::span(nodes));
+
+  evolab::engine::kinematics::ArticulatedBodyState state =
+      evolab::engine::kinematics::ArticulatedBodyState::zeros(skeleton.jointCount());
+
+  evolab::engine::kinematics::ArticulatedStepParams params;
+  params.mediumVelX = 0.18f;
+  params.mediumVelZ = 0.0f;
+  params.nodeLinearDrag = 0.45f;
+  params.linearDrag = 0.0f;
+  params.yawDamping = 0.0f;
+  params.solveBoneConstraints = true;
+  params.boneConstraintIterations = 16;
+
+  REQUIRE(evolab::engine::kinematics::stepArticulatedBody(
+      skeleton, state, std::span(nodes),
+      std::span<const evolab::engine::kinematics::MuscleCommand>{},
+      std::span<const evolab::engine::kinematics::ExternalImpulse>{}, params,
+      [](float, float) { return 0.0f; }));
+
+  REQUIRE(evolab::engine::kinematics::maxBoneLengthError(skeleton, std::span(nodes)) ==
+          Catch::Approx(0.0f).margin(0.03f));
+}
+
+TEST_CASE("world pose sync keeps camp chain stable across consecutive drag ticks",
+          "[engine][kinematics][dynamics]") {
+  const KinematicSkeleton skeleton = buildColinearChain(3, 1.0f);
+  std::array<KinematicNodePose, 4> nodes = {{
+      {1, 0.0f, 0.0f, 0.0f},
+      {2, 0.0f, 0.0f, 0.0f},
+      {3, 0.0f, 0.0f, 0.0f},
+      {4, 0.0f, 0.0f, 0.0f},
+  }};
+  solveChainFk(skeleton, std::span(nodes));
+
+  evolab::engine::kinematics::ArticulatedBodyState state =
+      evolab::engine::kinematics::ArticulatedBodyState::zeros(skeleton.jointCount());
+
+  evolab::engine::kinematics::ArticulatedStepParams params;
+  params.mediumVelX = 0.12f;
+  params.mediumVelZ = -0.04f;
+  params.nodeLinearDrag = 0.35f;
+  params.linearDrag = 0.0f;
+  params.yawDamping = 0.0f;
+  params.solveBoneConstraints = true;
+  params.boneConstraintIterations = 16;
+
+  const float noseZBefore = nodes[3].worldZ;
+  float prevNoseZ = noseZBefore;
+  float maxTickJump = 0.0f;
+  for (int tick = 0; tick < 8; ++tick) {
+    REQUIRE(evolab::engine::kinematics::stepArticulatedBody(
+        skeleton, state, std::span(nodes),
+        std::span<const evolab::engine::kinematics::MuscleCommand>{},
+        std::span<const evolab::engine::kinematics::ExternalImpulse>{}, params,
+        [](float, float) { return 0.0f; }));
+    maxTickJump = std::max(maxTickJump, std::abs(nodes[3].worldZ - prevNoseZ));
+    prevNoseZ = nodes[3].worldZ;
+  }
+
+  REQUIRE(maxTickJump < 0.35f);
+  REQUIRE(evolab::engine::kinematics::maxBoneLengthError(skeleton, std::span(nodes)) ==
+          Catch::Approx(0.0f).margin(0.04f));
 }
 
 TEST_CASE("muscle PD bends joint toward target yaw delta", "[engine][kinematics][dynamics]") {

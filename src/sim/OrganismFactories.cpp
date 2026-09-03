@@ -70,9 +70,9 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
 
 Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy,
                              std::size_t storageBytes, std::uint64_t createdAtTick,
-                             float boneLength) {
+                             float boneLength, float spawnWorldYaw) {
   return assembleOrganismFromStemPlan(id, wx, wz, wy, storageBytes, createdAtTick, boneLength,
-                                      defaultCampStemAssemblyPlan(), 0.0f);
+                                      defaultCampStemAssemblyPlan(), spawnWorldYaw);
 }
 
 Organism makeDualComputerCampOrganism(std::uint32_t id, float wx, float wz, float wy,

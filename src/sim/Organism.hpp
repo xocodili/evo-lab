@@ -16,11 +16,9 @@
 
 #include <array>
 #include <cstdint>
-
 #include <random>
-
 #include <string>
-
+#include <unordered_map>
 #include <vector>
 
 
@@ -323,6 +321,7 @@ public:
   // Reused by syncKinematicsPose when it immediately follows updateKinematics (one build/tick).
   engine::kinematics::KinematicSkeleton kinematicsSkeletonScratch_;
   bool kinematicsSkeletonScratchValid_ = false;
+  bool kinematicsBirthApplied_ = false;
 
   SkeletonNode* findNode(std::uint32_t nodeId);
 
@@ -346,6 +345,11 @@ public:
 
   // FK-only pass from current bodyDynamics joint state (after clamp / pose edits).
   void syncKinematicsPose(const BarrenWorld& world, float cellSize, float heightScale);
+
+  // Render-only: FK from bodyDynamics without mutating sim node positions.
+  using RenderNodePoseMap = std::unordered_map<std::uint32_t, std::array<float, 3>>;
+  bool sampleArticulatedRenderPoses(const BarrenWorld& world, float cellSize, float heightScale,
+                                    RenderNodePoseMap& outPoses) const;
 
   // True when updateKinematics runs articulated dynamics (not static FK-only).
   bool usesArticulatedLocomotion() const;
@@ -417,7 +421,8 @@ Organism makeActuatorOrganism(std::uint32_t id, float wx, float wz, float wy,
                               std::size_t storageBytes, std::uint64_t createdAtTick);
 
 Organism makeCampNomOrganism(std::uint32_t id, float wx, float wz, float wy, std::size_t storageBytes,
-                             std::uint64_t createdAtTick, float boneLength);
+                             std::uint64_t createdAtTick, float boneLength,
+                             float spawnWorldYaw = 0.0f);
 
 void ensureCampDevelopmentalAxons(Organism& organism);
 

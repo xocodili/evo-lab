@@ -1,9 +1,8 @@
 #include "sim/OrganismMouth.hpp"
 
-
-
 #include "engine/kinematics/Math.hpp"
 
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CampNeuronGating.hpp"
 
 #include "sim/CellConstants.hpp"
@@ -407,7 +406,8 @@ void runMouthTastePhase(Organism& organism, const EnergonField& energon, float c
 
     }
 
-    sampleMouthTaste(node, organism, energon, node.worldX, node.worldZ, organism.heading,
+    sampleMouthTaste(node, organism, energon, node.worldX, node.worldZ,
+                     campLocomotionBodyYaw(organism),
                      tasteRadius, simTick);
 
     organism.lastMouthTasteSalience = std::max(organism.lastMouthTasteSalience, node.mouthTasteSalience);

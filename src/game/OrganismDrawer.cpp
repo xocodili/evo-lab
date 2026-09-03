@@ -1,9 +1,12 @@
 #include "game/OrganismDrawer.hpp"
 
+#include "engine/kinematics/Math.hpp"
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/Chaos.hpp"
 #include "sim/NeuralAxon.hpp"
+#include "sim/WorldConstants.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -99,6 +102,17 @@ void appendCellBillboard(std::vector<CellVertex>& verts, float wx, float wy, flo
   verts.push_back(quad[0]);
   verts.push_back(quad[2]);
   verts.push_back(quad[3]);
+}
+
+void appendMuscleLine(std::vector<OrganismLineVertex>& verts, float x0, float y0, float z0, float x1,
+                      float y1, float z1, float r, float g, float b, float a) {
+  const float dx = x1 - x0;
+  const float dz = z1 - z0;
+  if (dx * dx + dz * dz < 1.0e-8f) {
+    return;
+  }
+  verts.push_back({x0, y0, z0, r, g, b, a});
+  verts.push_back({x1, y1, z1, r, g, b, a});
 }
 
 void appendGroundLinkStrip(std::vector<CellVertex>& verts, float x0, float z0, float x1, float z1,
@@ -219,11 +233,67 @@ const SkeletonNode* campHeadingAnchor(const Organism& organism) {
   return organism.findNode(organism.rootNodeId);
 }
 
+float campRenderBodyYaw(const Organism& organism) {
+  if (const SkeletonNode* mouth = findPrimaryMouthNode(organism)) {
+    const SkeletonNode* actuator = organism.findNode(kCampActuatorId);
+    if (actuator != nullptr && actuator->alive) {
+      const float dx = mouth->worldX - actuator->worldX;
+      const float dz = mouth->worldZ - actuator->worldZ;
+      if (dx * dx + dz * dz > 1.0e-6f) {
+        return std::atan2(dx, dz);
+      }
+    }
+  }
+  return campLocomotionBodyYaw(organism);
+}
+
+float campBodySpanWorld(const Organism& organism) {
+  if (organismHasCampTorpedoChain(organism)) {
+    const SkeletonNode* mouth = organism.findNode(kCampMouthId);
+    const SkeletonNode* actuator = organism.findNode(kCampActuatorId);
+    if (mouth != nullptr && actuator != nullptr) {
+      return std::hypot(mouth->worldX - actuator->worldX, mouth->worldZ - actuator->worldZ);
+    }
+  }
+  float maxSpan = 0.0f;
+  const SkeletonNode* root = organism.findNode(organism.rootNodeId);
+  if (root == nullptr) {
+    return 0.0f;
+  }
+  for (const SkeletonNode& node : organism.nodes) {
+    if (!node.alive) {
+      continue;
+    }
+    maxSpan = std::max(maxSpan, std::hypot(node.worldX - root->worldX, node.worldZ - root->worldZ));
+  }
+  return maxSpan;
+}
+
+float perceptorFocusArcHeading(const SkeletonNode& perceptor, const Organism& organism) {
+  float heading = perceptor.gazeHeading;
+  if (perceptor.focusLocked) {
+    heading = engine::kinematics::normalizeAngle(heading + perceptor.focusBearing);
+  }
+  if (!organismUsesCampNeuronPhases(organism)) {
+    return campRenderBodyYaw(organism);
+  }
+  return heading;
+}
+
+float perceptorDiagnosticSenseRadius(float cellSize, const Organism& organism) {
+  const float authored = cellSize * organism.senseRadiusFactor;
+  const float bodySpan = campBodySpanWorld(organism);
+  if (bodySpan <= 1.0e-4f) {
+    return authored;
+  }
+  return std::min(authored, std::max(bodySpan * 1.05f, cellSize * 0.75f));
+}
+
 void campVisualNodePosition(const Organism& organism, const SkeletonNode& node,
                             const SkeletonNode& hub, float worldPerPx, float& outX, float& outY,
                             float& outZ) {
   outX = node.worldX;
-  outY = node.worldY;
+  outY = node.worldY + kOrganismRenderLiftY;
   outZ = node.worldZ;
   if (!organismUsesCampSkeletonVisual(organism) || !node.alive ||
       node.neuron == NeuronType::Computer || node.neuron == NeuronType::None) {
@@ -234,7 +304,7 @@ void campVisualNodePosition(const Organism& organism, const SkeletonNode& node,
   }
   const float armWorld = kNeuralAxonMaxLengthPx * worldPerPx;
   const float bindAngle = campBindAngleForNode(node);
-  const float worldYaw = organism.heading + bindAngle;
+  const float worldYaw = campLocomotionBodyYaw(organism) + bindAngle;
   outX = hub.worldX + std::sin(worldYaw) * armWorld;
   outZ = hub.worldZ + std::cos(worldYaw) * armWorld;
 }
@@ -406,7 +476,12 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
                                          float eyeY, float eyeZ, const engine::Mat4& mvp,
                                          int viewportW, int viewportH, std::uint64_t simTick,
                                          float fixedSimHz, float cellSize,
-                                         bool showNeuronDiagnostics, bool spritesAvailable) {
+                                         bool showNeuronDiagnostics,
+                                         OrganismDrawSpriteSupport spriteSupport,
+                                         OrganismDrawOptions options) {
+  if (options.billboardsOnly) {
+    spriteSupport.billboardsOnly = true;
+  }
   OrganismDrawBatch batch;
   batch.cellVerts.reserve(organisms.size() * 128);
 
@@ -419,23 +494,56 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
                        static_cast<float>(kStemCellStorageMaxBytes);
     const float alpha = 0.55f + 0.45f * std::min(1.0f, fill);
 
+    Organism::RenderNodePoseMap renderPoses;
+    if (options.world != nullptr) {
+      organism.sampleArticulatedRenderPoses(*options.world, cellSize, kTerrainHeightScale,
+                                            renderPoses);
+    }
+
     const SkeletonNode* hub = organism.findNode(organism.rootNodeId);
+    float hubRefX = 0.0f;
+    float hubRefY = 0.0f;
+    float hubRefZ = 0.0f;
+    if (hub != nullptr) {
+      const auto hubPose = renderPoses.find(hub->id);
+      if (hubPose != renderPoses.end()) {
+        hubRefX = hubPose->second[0];
+        hubRefY = hubPose->second[1];
+        hubRefZ = hubPose->second[2];
+      } else {
+        hubRefX = hub->worldX;
+        hubRefY = hub->worldY;
+        hubRefZ = hub->worldZ;
+      }
+    }
     const float hubWorldPerPx =
-        hub != nullptr ? worldUnitsPerPixel(mvp, viewportW, viewportH, hub->worldX, hub->worldY,
-                                           hub->worldZ)
+        hub != nullptr ? worldUnitsPerPixel(mvp, viewportW, viewportH, hubRefX, hubRefY, hubRefZ)
                        : worldUnitsPerPixel(mvp, viewportW, viewportH, 0.0f, 0.0f, 0.0f);
 
     auto visualPos = [&](const SkeletonNode& node, float& vx, float& vy, float& vz) {
+      const auto posed = renderPoses.find(node.id);
+      if (posed != renderPoses.end()) {
+        const float py = posed->second[1];
+        if (std::isfinite(posed->second[0]) && std::isfinite(py) &&
+            std::isfinite(posed->second[2]) && py > -100.0f && py < 500.0f) {
+          vx = posed->second[0];
+          vy = py + kOrganismRenderLiftY;
+          vz = posed->second[2];
+          return;
+        }
+      }
       if (hub != nullptr) {
         campVisualNodePosition(organism, node, *hub, hubWorldPerPx, vx, vy, vz);
       } else {
         vx = node.worldX;
-        vy = node.worldY;
+        vy = node.worldY + kOrganismRenderLiftY;
         vz = node.worldZ;
       }
     };
 
-    if (organismUsesCampSkeletonVisual(organism)) {
+    const bool campVisual = organismUsesCampSkeletonVisual(organism);
+
+    if (campVisual) {
       for (const SkeletonLink& link : organism.links) {
         const SkeletonNode* parent = organism.findNode(link.parentNodeId);
         const SkeletonNode* child = organism.findNode(link.childNodeId);
@@ -453,8 +561,11 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
         visualPos(*child, cx, cy, cz);
         const float worldPerPx = worldUnitsPerPixel(mvp, viewportW, viewportH, px, py, pz);
         const float halfWidth = (kNeuralAxonWidthPx * 0.5f) * worldPerPx;
-        appendGroundLinkStrip(batch.cellVerts, px, pz, cx, cz, py + 0.06f, halfWidth, 0.72f, 0.86f,
-                              0.34f, alpha * 0.92f);
+        const float linkY = (py + cy) * 0.5f;
+        appendMuscleLine(batch.boneLineVerts, px, linkY, pz, cx, linkY, cz, 0.98f, 0.88f, 0.22f,
+                         alpha);
+        appendGroundLinkStrip(batch.cellVerts, px, pz, cx, cz, linkY, halfWidth, 0.72f, 0.96f,
+                              0.34f, alpha);
       }
     } else {
       for (const NeuralAxon& axon : organism.neuralAxons) {
@@ -525,7 +636,7 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
           const float strokePulse = organism.lastStrokePaid ? 1.35f : 1.0f;
           const float chevronR = organism.lastStrokePaid ? 0.55f : 0.28f;
           const float chevronG = organism.lastStrokePaid ? 1.0f : 0.98f;
-          appendHeadingChevron(batch.cellVerts, ax, ay, az, organism.heading,
+          appendHeadingChevron(batch.cellVerts, ax, ay, az, campRenderBodyYaw(organism),
                                chevronLen * strokePulse, chevronR, chevronG, 1.0f,
                                alpha * (organism.lastStrokePaid ? 1.0f : 0.75f));
         }
@@ -566,54 +677,53 @@ OrganismDrawBatch buildOrganismDrawBatch(const std::vector<Organism>& organisms,
                                    lineWidth * 1.35f, 0.35f, 1.0f, 0.55f, 0.75f);
           }
         } else if (node.neuron == NeuronType::Perceptor) {
-          const float senseR = cellSize * organism.senseRadiusFactor;
+          const float senseR = perceptorDiagnosticSenseRadius(cellSize, organism);
+          const float arcHeading = perceptorFocusArcHeading(node, organism);
           const float arcAlpha = node.focusLocked ? 0.62f : 0.38f;
           const float arcG = node.focusLocked ? 0.98f : 0.72f;
-          appendPerceptorFocusArc(batch.cellVerts, vx, vz, diagY + 0.01f, organism.heading,
+          appendPerceptorFocusArc(batch.cellVerts, vx, vz, diagY + 0.01f, arcHeading,
                                   kPerceptorFocusHalfAngle, senseR, lineWidth, 0.35f, arcG, 0.78f,
                                   arcAlpha);
         }
       }
 
       if (node.neuron == NeuronType::Mouth) {
-        if (spritesAvailable) {
-          batch.spriteInstances.push_back(makeSpriteInstance(
-              "mouth", organism.lastMouthHadFoodContact ? "mouth_eating" : "mouth_idle", vx, vy, vz,
-              kMouthSpriteDiameterPx, worldPerPx, alpha, simTimeSec));
+        r = 1.0f;
+        g = 0.55f;
+        b = 0.22f;
+        if (spriteSupport.mouthSprites() && !campVisual) {
+          batch.spriteInstances.push_back(makeSpriteInstance("mouth", "mouth_idle", vx, vy, vz,
+                                                           kNeuronDiameterPx, worldPerPx,
+                                                           alpha, simTimeSec));
         } else {
-          r = 1.0f;
-          g = 0.55f;
-          b = 0.22f;
           appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
                               halfSize);
         }
         continue;
       }
       if (node.neuron == NeuronType::Perceptor) {
-        if (spritesAvailable) {
-          const char* clip = node.focusLocked ? "eye_open" : "eye_half_lidded";
-          batch.spriteInstances.push_back(makeSpriteInstance("perceptor", clip, vx, vy, vz,
-                                                             kPerceptorSpriteDiameterPx, worldPerPx,
+        r = 0.35f;
+        g = 0.78f;
+        b = 0.95f;
+        if (spriteSupport.perceptorSprites() && !campVisual) {
+          batch.spriteInstances.push_back(makeSpriteInstance("perceptor", "eye_open", vx, vy, vz,
+                                                             kNeuronDiameterPx, worldPerPx,
                                                              alpha, simTimeSec));
         } else {
-          r = 0.35f;
-          g = 0.78f;
-          b = 0.95f;
           appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
                               halfSize);
         }
         continue;
       }
       if (node.neuron == NeuronType::Actuator) {
-        if (spritesAvailable) {
-          const char* clip = organism.lastStrokePaid ? "flagella_stroke" : "flagella_idle";
-          batch.spriteInstances.push_back(makeSpriteInstance("actuator", clip, vx, vy, vz,
-                                                             kActuatorSpriteDiameterPx, worldPerPx,
+        r = 0.55f;
+        g = 0.95f;
+        b = 0.45f;
+        if (spriteSupport.actuatorSprites() && !campVisual) {
+          batch.spriteInstances.push_back(makeSpriteInstance("actuator", "flagella_idle", vx, vy, vz,
+                                                             kNeuronDiameterPx, worldPerPx,
                                                              alpha, simTimeSec));
         } else {
-          r = 0.55f;
-          g = 0.95f;
-          b = 0.45f;
           appendCellBillboard(batch.cellVerts, vx, vy, vz, eyeX, eyeY, eyeZ, r, g, b, alpha,
                               halfSize);
         }

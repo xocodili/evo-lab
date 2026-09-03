@@ -1,5 +1,7 @@
 #include "sim/CellPopulation.hpp"
 
+#include "sim/OrganismKinematicBirth.hpp"
+
 #include "sim/BarrenWorld.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/Chaos.hpp"
@@ -195,15 +197,16 @@ void CellPopulation::seedMouthOrganisms(const BarrenWorld& world, float cellSize
       world, cellSize, heightScale, count, kChaosSaltStarMouth, false, 100,
       [this, &world, cellSize, mouthsPerOrganism](float wx, float wz, float wy,
                                                   std::mt19937& rng) {
+        const float spawnYaw = chaosSpawnHeading(rng);
         Organism organism = makeStarMouthOrganism(
             nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount(), mouthsPerOrganism,
             nominalBoneLength(cellSize));
-        organism.heading = chaosSpawnHeading(rng);
+        organism.heading = spawnYaw;
         return organism;
       },
       [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
         (void)rng;
-        organism.updateKinematics(world, cellSize, heightScale);
+        initializeArticulatedSpawnPose(organism, world, cellSize, heightScale, organism.heading);
         organism.landAdjacent =
             organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
       });
@@ -215,14 +218,15 @@ void CellPopulation::seedActuatorOrganisms(const BarrenWorld& world, float cellS
   seedOnWetTerrain(
       world, cellSize, heightScale, count, kChaosSaltActuator, true, 100,
       [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
+        const float spawnYaw = chaosSpawnHeading(rng);
         Organism organism =
             makeActuatorOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng), world.tickCount());
-        organism.heading = chaosSpawnHeading(rng);
+        organism.heading = spawnYaw;
         return organism;
       },
       [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
         (void)rng;
-        organism.updateKinematics(world, cellSize, heightScale);
+        initializeArticulatedSpawnPose(organism, world, cellSize, heightScale, organism.heading);
         organism.landAdjacent =
             organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
       });
@@ -234,14 +238,13 @@ void CellPopulation::seedNoms(const BarrenWorld& world, float cellSize, float he
   seedOnWetTerrain(
       world, cellSize, heightScale, count, kChaosSaltNom, true, 100,
       [this, &world, cellSize](float wx, float wz, float wy, std::mt19937& rng) {
-        Organism organism = makeCampNomOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng),
-                                            world.tickCount(), nominalBoneLength(cellSize));
-        organism.heading = chaosSpawnHeading(rng);
-        return organism;
+        const float spawnYaw = chaosSpawnHeading(rng);
+        return makeCampNomOrganism(nextId_++, wx, wz, wy, chaosInitialStorage(rng),
+                                   world.tickCount(), nominalBoneLength(cellSize), spawnYaw);
       },
       [&world, cellSize, heightScale](Organism& organism, std::mt19937& rng) {
         (void)rng;
-        organism.updateKinematics(world, cellSize, heightScale);
+        initializeArticulatedSpawnPose(organism, world, cellSize, heightScale, organism.heading);
         organism.landAdjacent =
             organismLandAdjacent(world, organism.rootWorldX(), organism.rootWorldZ(), cellSize);
       });

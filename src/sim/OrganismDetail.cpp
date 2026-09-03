@@ -12,6 +12,7 @@
 #include "sim/NeuralAxon.hpp"
 #include "sim/NeuronStem.hpp"
 #include "sim/Organism.hpp"
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/OrganismActuator.hpp"
 #include "sim/OrganismMouth.hpp"
 #include "sim/OrganismNeuron.hpp"
@@ -519,7 +520,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     organism.lastActuatorInhibited = motorIntent.motorSuppressed;
 
     if (!organism.disableNurseryLocomotion) {
-      applyCampChemotaxisHeading(organism, interoception, motorIntent);
+      applyCampChemotaxisSteering(organism, interoception, motorIntent);
 
       const bool anchored = campLocomotionAnchored(interoception);
       const float effectiveTumbleRate =
@@ -530,7 +531,7 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
             0.5f + 0.5f * std::clamp(organism.tumbleChiralityBias, -kTumbleChiralityBiasMax,
                                      kTumbleChiralityBiasMax);
         const float sign = chaosBernoulli(rightProb, rng) ? 1.0f : -1.0f;
-        organism.heading = normalizeAngle(organism.heading + sign * effectiveTumbleTurn);
+        applyCampBodyTumble(organism, sign * effectiveTumbleTurn);
         organism.lastTumbled = true;
       }
     }
@@ -560,10 +561,10 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
     organism.lastMechanicalThrust = mechanicalThrust;
     organism.lastTranslationEntropyLoss = strokeBytes * (1.0f - kActuatorTranslationEta);
 
-    const float thrustX = std::sin(organism.heading) * mechanicalThrust;
-    const float thrustZ = std::cos(organism.heading) * mechanicalThrust;
+    const float thrustX = std::sin(campLocomotionBodyYaw(organism)) * mechanicalThrust;
+    const float thrustZ = std::cos(campLocomotionBodyYaw(organism)) * mechanicalThrust;
     if (organism.usesArticulatedLocomotion()) {
-      float thrustHeading = organism.heading;
+      float thrustHeading = campLocomotionBodyYaw(organism);
       if (organism.isCampNom() && interoception.perceptorLocked &&
           interoception.focusKind == PerceptFocusKind::Threat &&
           interoception.flee > interoception.approach) {

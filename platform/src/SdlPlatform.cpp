@@ -108,6 +108,8 @@ void SdlPlatform::handleEvent(const SDL_Event& event, InputFrame& input, bool mo
         input.quit = true;
       } else if (event.key.keysym.sym == SDLK_r) {
         input.keyR = true;
+      } else if (event.key.keysym.sym == SDLK_c) {
+        input.keyC = true;
       } else if (event.key.keysym.sym == SDLK_SPACE) {
         input.keySpace = true;
       } else if (event.key.keysym.sym == SDLK_v) {
@@ -187,6 +189,7 @@ void SdlPlatform::pumpEvents() {
 void SdlPlatform::poll(InputFrame& input, bool mouseLeftHeld) {
   input.quit = false;
   input.keyR = false;
+  input.keyC = false;
   input.keySpace = false;
   input.keyV = false;
   input.scrollDelta = 0;

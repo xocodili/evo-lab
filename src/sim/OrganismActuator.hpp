@@ -65,8 +65,8 @@ MotorIntent computeCampMotorIntent(const ActuatorInteroception& interoception,
 // P food/threat focus lock suppresses tumble; M taste steers via latch but does not anchor.
 bool campLocomotionAnchored(const ActuatorInteroception& interoception);
 
-void applyCampChemotaxisHeading(Organism& organism, const ActuatorInteroception& interoception,
-                               const MotorIntent& intent);
+void applyCampChemotaxisSteering(Organism& organism, const ActuatorInteroception& interoception,
+                                 const MotorIntent& intent);
 
 // Store M→A satiation sample for next tick's gradient (after advect).
 void commitActuatorMouthInboundPrior(Organism& organism, const ActuatorInteroception& interoception,

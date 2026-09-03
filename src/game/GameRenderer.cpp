@@ -168,23 +168,23 @@ bool GameRenderer::init(const std::function<void()>& heartbeat, const std::strin
   g.genBuffers(1, &cellVbo_);
 
   if (!exeBasePath.empty()) {
-    const bool mouthLoaded = spriteLibrary_.loadAtlas(
+    mouthAtlasLoaded_ = spriteLibrary_.loadAtlas(
         "mouth", engine::gfx::sprites::kDefaultMouthSpriteManifestRelPath, exeBasePath);
-    const bool perceptorLoaded = spriteLibrary_.loadAtlas(
+    perceptorAtlasLoaded_ = spriteLibrary_.loadAtlas(
         "perceptor", engine::gfx::sprites::kDefaultPerceptorSpriteManifestRelPath, exeBasePath);
-    const bool actuatorLoaded = spriteLibrary_.loadAtlas(
+    actuatorAtlasLoaded_ = spriteLibrary_.loadAtlas(
         "actuator", engine::gfx::sprites::kDefaultActuatorSpriteManifestRelPath, exeBasePath);
-    spritesLoaded_ = mouthLoaded || perceptorLoaded || actuatorLoaded;
+    spritesLoaded_ = mouthAtlasLoaded_ || perceptorAtlasLoaded_ || actuatorAtlasLoaded_;
     if (spritesLoaded_) {
       spriteLibrary_.uploadAll();
     }
-    if (!mouthLoaded) {
+    if (!mouthAtlasLoaded_) {
       std::cerr << "WARNING: mouth sprite atlas failed to load — mouths render as solid circles\n";
     }
-    if (!perceptorLoaded) {
+    if (!perceptorAtlasLoaded_) {
       std::cerr << "WARNING: perceptor sprite atlas failed to load\n";
     }
-    if (!actuatorLoaded) {
+    if (!actuatorAtlasLoaded_) {
       std::cerr << "WARNING: actuator sprite atlas failed to load\n";
     }
   }
@@ -238,6 +238,9 @@ void GameRenderer::shutdown() {
   spriteRenderer_.shutdown();
   spriteLibrary_.shutdown();
   spritesLoaded_ = false;
+  mouthAtlasLoaded_ = false;
+  perceptorAtlasLoaded_ = false;
+  actuatorAtlasLoaded_ = false;
 
   terrainProgram_ = engine::gfx::ShaderProgram{};
   waterProgram_ = engine::gfx::ShaderProgram{};
@@ -308,15 +311,17 @@ void GameRenderer::uploadTerrainColors(const TerrainMesh& mesh) {
   g.bindBuffer(engine::gl::GlEnum::kArrayBuffer, 0);
 }
 
-void GameRenderer::drawTerrain(const engine::OrbitCamera& camera, int viewportW, int viewportH) {
+void GameRenderer::drawTerrain(const engine::OrbitCamera& camera, int viewportW, int viewportH,
+                               int viewportX, int viewportY) {
   if (!initialized_ || !terrainGeometryUploaded_) {
     return;
   }
 
   engine::gl::GlContext& g = engine::gl::gl();
-  g.viewport(0, 0, viewportW, viewportH);
+  g.viewport(viewportX, viewportY, viewportW, viewportH);
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
 
+  g.enable(engine::gl::GlEnum::kDepthTest);
   terrainProgram_.use();
   terrainProgram_.setMat4("uMvp", mvp);
 
@@ -326,13 +331,19 @@ void GameRenderer::drawTerrain(const engine::OrbitCamera& camera, int viewportW,
 }
 
 void GameRenderer::drawWaterPlane(const TerrainMesh& mesh, float waterLevelScaled,
-                                  const engine::OrbitCamera& camera, int viewportW, int viewportH) {
+                                  const engine::OrbitCamera& camera, int viewportW, int viewportH,
+                                  int viewportX, int viewportY) {
   if (!initialized_) {
     return;
   }
 
   engine::gl::GlContext& g = engine::gl::gl();
+  g.viewport(viewportX, viewportY, viewportW, viewportH);
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
+
+  g.enable(engine::gl::GlEnum::kDepthTest);
+  g.enable(engine::gl::GlEnum::kBlend);
+  g.blendFunc(engine::gl::GlEnum::kSrcAlpha, engine::gl::GlEnum::kOneMinusSrcAlpha);
 
   const float waterVerts[] = {
       mesh.minX, waterLevelScaled, mesh.minZ, mesh.maxX, waterLevelScaled, mesh.minZ,
@@ -352,16 +363,20 @@ void GameRenderer::drawWaterPlane(const TerrainMesh& mesh, float waterLevelScale
   g.bindVertexArray(0);
 }
 
-void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engine::OrbitCamera& camera,
-                               int viewportW, int viewportH) {
+void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs,
+                                 const engine::OrbitCamera& camera, int viewportW, int viewportH,
+                                 int viewportX, int viewportY, int maxBlobs) {
   if (!initialized_ || blobs.empty()) {
     return;
   }
 
+  const std::size_t drawCount =
+      maxBlobs > 0 ? std::min(blobs.size(), static_cast<std::size_t>(maxBlobs)) : blobs.size();
+
   std::vector<EnergonVertex> verts;
-  verts.reserve(std::min(blobs.size(), static_cast<std::size_t>(8192)) * 4);
-  for (const EnergonBlob& blob : blobs) {
-    appendBlobStreak(verts, blob);
+  verts.reserve(std::min(drawCount, static_cast<std::size_t>(8192)) * 4);
+  for (std::size_t i = 0; i < drawCount; ++i) {
+    appendBlobStreak(verts, blobs[i]);
   }
   if (verts.empty()) {
     return;
@@ -370,7 +385,7 @@ void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engi
   engine::gl::GlContext& g = engine::gl::gl();
   energonVertexCount_ = static_cast<int>(verts.size());
 
-  g.viewport(0, 0, viewportW, viewportH);
+  g.viewport(viewportX, viewportY, viewportW, viewportH);
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
 
   g.bindVertexArray(energonVao_);
@@ -393,7 +408,8 @@ void GameRenderer::drawEnergon(const std::vector<EnergonBlob>& blobs, const engi
 
 void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
                                  const engine::OrbitCamera& camera, int viewportW, int viewportH,
-                                 std::uint64_t simTick, float fixedSimHz) {
+                                 std::uint64_t simTick, float fixedSimHz, const BarrenWorld* world,
+                                 int viewportX, int viewportY) {
   if (!initialized_ || organisms.empty()) {
     return;
   }
@@ -404,12 +420,21 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
   camera.eyePosition(eyeX, eyeY, eyeZ);
 
   const engine::Mat4 mvp = viewProjMatrix(camera, viewportW, viewportH);
+  OrganismDrawSpriteSupport spriteSupport;
+  spriteSupport.rendererReady = spriteRenderer_.isInitialized();
+  spriteSupport.mouthAtlas = mouthAtlasLoaded_;
+  spriteSupport.perceptorAtlas = perceptorAtlasLoaded_;
+  spriteSupport.actuatorAtlas = actuatorAtlasLoaded_;
+  spriteSupport.billboardsOnly = renderDebug_;
+  OrganismDrawOptions drawOptions;
+  drawOptions.world = world;
+  drawOptions.billboardsOnly = renderDebug_;
   const OrganismDrawBatch batch = buildOrganismDrawBatch(
       organisms, eyeX, eyeY, eyeZ, mvp, viewportW, viewportH, simTick, fixedSimHz, kWorldCellSize,
-      showNeuronDiagnostics_, spritesLoaded_);
+      showNeuronDiagnostics_, spriteSupport, drawOptions);
 
   engine::gl::GlContext& g = engine::gl::gl();
-  g.viewport(0, 0, viewportW, viewportH);
+  g.viewport(viewportX, viewportY, viewportW, viewportH);
 
   auto drawLineVerts = [&](const std::vector<OrganismLineVertex>& verts) {
     if (verts.empty()) {
@@ -432,13 +457,11 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     g.drawArrays(engine::gl::GlEnum::kLines, 0, energonVertexCount_);
   };
 
-  g.enable(engine::gl::GlEnum::kDepthTest);
   g.enable(engine::gl::GlEnum::kBlend);
   g.blendFunc(engine::gl::GlEnum::kSrcAlpha, engine::gl::GlEnum::kOneMinusSrcAlpha);
+  g.disable(engine::gl::GlEnum::kDepthTest);
   drawLineVerts(batch.boneLineVerts);
   drawLineVerts(batch.neuralLineVerts);
-
-  g.disable(engine::gl::GlEnum::kDepthTest);
 
   if (!batch.cellVerts.empty()) {
     cellVertexCount_ = static_cast<int>(batch.cellVerts.size());
@@ -461,7 +484,7 @@ void GameRenderer::drawOrganisms(const std::vector<Organism>& organisms,
     g.drawArrays(engine::gl::GlEnum::kTriangles, 0, cellVertexCount_);
   }
 
-  if (spritesLoaded_ && !batch.spriteInstances.empty()) {
+  if (spriteSupport.rendererReady && !batch.spriteInstances.empty()) {
     std::vector<engine::gfx::sprites::SpriteRenderRequest> spriteRequests;
     spriteRequests.reserve(batch.spriteInstances.size());
     for (const OrganismSpriteInstance& instance : batch.spriteInstances) {

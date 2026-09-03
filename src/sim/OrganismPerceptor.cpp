@@ -1,4 +1,5 @@
 #include "sim/CampTopology.hpp"
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/OrganismPerceptor.hpp"
 
 
@@ -998,9 +999,8 @@ void runPerceptorForNode(Organism& organism, SkeletonNode& perceptor, const Barr
 
 
 
-  // v1: gaze coupled to body heading; decoupled per-P gaze is reserved for duplicate P.
-
-  perceptor.gazeHeading = organism.heading;
+  // v1: gaze coupled to integrated body yaw; decoupled per-P gaze is reserved for duplicate P.
+  perceptor.gazeHeading = campLocomotionBodyYaw(organism);
 
 
 

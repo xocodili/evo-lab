@@ -27,6 +27,7 @@ public:
 
   bool init();
   void shutdown();
+  bool isInitialized() const { return initialized_; }
 
   // Builds billboard vertices (6 verts / sprite) and draws grouped by bound atlas texture.
   void draw(const SpriteAtlasLibrary& library, const std::vector<SpriteRenderRequest>& requests,

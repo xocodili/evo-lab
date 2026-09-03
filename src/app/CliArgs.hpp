@@ -27,6 +27,12 @@ struct CliArgs {
 
   // Session debug log interval in milliseconds (0 = disabled). Writes evo-lab.session.log.
   int debugIntervalMs = 0;
+
+  // Install feedbag reproduction oracle on first camp nom (dev/demo mode).
+  bool feedbagOracle = false;
+
+  // Billboards-only organism draw; cap energon pillars for readability.
+  bool renderDebug = false;
 };
 
 SimConfig simConfigFromCli(const CliArgs& args);

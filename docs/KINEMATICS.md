@@ -85,8 +85,8 @@ Track phases when planning features. Ask “which phase does this use case need?
 
 ```
 Organism.links  →  KinematicSkeleton::buildFromBones
-Organism.heading  →  diagnostic mirror of bodyDynamics.rootWorldYaw (sim bridge; spawn init layer 2)
-bodyDynamics      →  ArticulatedBodyState (integrated root pose + joint state)
+Organism.heading  →  diagnostic mirror of bodyDynamics.rootWorldYaw (initializeArticulatedSpawnPose)
+bodyDynamics      →  ArticulatedBodyState (integrated root pose + joint state; zeroed at birth)
 WaterColumn       →  heightAtXZ callback (Y only)
 ```
 
@@ -136,7 +136,7 @@ When checking progress, ask:
 |-----|--------|--------------------------------------|
 | **Locomotion coupling** | Impulse at A + muscle PD + per-node medium drag (S4); tide via root velocity | Contact, optional sustained pose holds |
 | **Bundle as force path** | Tension is a visual/posture scalar (`campAxonBundleTension`) | Force/torque along muscle-bundle edges; stiff vs flex links; stroke energy split between translation and bend |
-| **Heading vs body axis** | `organism.heading` steers chemotaxis; stroke projected on spine axis at A (S2) | **S5:** proprio compares intent bearing vs measured body axis for trust learning |
+| **Heading vs body axis** | Chemotaxis slews `bodyDynamics.rootWorldYaw`; tumble reorients body yaw; stroke uses body yaw; per-step `rootYawRate` cleared (no spin carryover); `organism.heading` diagnostic mirror post-step | **S5:** proprio compares intent bearing vs measured body axis for trust learning |
 | **Effector analog (phase 5)** | Discrete 0/1/2-byte stroke per tick | Continuous or phased joint targets from P/M/C/A confidence — rhythmic stroke cycle (phase 6) |
 | **Tide / advect consistency** | Per-node medium drag + root tide in `stepArticulatedBody` (S4) | Dry vs wet drag coefficients per habitat |
 | **Closing render edges** | M–A triangle base in `links` but not FK tree | Decide: FK edge, constraint-only, or pure render — affects keel triangle stability |

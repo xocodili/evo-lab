@@ -8,6 +8,7 @@
 #include "engine/kinematics/Math.hpp"
 #include "engine/kinematics/NodeMediumDrag.hpp"
 #include "sim/BarrenWorld.hpp"
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CampTopology.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/NeuronMusculature.hpp"
@@ -39,6 +40,25 @@ auto makeHeightAtXZ(const BarrenWorld& world, float cellSize, float heightScale)
     const WaterColumn column = sampleWaterColumn(world, x, z, cellSize, heightScale);
     return placementY(column, NomHabitat::Surface);
   };
+}
+
+void refreshAllNodeSurfaceHeights(Organism& organism, const BarrenWorld& world, float cellSize,
+                                  float heightScale) {
+  for (SkeletonNode& node : organism.nodes) {
+    if (!node.alive) {
+      continue;
+    }
+    const WaterColumn column =
+        sampleWaterColumn(world, node.worldX, node.worldZ, cellSize, heightScale);
+    node.worldY = placementY(column, NomHabitat::Surface);
+  }
+}
+
+float kinematicRootWorldYaw(const Organism& organism) {
+  if (organism.kinematicsBirthApplied_) {
+    return organism.bodyDynamics.rootWorldYaw;
+  }
+  return organism.heading;
 }
 
 std::uint32_t findAuthoredSkeletonTailRoot(const Organism& organism) {
@@ -101,7 +121,7 @@ std::vector<engine::kinematics::KinematicNodePose> computeRestNodePosesAnchoredA
   const auto heightAtXZ = makeHeightAtXZ(world, cellSize, heightScale);
   const engine::kinematics::KinematicLocalPose zeroPose =
       engine::kinematics::KinematicLocalPose::zeros(refSkeleton.jointCount());
-  engine::kinematics::solveForwardKinematics(refSkeleton, zeroPose, organism.heading,
+  engine::kinematics::solveForwardKinematics(refSkeleton, zeroPose, kinematicRootWorldYaw(organism),
                                              std::span(poses), heightAtXZ);
 
   const SkeletonNode* rootNode = organism.findNode(organism.rootNodeId);
@@ -217,7 +237,8 @@ engine::kinematics::KinematicSkeleton buildEngineSkeleton(Organism& organism,
         computeRestNodePosesAnchoredAtRoot(organism, cellSize, heightScale, world);
 
     const std::vector<engine::kinematics::KinematicBone> bones =
-        buildKinematicBonesFromRoot(organism, organism.rootNodeId, organism.heading, restPoses);
+        buildKinematicBonesFromRoot(organism, organism.rootNodeId, kinematicRootWorldYaw(organism),
+                                    restPoses);
     engine::kinematics::KinematicSkeleton skeleton =
         engine::kinematics::KinematicSkeleton::buildFromBones(bones, organism.rootNodeId);
     if (skeletonHasMuscleBundles(organism)) {
@@ -245,6 +266,9 @@ engine::kinematics::KinematicSkeleton takeKinematicsSkeleton(Organism& organism,
   return buildEngineSkeleton(organism, world, cellSize, heightScale);
 }
 
+void syncCampKinematicsPose(Organism& organism, const engine::kinematics::KinematicSkeleton& skeleton,
+                            const BarrenWorld& world, float cellSize, float heightScale);
+
 void stepCampBodyDynamics(Organism& organism, const engine::kinematics::KinematicSkeleton& skeleton,
                           const BarrenWorld& world, float cellSize, float heightScale) {
   organism.bodyDynamics.ensureJointCount(skeleton.jointCount());
@@ -262,8 +286,8 @@ void stepCampBodyDynamics(Organism& organism, const engine::kinematics::Kinemati
     impulses.push_back(impulse);
   }
 
-  // Bridge: sim heading mirrors body state until camper init owns spawn/root pose (layer 2).
-  organism.bodyDynamics.rootWorldYaw = organism.heading;
+  // Stroke lateral torque is same-tick only; do not carry spin into the next neural tick.
+  organism.bodyDynamics.rootYawRate = 0.0f;
 
   engine::kinematics::ArticulatedStepParams params;
   params.mediumVelX = organism.lastTideVelX;
@@ -283,7 +307,9 @@ void stepCampBodyDynamics(Organism& organism, const engine::kinematics::Kinemati
   engine::kinematics::stepArticulatedBody(skeleton, organism.bodyDynamics,
                                           std::span(organism.nodes), muscles, impulses, params,
                                           heightAtXZ);
+  refreshAllNodeSurfaceHeights(organism, world, cellSize, heightScale);
 
+  // Diagnostic mirror only — locomotion reads bodyDynamics, not heading.
   organism.heading = organism.bodyDynamics.rootWorldYaw;
 
   organism.pendingImpulseNodeId = 0;
@@ -315,7 +341,7 @@ void runStaticForwardKinematics(Organism& organism,
   engine::kinematics::KinematicLocalPose localPose =
       engine::kinematics::KinematicLocalPose::zeros(skeleton.jointCount());
   const auto heightAtXZ = makeHeightAtXZ(world, cellSize, heightScale);
-  engine::kinematics::solveForwardKinematics(skeleton, localPose, organism.heading,
+  engine::kinematics::solveForwardKinematics(skeleton, localPose, kinematicRootWorldYaw(organism),
                                              std::span(organism.nodes), heightAtXZ);
 }
 
@@ -391,6 +417,31 @@ void Organism::updateKinematics(const BarrenWorld& world, float cellSize, float 
   }
 
   runStaticForwardKinematics(*this, skeleton, world, cellSize, heightScale);
+}
+
+bool Organism::sampleArticulatedRenderPoses(const BarrenWorld& /*world*/, float /*cellSize*/,
+                                            float /*heightScale*/,
+                                            RenderNodePoseMap& outPoses) const {
+  outPoses.clear();
+  if (!alive) {
+    return false;
+  }
+
+  outPoses.reserve(nodes.size());
+  for (const SkeletonNode& node : nodes) {
+    if (!node.alive) {
+      continue;
+    }
+    if (!std::isfinite(node.worldX) || !std::isfinite(node.worldY) ||
+        !std::isfinite(node.worldZ)) {
+      continue;
+    }
+    if (node.worldY < -100.0f || node.worldY > 500.0f) {
+      continue;
+    }
+    outPoses[node.id] = {node.worldX, node.worldY, node.worldZ};
+  }
+  return !outPoses.empty();
 }
 
 }  // namespace evolab

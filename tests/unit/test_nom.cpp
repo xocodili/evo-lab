@@ -4,6 +4,7 @@
 #include "game/TerrainMesh.hpp"
 #include "sim/BarrenWorld.hpp"
 #include "sim/CampTopology.hpp"
+#include "sim/CampLocomotionBody.hpp"
 #include "sim/CellConstants.hpp"
 #include "sim/CampNeuronGating.hpp"
 #include "sim/NeuronSignal.hpp"
@@ -235,7 +236,7 @@ TEST_CASE("camp actuator stroke records displacement after kinematics", "[nom][m
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
 
   organism.advectRoot(world, energon, evolab::kWorldCellSize, evolab::kTerrainHeightScale,
                       worldHalfExtent(world, evolab::kWorldCellSize));
@@ -255,7 +256,7 @@ TEST_CASE("camp stroke moves mouth root along heading not A-arm bearing", "[nom]
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 100, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.7853982f;
+  seedCampLocomotionBodyYaw(organism, 0.7853982f);
   const evolab::SkeletonNode* rootBefore = organism.findNode(organism.rootNodeId);
   REQUIRE(rootBefore != nullptr);
   const float startX = rootBefore->worldX;
@@ -392,7 +393,7 @@ TEST_CASE("chemotaxis slews heading toward off-axis food via P interoception", "
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 240, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -548,7 +549,7 @@ TEST_CASE("perceptor scan detects food ahead and emits confidence", "[nom]") {
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -586,7 +587,7 @@ TEST_CASE("perceptor temporal gradient boosts confidence when food salience rise
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -638,7 +639,7 @@ TEST_CASE("perceptor focuses threat with low avoid confidence", "[nom]") {
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* perceptor = organism.findNode(1);
@@ -680,7 +681,7 @@ TEST_CASE("mouth refuses food when perceptor signals threat", "[nom]") {
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
@@ -729,7 +730,7 @@ TEST_CASE("mouth bites when perceptor signals food and contact exists", "[nom]")
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, wetX, wetZ, 1.0f, 120, 0, evolab::kWorldCellSize);
   organism.alive = true;
-  organism.heading = 0.0f;
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
   organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
 
   evolab::SkeletonNode* mouth = organism.findNode(2);
