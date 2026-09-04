@@ -213,7 +213,7 @@ CloacaBand cloacaBandFromBlob(const EnergonBlob& blob) {
 
   if (blob.origin == EnergonOrigin::Cloaca) {
 
-    return cloacaBandFromTag(static_cast<std::uint8_t>(blob.data & 0xFF));
+    return cloacaBandFromTag(blob.bytes[0]);
 
   }
 
@@ -280,8 +280,12 @@ bool expelCloacaVent(Organism& organism, EnergonField& field, SkeletonNode& comp
   const std::uint8_t tag = cloacaBandTag(organism, band);
 
   EnergonBlob blob;
-
-  blob.data = packCloacaTagBytes(tag, cost);
+  std::uint8_t tagBytes[kEnergonMaxBytesPerBlob]{};
+  const std::uint32_t packed = std::min(cost, static_cast<std::uint32_t>(kEnergonMaxBytesPerBlob));
+  for (std::uint32_t i = 0; i < packed; ++i) {
+    tagBytes[i] = tag;
+  }
+  energonBlobAssignBytes(blob, tagBytes, static_cast<int>(packed));
 
   blob.remaining = static_cast<std::uint16_t>(cost);
 

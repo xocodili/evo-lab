@@ -257,7 +257,7 @@ TEST_CASE("mouth taste temporal gradient turns positive when approaching food",
 evolab::EnergonBlob makeDistressCloacaBlob(float x, float z, std::uint16_t bytes = 1) {
   evolab::EnergonBlob blob;
   blob.origin = evolab::EnergonOrigin::Cloaca;
-  blob.data = evolab::kCloacaTagDistress;
+  blob.bytes[0] = evolab::kCloacaTagDistress;
   blob.remaining = bytes;
   blob.initialBytes = static_cast<std::uint8_t>(std::min<std::uint16_t>(bytes, 8));
   blob.x = x;

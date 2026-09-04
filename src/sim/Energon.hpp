@@ -41,7 +41,7 @@ struct EnergonBlob {
 
   std::uint32_t id = 0;
 
-  std::uint64_t data = 0;
+  std::uint8_t bytes[kEnergonMaxBytesPerBlob]{};
 
   std::uint16_t remaining = 0;
 
@@ -110,6 +110,11 @@ struct EnergonBiteResult {
 
   bool snipped = false;
 
+  std::uint8_t byteCount = 0;
+
+  std::uint8_t bytes[kEnergonMaxBytesPerBlob]{};
+
+  // First field byte of the chomp (legacy single-byte callers).
   std::uint8_t byte = 0;
 
 };
@@ -171,7 +176,7 @@ public:
 
 
 
-  // Bite one byte at the mouth position along the string (may snip into two blobs).
+  // Bite up to kChompFieldBytes at the mouth projection along the string (may snip into two blobs).
 
   EnergonBiteResult biteAt(std::uint32_t blobId, float mouthX, float mouthZ);
 
@@ -285,6 +290,8 @@ private:
   void remapAnchorsOnSnip(std::uint32_t tailBlobId, std::uint32_t headBlobId, float splitT);
 
   void splitSegmentAt(EnergonBlob& blob, int index, std::uint8_t eatenByte, float splitT);
+  void splitChompRange(EnergonBlob& blob, int startIndex, int chompCount, float splitTailT,
+                       float splitHeadT);
 
   EnergonBlob* findBlob(std::uint32_t blobId);
 

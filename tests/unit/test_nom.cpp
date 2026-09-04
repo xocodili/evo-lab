@@ -53,7 +53,7 @@ bool findWetWorldSite(const evolab::BarrenWorld& world, float cellSize, float& w
 
 evolab::EnergonBlob makeWetFoodBlob(float x, float z, std::uint8_t bytes) {
   evolab::EnergonBlob blob;
-  blob.data = bytes;
+  blob.bytes[0] = bytes;
   blob.remaining = 1;
   blob.initialBytes = 1;
   blob.origin = evolab::EnergonOrigin::Sunfall;
@@ -224,6 +224,47 @@ TEST_CASE("axial stroke impulse propagates along camp chain", "[nom][musculature
   REQUIRE(computerAfter->worldZ > hubZ + mechanicalThrust * 0.5f);
   REQUIRE(mouthAfter->worldZ > computerAfter->worldZ);
   REQUIRE(mouthAfter->worldZ >= mouthZ - 0.02f);
+}
+
+TEST_CASE("camp yaw steering sets rootYawRate instead of snapping body yaw", "[nom][kinematics]") {
+  evolab::BarrenWorld world(7, 32);
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  evolab::seedCampLocomotionBodyYaw(organism, 0.0f);
+  organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  const float yawBefore = organism.bodyDynamics.rootWorldYaw;
+  evolab::applyCampBodyYawSteering(organism, 0.55f, 1.0f);
+
+  REQUIRE(organism.bodyDynamics.rootWorldYaw == Catch::Approx(yawBefore).margin(1e-5f));
+  REQUIRE(organism.bodyDynamics.rootYawRate > 0.0f);
+  REQUIRE(organism.bodyDynamics.rootYawRate <= evolab::kOrganismMaxTurnPerTick);
+}
+
+TEST_CASE("camp stroke thrust aligns with mouth axis at actuator", "[nom][musculature]") {
+  evolab::BarrenWorld world(7, 32);
+  evolab::Organism organism =
+      evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
+  organism.heading = 0.0f;
+  organism.updateKinematics(world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
+
+  const evolab::SkeletonNode* mouth = evolab::findPrimaryMouthNode(organism);
+  const evolab::SkeletonNode* actuator = organism.findNode(evolab::kCampActuatorId);
+  REQUIRE(mouth != nullptr);
+  REQUIRE(actuator != nullptr);
+
+  const float spineX = mouth->worldX - actuator->worldX;
+  const float spineZ = mouth->worldZ - actuator->worldZ;
+  const float spineLen = std::hypot(spineX, spineZ);
+  REQUIRE(spineLen > 0.5f);
+
+  evolab::queueCampStrokeImpulse(organism, evolab::kCampActuatorId, 1.0f, organism.heading, 1.0f);
+  const float impulseLen =
+      std::hypot(organism.pendingImpulseX, organism.pendingImpulseZ);
+  REQUIRE(impulseLen == Catch::Approx(1.0f).margin(1e-4f));
+
+  const float axial = (organism.pendingImpulseX * spineX + organism.pendingImpulseZ * spineZ) / spineLen;
+  REQUIRE(axial == Catch::Approx(1.0f).margin(0.05f));
 }
 
 TEST_CASE("camp actuator stroke records displacement after kinematics", "[nom][musculature]") {

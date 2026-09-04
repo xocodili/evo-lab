@@ -21,9 +21,9 @@ evolab::EnergonBlob makeWetFoodBlob(float x, float z, std::uint8_t bytes, std::u
   blob.id = id;
   blob.initialBytes = bytes;
   blob.remaining = bytes;
-  blob.data = 0;
-  for (int i = 0; i < bytes; ++i) {
-    blob.data |= static_cast<std::uint64_t>(0xA0u + static_cast<std::uint8_t>(i)) << (8 * i);
+  const int packed = std::min(static_cast<int>(bytes), evolab::kEnergonMaxBytesPerBlob);
+  for (int i = 0; i < packed; ++i) {
+    blob.bytes[i] = static_cast<std::uint8_t>(0xA0u + static_cast<std::uint8_t>(i));
   }
   blob.x = x;
   blob.z = z;
@@ -121,13 +121,14 @@ TEST_CASE("heading turns toward nearby wet food", "[skeleton]") {
 
 TEST_CASE("energon bite removes low byte and decrements remaining", "[mouth]") {
   evolab::EnergonField field(1, {});
-  evolab::EnergonBlob blob = makeWetFoodBlob(0.0f, 0.0f, 3, 10);
+  evolab::EnergonBlob blob = makeWetFoodBlob(0.0f, 0.0f, 40, 10);
   field.injectBlob(blob);
 
   const evolab::EnergonBiteResult first = field.biteOneByte(10);
   REQUIRE(first.tookByte);
   REQUIRE(first.byte == 0xA0);
-  REQUIRE(field.blobs().front().remaining == 2);
+  REQUIRE(first.byteCount == evolab::kChompFieldBytes);
+  REQUIRE(field.blobs().front().remaining == 40 - evolab::kChompFieldBytes);
 }
 
 TEST_CASE("mouth node bite credits local store on skeleton", "[mouth]") {
@@ -147,10 +148,10 @@ TEST_CASE("mouth node bite credits local store on skeleton", "[mouth]") {
     }
   }
   REQUIRE(mouth != nullptr);
-  field.injectBlob(makeWetFoodBlob(mouth->worldX, mouth->worldZ, 4, 1, 0.2f));
+  field.injectBlob(makeWetFoodBlob(mouth->worldX, mouth->worldZ, evolab::kChompFieldBytes, 1, 0.2f));
 
   organism.feed(field, evolab::kWorldCellSize);
-  REQUIRE(mouth->store.size() == evolab::kEnergonUnitsPerByte - evolab::kBiteCost);
+  REQUIRE(mouth->store.size() == evolab::kChompNetYieldBytes);
 }
 
 TEST_CASE("axon link transfers rim store toward root body", "[skeleton]") {
@@ -174,7 +175,7 @@ TEST_CASE("axon link transfers rim store toward root body", "[skeleton]") {
 
 TEST_CASE("middle bite snips one energon string into two fragments", "[mouth]") {
   evolab::EnergonField field(1, {});
-  field.injectBlob(makeWetFoodBlob(0.0f, 0.0f, 5, 7, 1.0f));
+  field.injectBlob(makeWetFoodBlob(0.0f, 0.0f, 65, 7, 3.0f));
 
   const evolab::EnergonBiteResult bite = field.biteAt(7, 0.0f, 0.0f);
   REQUIRE(bite.tookByte);

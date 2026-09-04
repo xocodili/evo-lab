@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <random>
 
@@ -30,24 +31,16 @@ std::uint64_t mixSeed(std::uint64_t seed, std::uint64_t salt) {
   return seed ^ (seed >> 31);
 }
 
-std::uint8_t randomByteCount(std::mt19937_64& rng) {
-  std::uniform_int_distribution<int> dist(1, 8);
-  const int n = dist(rng);
-  const int bias = dist(rng);
-  std::uint8_t bytes = static_cast<std::uint8_t>(n);
-  if (bias <= 5) {
-    bytes = static_cast<std::uint8_t>(std::min(n, 3));
-  }
-  const float jittered = chaosJitterFloat(static_cast<float>(bytes), rng);
-  return static_cast<std::uint8_t>(std::clamp(static_cast<int>(jittered + 0.5f), 1, 8));
+std::uint8_t sunfallBlobByteCount() {
+  return static_cast<std::uint8_t>(kChompFieldBytes);
 }
 
-std::uint64_t randomData(std::mt19937_64& rng, std::uint8_t byteCount) {
+void assignRandomSunfallBytes(EnergonBlob& blob, std::mt19937_64& rng, std::uint8_t byteCount) {
   std::uint8_t bytes[kEnergonMaxBytesPerBlob]{};
   for (int i = 0; i < byteCount; ++i) {
     bytes[i] = energonRandomSunfallByte(rng);
   }
-  return energonPackRawBytes(bytes, byteCount);
+  energonBlobAssignBytes(blob, bytes, byteCount);
 }
 
 bool isMouthStickyFoodBlob(const EnergonBlob& blob) {
@@ -434,36 +427,48 @@ std::uint32_t EnergonField::injectBlobReturnId(EnergonBlob blob) {
 
 void EnergonField::splitSegmentAt(EnergonBlob& blob, int index, std::uint8_t eatenByte, float splitT) {
   (void)eatenByte;
-  const int tailCount = index;
-  const int headCount = static_cast<int>(blob.remaining) - index - 1;
+  (void)splitT;
+  const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining) - 1));
+  const float splitTailT = static_cast<float>(index) / last;
+  const float splitHeadT = static_cast<float>(index + 1) / last;
+  splitChompRange(blob, index, 1, splitTailT, splitHeadT);
+}
 
-  const float splitX = blob.tailX + (blob.headX - blob.tailX) * splitT;
-  const float splitZ = blob.tailZ + (blob.headZ - blob.tailZ) * splitT;
+void EnergonField::splitChompRange(EnergonBlob& blob, int startIndex, int chompCount, float splitTailT,
+                                   float splitHeadT) {
+  const int tailCount = startIndex;
+  const int headCount = static_cast<int>(blob.remaining) - startIndex - chompCount;
+
+  const float splitTailX = blob.tailX + (blob.headX - blob.tailX) * splitTailT;
+  const float splitTailZ = blob.tailZ + (blob.headZ - blob.tailZ) * splitTailT;
+  const float splitHeadX = blob.tailX + (blob.headX - blob.tailX) * splitHeadT;
+  const float splitHeadZ = blob.tailZ + (blob.headZ - blob.tailZ) * splitHeadT;
 
   EnergonBlob headPart;
   if (headCount > 0) {
-    headPart.data = energonPackBytes(blob, index + 1, headCount);
+    energonCopyBytesFromBlob(blob, startIndex + chompCount, headPart.bytes, headCount);
     headPart.remaining = static_cast<std::uint16_t>(headCount);
     headPart.initialBytes = static_cast<std::uint8_t>(headCount);
     headPart.origin = EnergonOrigin::Fragment;
-    headPart.x = (splitX + blob.headX) * 0.5f;
-    headPart.z = (splitZ + blob.headZ) * 0.5f;
+    headPart.x = (splitHeadX + blob.headX) * 0.5f;
+    headPart.z = (splitHeadZ + blob.headZ) * 0.5f;
     headPart.y = blob.y;
     headPart.grounded = blob.grounded;
     headPart.onWet = blob.onWet;
     headPart.ttl = blob.ttl;
     headPart.headX = blob.headX;
     headPart.headZ = blob.headZ;
-    headPart.tailX = splitX;
-    headPart.tailZ = splitZ;
+    headPart.tailX = splitHeadX;
+    headPart.tailZ = splitHeadZ;
   }
 
   const std::uint32_t tailBlobId = blob.id;
   if (tailCount > 0) {
-    blob.data = energonPackBytes(blob, 0, tailCount);
-    blob.remaining = static_cast<std::uint16_t>(tailCount);
-    blob.headX = splitX;
-    blob.headZ = splitZ;
+    std::uint8_t tailBytes[kEnergonMaxBytesPerBlob]{};
+    energonCopyBytesFromBlob(blob, 0, tailBytes, tailCount);
+    energonBlobAssignBytes(blob, tailBytes, tailCount);
+    blob.headX = splitTailX;
+    blob.headZ = splitTailZ;
     energonBlobSyncCenter(blob);
   } else {
     blob.remaining = 0;
@@ -471,7 +476,7 @@ void EnergonField::splitSegmentAt(EnergonBlob& blob, int index, std::uint8_t eat
 
   if (headCount > 0) {
     const std::uint32_t headBlobId = injectBlobReturnId(headPart);
-    remapAnchorsOnSnip(tailBlobId, headBlobId, splitT);
+    remapAnchorsOnSnip(tailBlobId, headBlobId, splitHeadT);
   }
 }
 
@@ -485,46 +490,59 @@ EnergonBiteResult EnergonField::biteAt(std::uint32_t blobId, float mouthX, float
       return result;
     }
 
-    if (blob.cornucopia) {
-      float t = 0.0f;
-      energonPointSegmentDistanceSq(mouthX, mouthZ, blob, t);
-      const int index = energonByteIndexAtProjection(blob, t);
-      const int biteIndex =
-          std::clamp(index, 0, static_cast<int>(blob.remaining) - 1);
-      result.byte = energonByteAt(blob, biteIndex);
-      result.tookByte = true;
-      return result;
-    }
-
     float t = 0.0f;
     energonPointSegmentDistanceSq(mouthX, mouthZ, blob, t);
+    const int remaining = static_cast<int>(blob.remaining);
     const int index = energonByteIndexAtProjection(blob, t);
+    const int chompCount =
+        std::min(static_cast<int>(kChompFieldBytes), remaining);
+    int startIndex = index;
+    if (startIndex + chompCount > remaining) {
+      startIndex = remaining - chompCount;
+    }
+    startIndex = std::max(0, startIndex);
 
-    if (index <= 0) {
-      result.byte = energonByteAt(blob, 0);
-      result.tookByte = true;
-      blob.data >>= 8;
-      --blob.remaining;
-      energonShrinkTailGeometry(blob);
+    energonCopyBytesFromBlob(blob, startIndex, result.bytes, chompCount);
+    result.byteCount = static_cast<std::uint8_t>(chompCount);
+    result.byte = chompCount > 0 ? result.bytes[0] : 0;
+    result.tookByte = chompCount > 0;
+
+    if (blob.cornucopia) {
       return result;
     }
 
-    if (index >= static_cast<int>(blob.remaining) - 1) {
-      const int last = static_cast<int>(blob.remaining) - 1;
-      result.byte = energonByteAt(blob, last);
-      result.tookByte = true;
-      blob.data &= ~(0xFFULL << (8 * last));
-      --blob.remaining;
-      energonShrinkHeadGeometry(blob);
+    const int tailCount = startIndex;
+    const int headCount = remaining - startIndex - chompCount;
+    const float last = static_cast<float>(std::max(1, remaining - 1));
+    const float splitTailT = tailCount > 0 ? static_cast<float>(startIndex) / last : 0.0f;
+    const float splitHeadT =
+        headCount > 0 ? static_cast<float>(startIndex + chompCount) / last : 1.0f;
+
+    if (tailCount == 0 && headCount == 0) {
+      blob.remaining = 0;
       return result;
     }
 
-    result.byte = energonByteAt(blob, index);
-    result.tookByte = true;
+    if (tailCount == 0) {
+      std::memmove(blob.bytes, blob.bytes + chompCount,
+                   static_cast<std::size_t>(headCount));
+      blob.remaining = static_cast<std::uint16_t>(headCount);
+      for (int i = 0; i < chompCount; ++i) {
+        energonShrinkTailGeometry(blob);
+      }
+      return result;
+    }
+
+    if (headCount == 0) {
+      blob.remaining = static_cast<std::uint16_t>(tailCount);
+      for (int i = 0; i < chompCount; ++i) {
+        energonShrinkHeadGeometry(blob);
+      }
+      return result;
+    }
+
     result.snipped = true;
-    const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining) - 1));
-    const float splitT = static_cast<float>(index) / last;
-    splitSegmentAt(blob, index, result.byte, splitT);
+    splitChompRange(blob, startIndex, chompCount, splitTailT, splitHeadT);
     return result;
   }
   return result;
@@ -659,11 +677,10 @@ void EnergonField::spawnSunfall(const BarrenWorld& world, float sunIntensity,
   std::uniform_real_distribution<float> posDist(-half, half);
 
   for (int i = 0; i < spawnCount; ++i) {
-    const std::uint8_t bytes = randomByteCount(rng);
+    const std::uint8_t bytes = sunfallBlobByteCount();
     EnergonBlob blob;
     blob.id = nextId_++;
-    blob.data = randomData(rng, bytes);
-    blob.remaining = bytes;
+    assignRandomSunfallBytes(blob, rng, bytes);
     blob.initialBytes = bytes;
     blob.origin = EnergonOrigin::Sunfall;
     blob.x = posDist(rng);

@@ -5,7 +5,7 @@
 #include "sim/NeuronFuel.hpp"
 #include "sim/NeuralAxon.hpp"
 #include "sim/Organism.hpp"
-#include "sim/OrganismInternal.hpp"
+#include "sim/NeuronStem.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -25,7 +25,8 @@ TEST_CASE("mouth bite overflow routes to hub when wallet full", "[energon_convey
   REQUIRE(mouth->store.size() == evolab::kNeuronStoreMaxBytes);
 
   const std::size_t hubBefore = evolab::computerHubFuelBytes(organism);
-  evolab::organism_detail::creditMouthStore(organism, *mouth, field, 7, 1);
+  const std::uint8_t biteByte = 7;
+  evolab::creditStemFreshEnergon(organism, *mouth, biteByte, 1);
   REQUIRE(mouth->store.size() == evolab::kNeuronStoreMaxBytes);
   REQUIRE(evolab::computerHubFuelBytes(organism) == hubBefore + 1);
   REQUIRE(field.activeCount() == 0);
@@ -131,11 +132,17 @@ TEST_CASE("computer hub dispatch respects conservation export scale",
   evolab::SkeletonNode* computer = organism.findNode(evolab::kCampComputerId);
   REQUIRE(computer != nullptr);
   computer->computerFeedGain = 1.0f;
-  computer->storeBytesPriorTick = computer->store.size() + 8;
 
-  const std::size_t hubBefore = evolab::computerHubFuelBytes(organism);
+  computer->storeBytesPriorTick = computer->store.size() + 8;
+  const std::size_t hubBeforeIdleDrop = evolab::computerHubFuelBytes(organism);
   evolab::conveyCampEnergon(organism, field, 1);
-  REQUIRE(evolab::computerHubFuelBytes(organism) == hubBefore);
+  REQUIRE(evolab::computerHubFuelBytes(organism) < hubBeforeIdleDrop);
+
+  evolab::assignComputerHubFuel(organism, 200000, 1);
+  computer->storeBytesPriorTick = computer->store.size() + 60;
+  const std::size_t hubBeforeStressDrop = evolab::computerHubFuelBytes(organism);
+  evolab::conveyCampEnergon(organism, field, 2);
+  REQUIRE(evolab::computerHubFuelBytes(organism) == hubBeforeStressDrop);
 }
 
 TEST_CASE("computer hub dispatch is capped per tick", "[energon_conveyance][stem]") {

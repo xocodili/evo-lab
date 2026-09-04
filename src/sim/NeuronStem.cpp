@@ -38,6 +38,47 @@ std::size_t stemNodeEquilibriumSlack(const SkeletonNode& node) {
   return 0;
 }
 
+std::size_t stemEquilibriumSurplusBytes(std::size_t storeBytes, std::size_t reserveBytes,
+                                        std::size_t slackBytes) {
+  const std::size_t floor = reserveBytes + slackBytes;
+  if (storeBytes <= floor) {
+    return 0;
+  }
+  return storeBytes - floor;
+}
+
+float stemEquilibriumDirectionFactor(const StemEquilibriumParams& params) {
+  if (params.priorBytes == 0 || params.cap == 0) {
+    return 1.0f;
+  }
+
+  const std::size_t priorSurplus = stemEquilibriumSurplusBytes(
+      params.priorBytes, params.reserveBytes, params.slackBytes);
+  const std::size_t currentSurplus = stemEquilibriumSurplusBytes(
+      params.currentBytes, params.reserveBytes, params.slackBytes);
+  if (priorSurplus == 0) {
+    return currentSurplus >= priorSurplus ? 1.0f : 0.0f;
+  }
+
+  const int surplusDelta =
+      static_cast<int>(currentSurplus) - static_cast<int>(priorSurplus);
+  if (surplusDelta >= 0) {
+    return 1.0f;
+  }
+
+  const float drop = static_cast<float>(-surplusDelta);
+  const float flatBand = static_cast<float>(kStemEquilibriumDirectionFlatBandBytes);
+  if (drop <= flatBand) {
+    return 1.0f;
+  }
+
+  const float fillUnit =
+      clamp01(static_cast<float>(params.currentBytes) / static_cast<float>(params.cap));
+  const float excessDrop = drop - flatBand;
+  const float dropBudget = flatBand + fillUnit * kStemEquilibriumDirectionFillBudgetGain;
+  return clamp01(1.0f - excessDrop / dropBudget);
+}
+
 bool campCoordinatorSkipsBasalPayment(const Organism& organism, const SkeletonNode& node) {
   if (!organism.isCampNom() || node.neuron == NeuronType::None) {
     return false;
@@ -506,7 +547,7 @@ void creditStemFreshEnergon(Organism& organism, SkeletonNode& node, std::uint8_t
 void expelByteAtNode(const SkeletonNode& node, EnergonField& field, std::uint8_t byte,
                      EnergonOrigin origin, float ttlScale, float zOffsetFactor) {
   EnergonBlob fragment;
-  fragment.data = byte;
+  fragment.bytes[0] = byte;
   fragment.remaining = 1;
   fragment.initialBytes = 1;
   fragment.origin = origin;
@@ -531,8 +572,7 @@ void releaseFuelAtNode(const SkeletonNode& node, EnergonField& field,
   while (!storage.empty()) {
     const int chunk = std::min(static_cast<int>(storage.size()), kEnergonMaxBytesPerBlob);
     EnergonBlob blob;
-    blob.data = energonPackRawBytes(storage.data(), chunk);
-    blob.remaining = static_cast<std::uint16_t>(chunk);
+    energonBlobAssignBytes(blob, storage.data(), chunk);
     blob.initialBytes = static_cast<std::uint8_t>(chunk);
     blob.origin = origin;
     blob.x = node.worldX;
@@ -574,11 +614,6 @@ float stemEquilibriumExportScale(const StemEquilibriumParams& params) {
     return 0.0f;
   }
 
-  if (params.priorBytes > 0 &&
-      params.currentBytes + params.drainToleranceBytes < params.priorBytes) {
-    return 0.0f;
-  }
-
   const float reserveUnit =
       clamp01(static_cast<float>(params.reserveBytes + params.slackBytes) /
               static_cast<float>(params.cap));
@@ -586,18 +621,22 @@ float stemEquilibriumExportScale(const StemEquilibriumParams& params) {
   const float full = std::max(knee + 1.0e-4f, params.exportFullUnit);
   const float minScale = kStemEquilibriumMinExportScale;
 
+  float stateRamp = 0.0f;
   if (fillUnit <= knee) {
     if (knee <= reserveUnit + 1.0e-4f) {
-      return minScale;
+      stateRamp = minScale;
+    } else {
+      const float t = clamp01((fillUnit - reserveUnit) / (knee - reserveUnit));
+      stateRamp = minScale + t * minScale;
     }
-    const float t = clamp01((fillUnit - reserveUnit) / (knee - reserveUnit));
-    return minScale + t * minScale;
+  } else if (fillUnit >= full) {
+    stateRamp = 1.0f;
+  } else {
+    const float t = clamp01((fillUnit - knee) / (full - knee));
+    stateRamp = minScale * 2.0f + t * (1.0f - minScale * 2.0f);
   }
-  if (fillUnit >= full) {
-    return 1.0f;
-  }
-  const float t = clamp01((fillUnit - knee) / (full - knee));
-  return minScale * 2.0f + t * (1.0f - minScale * 2.0f);
+
+  return stateRamp * stemEquilibriumDirectionFactor(params);
 }
 
 float stemHubDispatchExportScale(const StemEquilibriumParams& params) {
@@ -606,11 +645,6 @@ float stemHubDispatchExportScale(const StemEquilibriumParams& params) {
   }
 
   if (params.currentBytes <= params.reserveBytes + params.slackBytes) {
-    return 0.0f;
-  }
-
-  if (params.priorBytes > 0 &&
-      params.currentBytes + params.drainToleranceBytes < params.priorBytes) {
     return 0.0f;
   }
 

@@ -5,8 +5,6 @@
 namespace evolab {
 
 // Byte 0 sits at the tail end; byte (remaining-1) at the head end of the segment.
-inline constexpr float kEnergonSegmentUnitFactor = 0.22f;
-inline constexpr int kEnergonMaxBytesPerBlob = 8;
 
 // Wet TTL multipliers (relative to EnergonConfig::ttlWetSeconds). Blue decays fastest, red slowest.
 inline constexpr float kEnergonTtlDistressScale = 0.22f;
@@ -41,10 +39,20 @@ void energonAssignGroundedTtl(EnergonBlob& blob, const EnergonConfig& config, bo
 
 EnergonBlob makeCornucopiaBlob(float x, float z, std::uint8_t byte = 0x42);
 
+// Wet sunfall blob at (x,z); default fill is one chomp quantum (32 B).
+EnergonBlob makeWetSunfallBlob(float x, float z, int byteCount = kChompFieldBytes,
+                               std::uint8_t fillByte = 0, float ttl = 120.0f);
+
 // Squared distance from point to segment; tOut is projection in [0, 1] tail→head.
 float energonPointSegmentDistanceSq(float px, float pz, const EnergonBlob& blob, float& tOut);
 
 int energonByteIndexAtProjection(const EnergonBlob& blob, float t);
+
+void energonCopyBytesFromBlob(const EnergonBlob& blob, int startIndex, std::uint8_t* dest,
+                              int count);
+void energonCopyBytesToBlob(EnergonBlob& blob, int startIndex, const std::uint8_t* src, int count);
+void energonBlobAssignBytes(EnergonBlob& blob, const std::uint8_t* src, int count);
+void energonBlobAssignLegacyPack(EnergonBlob& blob, std::uint64_t packed, int count);
 
 void energonShrinkTailGeometry(EnergonBlob& blob);
 void energonShrinkHeadGeometry(EnergonBlob& blob);

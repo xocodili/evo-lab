@@ -71,9 +71,8 @@ evolab::EnergonBlob makeCloacaBlob(evolab::CloacaBand band, float x, float z) {
   const std::uint8_t tag = evolab::cloacaBandTag(band);
   const std::uint32_t cost = evolab::cloacaVentByteCost(band);
   evolab::EnergonBlob blob;
-  blob.data = tag;
-  for (std::uint32_t i = 1; i < cost; ++i) {
-    blob.data |= static_cast<std::uint64_t>(tag) << (8 * i);
+  for (std::uint32_t i = 0; i < cost; ++i) {
+    blob.bytes[i] = tag;
   }
   blob.remaining = static_cast<std::uint16_t>(cost);
   blob.initialBytes = static_cast<std::uint8_t>(cost);

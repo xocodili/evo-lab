@@ -41,12 +41,14 @@ void applyCampBodyYawSteering(Organism& organism, float targetWorldYaw, float tu
   }
 
   const float current = organism.bodyDynamics.rootWorldYaw;
-  const float bearingError = std::abs(normalizeAngle(targetWorldYaw - current));
+  const float signedError = normalizeAngle(targetWorldYaw - current);
   const float adaptScale =
-      clamp01(bearingError / kOrganismCampChemotaxisAdaptRad);
-  const float maxStep = kOrganismMaxTurnPerTick * turnRateScale * adaptScale;
-  organism.bodyDynamics.rootWorldYaw =
-      turnToward(current, targetWorldYaw, maxStep);
+      clamp01(std::abs(signedError) / kOrganismCampChemotaxisAdaptRad);
+  const float maxRate = kOrganismMaxTurnPerTick * turnRateScale * adaptScale;
+  const float targetRate = std::clamp(signedError, -maxRate, maxRate);
+  float& rate = organism.bodyDynamics.rootYawRate;
+  rate += (targetRate - rate) * kCampYawSteeringBlend;
+  rate = std::clamp(rate, -maxRate, maxRate);
 }
 
 void applyCampBodyTumble(Organism& organism, float signedTumbleTurn) {
@@ -54,8 +56,8 @@ void applyCampBodyTumble(Organism& organism, float signedTumbleTurn) {
     organism.heading = normalizeAngle(organism.heading + signedTumbleTurn);
     return;
   }
-  organism.bodyDynamics.rootWorldYaw =
-      normalizeAngle(organism.bodyDynamics.rootWorldYaw + signedTumbleTurn);
+  organism.bodyDynamics.rootYawRate =
+      normalizeAngle(organism.bodyDynamics.rootYawRate + signedTumbleTurn);
 }
 
 }  // namespace evolab

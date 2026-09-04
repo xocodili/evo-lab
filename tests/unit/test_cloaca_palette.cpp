@@ -47,5 +47,5 @@ TEST_CASE("organism vents its own jittered cloaca palette byte", "[cloaca][infor
   REQUIRE(evolab::expelCloacaVent(organism, field, *computer, evolab::CloacaBand::Distress));
   REQUIRE(field.activeCount() == 1);
   REQUIRE(field.blobs()[0].origin == evolab::EnergonOrigin::Cloaca);
-  REQUIRE(static_cast<std::uint8_t>(field.blobs()[0].data & 0xFFu) == 40);
+  REQUIRE(field.blobs()[0].bytes[0] == 40);
 }

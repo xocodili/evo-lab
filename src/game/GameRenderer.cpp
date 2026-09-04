@@ -4,6 +4,7 @@
 #include "engine/gfx/sprites/SpriteAtlasLibrary.hpp"
 #include "game/GameShaders.hpp"
 #include "game/OrganismDrawer.hpp"
+#include "sim/CellConstants.hpp"
 #include "sim/Energon.hpp"
 #include "sim/EnergonInformation.hpp"
 #include "sim/EnergonString.hpp"
@@ -42,13 +43,13 @@ void appendSunfallGroundPatch(std::vector<EnergonVertex>& verts, float x, float 
 }
 
 void appendBlobStreak(std::vector<EnergonVertex>& verts, const EnergonBlob& blob) {
-  const float sizeScale = static_cast<float>(blob.initialBytes);
-  const float byteNorm = sizeScale / 8.0f;
+  const float sizeScale =
+      static_cast<float>(blob.initialBytes) * evolab::kEnergonRenderSizeScale;
+  const float byteNorm = sizeScale / static_cast<float>(evolab::kEnergonMaxBytesPerBlob);
   const bool isSunfall = blob.origin == evolab::EnergonOrigin::Sunfall;
 
   const std::uint8_t tailByte =
-      blob.remaining > 0 ? evolab::energonByteAt(blob, 0)
-                         : static_cast<std::uint8_t>(blob.data & 0xFFu);
+      blob.remaining > 0 ? evolab::energonByteAt(blob, 0) : blob.bytes[0];
   const std::uint8_t headByte =
       blob.remaining > 0 ? evolab::energonByteAt(blob, std::max(0, blob.remaining - 1))
                          : tailByte;

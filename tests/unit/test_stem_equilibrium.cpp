@@ -11,7 +11,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("stem equilibrium blocks perceptor export while store drains", "[stem][equilibrium]") {
+TEST_CASE("stem equilibrium throttles export on large surplus drain", "[stem][equilibrium]") {
   evolab::EnergonField field(1, {});
   evolab::Organism organism =
       evolab::makeCampNomOrganism(1, 0.0f, 0.0f, 1.0f, 100, 0, 1.0f);
@@ -23,7 +23,7 @@ TEST_CASE("stem equilibrium blocks perceptor export while store drains", "[stem]
   for (int i = 0; i < 36; ++i) {
     evolab::neuronStorePush(organism, *perceptor, 1);
   }
-  perceptor->storeBytesPriorTick = perceptor->store.size() + 8;
+  perceptor->storeBytesPriorTick = perceptor->store.size() + 120;
   REQUIRE(evolab::stemNodeEquilibriumExportScale(organism, *perceptor) == 0.0f);
 
   const std::size_t pBefore = perceptor->store.size();
@@ -34,6 +34,37 @@ TEST_CASE("stem equilibrium blocks perceptor export while store drains", "[stem]
   REQUIRE(evolab::stemNodeEquilibriumExportScale(organism, *perceptor) > 0.0f);
   evolab::conveyCampEnergon(organism, field, 2);
   REQUIRE(perceptor->store.size() <= pBefore);
+}
+
+TEST_CASE("stem equilibrium keeps export open on idle metabolic surplus drop", "[stem][equilibrium]") {
+  evolab::StemEquilibriumParams params;
+  params.currentBytes = 57588;
+  params.priorBytes = 57594;
+  params.cap = 345600;
+  params.reserveBytes = evolab::kComputerHubReserveBytes;
+  params.slackBytes = evolab::kComputerHubConservationSlackBytes;
+  params.exportStartUnit = 0.55f;
+  params.exportFullUnit = evolab::confidenceToUnit(evolab::kComputerSatiationConfidence);
+
+  REQUIRE(evolab::stemHubDispatchExportScale(params) >= evolab::kStemEquilibriumMinExportScale);
+}
+
+TEST_CASE("stem hub surplus drain gate ignores vital floor band shrink", "[stem][equilibrium]") {
+  evolab::StemEquilibriumParams params;
+  params.cap = 345600;
+  params.reserveBytes = evolab::kComputerHubReserveBytes;
+  params.slackBytes = evolab::kComputerHubConservationSlackBytes;
+  params.exportStartUnit = 0.55f;
+  params.exportFullUnit = evolab::confidenceToUnit(evolab::kComputerSatiationConfidence);
+
+  const std::size_t floor = params.reserveBytes + params.slackBytes;
+  params.priorBytes = floor + 120;
+  params.currentBytes = floor + 40;
+  REQUIRE(evolab::stemHubDispatchExportScale(params) == 0.0f);
+
+  params.priorBytes = floor + 120;
+  params.currentBytes = floor + 118;
+  REQUIRE(evolab::stemHubDispatchExportScale(params) >= evolab::kStemEquilibriumMinExportScale);
 }
 
 TEST_CASE("stem hub dispatch allows minimum export below ramp knee when stable", "[stem][equilibrium]") {

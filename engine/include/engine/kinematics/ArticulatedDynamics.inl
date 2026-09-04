@@ -236,8 +236,10 @@ bool stepArticulatedBody(const KinematicSkeleton& skeleton, ArticulatedBodyState
     BoneDistanceConstraintParams boneParams;
     boneParams.iterationCount = std::max(1, params.boneConstraintIterations);
     boneParams.stiffness = std::clamp(params.boneConstraintStiffness, 0.0f, 1.0f);
-    boneParams.pinnedNodeId = skeleton.rootNodeId();
-    boneParams.hasPinnedNode = true;
+    if (params.pinKinematicRootDuringBones) {
+      boneParams.pinnedNodeId = skeleton.rootNodeId();
+      boneParams.hasPinnedNode = true;
+    }
     solveBoneDistanceConstraints(skeleton, nodes, boneParams);
     worldPoseDeformed = true;
   }

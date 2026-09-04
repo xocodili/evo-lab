@@ -131,6 +131,7 @@ Fuel wallet layout is unchanged (`endowCampNodes` / hub-first camp storage). Per
 | `[hgt]` | Dock rules with stem glue + open-end type |
 | `[marathon][viability]` | 600-tick session retains camp nom morphology |
 | `[ultra-marathon]` | 18000-tick energon / spawn luck gates |
+| `[maxathon]` | 64000-tick original seed survivor census |
 
 ---
 

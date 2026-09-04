@@ -45,7 +45,7 @@ Optional long runs (not part of default gate):
 .\tests\evo-lab-tests.exe "[tier3][optional]"
 ```
 
-Ultra-marathon (18000 ticks) and other slow regressions live here.
+Ultra-marathon (18000 ticks), maxathon (64000 ticks), and other slow regressions live here.
 
 **If tier 3 fails:** drop to tier 2, then tier 1 to localize (metabolism → nursery → tank).
 
@@ -75,7 +75,7 @@ Run when tier 3 fails or after sim-layer edits.
 ctest -R tier1_diagnostic
 
 # Or direct Catch filter:
-.\tests\evo-lab-tests.exe "~[nursery]~[marathon]~[ultra-marathon]~[long]~[drift]~[optional]"
+.\tests\evo-lab-tests.exe "~[nursery]~[marathon]~[ultra-marathon]~[maxathon]~[long]~[drift]~[optional]"
 ```
 
 Representative filters:

@@ -34,6 +34,8 @@ struct ArticulatedStepParams {
   bool solveBoneConstraints = true;
   int boneConstraintIterations = 16;
   float boneConstraintStiffness = 1.0f;
+  // When false, bone solve can translate the whole chain (tail stroke propulsion).
+  bool pinKinematicRootDuringBones = true;
 };
 
 // FK from integrated body state (joint deltas + rootWorldYaw).

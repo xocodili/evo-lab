@@ -15,8 +15,8 @@ inline constexpr float kSunDiurnalMeanIntensity = 0.636619772f;
 inline constexpr std::uint32_t kCampNomRainCycleBurnPerTick =
     kStemCellBasalCostPerTick * 4u + kPerceptorScanCostPerTick + kPerceptorTransductionCostPerTick;
 
-// Expected wet sunfall blob size after spawn jitter (matches Energon.cpp randomByteCount).
-inline constexpr float kSunfallMeanBytesPerBlob = 3.33f;
+// Expected wet sunfall blob size (fixed chomp quantum; see Energon.cpp sunfallBlobByteCount).
+inline constexpr float kSunfallMeanBytesPerBlob = static_cast<float>(kChompFieldBytes);
 
 // Field→organism harvest / wet landing / routing inefficiency multiplier on the rain budget.
 inline constexpr float kEnergonRainEntropy = 2.0f;

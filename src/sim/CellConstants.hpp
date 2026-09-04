@@ -13,23 +13,35 @@ inline constexpr std::uint32_t kStemCellStorageMaxBytes = kTicksPerStemCellDay *
 inline constexpr std::uint32_t kStemCellBasalCostPerTick = 1;
 // Ticks a neuron may run basal-arrears before death (conveyance/refill happens same frame after viability).
 inline constexpr std::uint32_t kNeuronBasalGraceTicks = 8u;
+// Field energon string capacity (sunfall quanta / bigmouth chomp width).
+inline constexpr int kEnergonMaxBytesPerBlob = 32;
+inline constexpr float kEnergonSegmentUnitFactor = 0.22f;
+// Visual-only scale for blob pillars/streaks (field quanta are 32 B; render stays readable).
+inline constexpr float kEnergonRenderSizeScale = 0.5f;
 
-// Mouth: each byte in a wet energon string yields this many energon units before bite tax.
-// Feedbag equilibrium: 9 gross − 1 mastication tax = 8 net B/chew (matches ~8 B/tick crawl ceiling).
+// Mouth: each field byte in a wet energon string yields this many energon units before bite tax.
+// Feedbag equilibrium: 9 gross − 1 mastication tax = 8 net B/field-byte (matches crawl ceiling).
 inline constexpr std::uint32_t kEnergonUnitsPerByte = 9u;
-// Mastication tax — paid from the bitten byte when food is present.
+// Mastication tax — paid per field byte when food is present.
 inline constexpr std::uint32_t kBiteCost = 1u;
 inline constexpr std::uint32_t kBiteNetYieldBytes = kEnergonUnitsPerByte - kBiteCost;
 // Empty-string contact: same tax, paid from organism body storage.
 inline constexpr std::uint32_t kMouthLocalStoreMaxBytes = 32u;
 inline constexpr std::uint32_t kNeuronStoreMaxBytes = kMouthLocalStoreMaxBytes;
+// Bigmouth: one chomp reads up to 32 field bytes (256-bit consumer).
+inline constexpr std::uint32_t kChompFieldBytes = kMouthLocalStoreMaxBytes;
+inline constexpr std::uint32_t kChompMasticationCost = kBiteCost * kChompFieldBytes;
+inline constexpr std::uint32_t kChompGrossYieldBytes = kChompFieldBytes * kEnergonUnitsPerByte;
+inline constexpr std::uint32_t kChompNetYieldBytes = kChompGrossYieldBytes - kChompMasticationCost;
+// Empty-string contact: one mastication tax (no field bytes consumed — not a full chomp).
+inline constexpr std::uint32_t kEmptyStringMasticationCost = kBiteCost;
 // Chew-buffer drain per tick when not biting (satiation broadcast tracks live mouth state).
 inline constexpr std::uint32_t kMouthChewDecayPerTick = 2u;
 // Mouth wallet kept local for basal + chew; remainder conveyed downstream each tick.
-inline constexpr std::uint32_t kMouthConveyReserveBytes = 8u;
-inline constexpr std::uint32_t kMouthConveyanceMaxPerTick = 12u;
-// C hub surplus dispatch per tick — one bite-worth so grazing can refill the hub.
-inline constexpr std::uint32_t kComputerHubDispatchMaxPerTick = kBiteNetYieldBytes;
+inline constexpr std::uint32_t kMouthConveyReserveBytes = kChompFieldBytes;
+inline constexpr std::uint32_t kMouthConveyanceMaxPerTick = kChompNetYieldBytes;
+// C hub surplus dispatch per tick — one chomp-worth so grazing can refill the hub.
+inline constexpr std::uint32_t kComputerHubDispatchMaxPerTick = kChompNetYieldBytes;
 // Universal axon analog byte (all neuron types): 0–7 on the believe channel.
 // Semantics depend on source neuron — see NeuronSignal.hpp.
 inline constexpr std::uint8_t kNeuronConfidenceMax = 7u;
@@ -71,9 +83,14 @@ inline constexpr float kAxonBundleFlexGain = 0.34f;
 inline constexpr float kAxonBundleFlexStiffness = 0.82f;
 
 inline constexpr float kBodyLinearDrag = 0.12f;
-// Distal chain nodes feel tide/current (marathon avgDisp ~0.019/tick @ strokeRate ~0.29).
-inline constexpr float kBodyNodeLinearDrag = 0.08f;
-inline constexpr float kBodyNodeDragDepthGain = 0.35f;
+// Distal chain nodes feel tide/current; higher depth gain lets the ram lead while the tail trails.
+inline constexpr float kBodyNodeLinearDrag = 0.11f;
+inline constexpr float kBodyNodeDragDepthGain = 0.52f;
+// Articulated steering: blend toward target yaw rate (rad/tick), not instant rootWorldYaw snaps.
+inline constexpr float kCampYawSteeringBlend = 0.48f;
+// Outboard stroke: thrust primarily along spine (mouth direction); lateral carve from intent vs axis.
+inline constexpr float kCampThrustCarveGain = 0.38f;
+inline constexpr float kCampThrustCarveMax = 0.28f;
 inline constexpr float kBodyYawDamping = 0.15f;
 inline constexpr float kBodyInvMass = 1.0f;
 inline constexpr float kBodyInvInertia = 0.35f;
@@ -85,9 +102,11 @@ inline constexpr std::uint32_t kComputerHubReserveBytes = kTicksPerStemCellDay /
 inline constexpr std::uint8_t kComputerSatiationConfidence = 6u;
 inline constexpr std::uint8_t kComputerSignalExpulsionByte = 1u;
 inline constexpr float kComputerMinDispatchGain = 0.15f;
-// Black Queen equilibrium (stem layer): stop export below reserve slack or while store drains.
+// Black Queen equilibrium (stem layer): state fill ramp × surplus-direction factor.
 inline constexpr std::uint32_t kComputerHubConservationSlackBytes = 3600u;
 inline constexpr std::uint32_t kComputerHubConservationDrainToleranceBytes = 4u;
+// Extra surplus drawdown a plump store tolerates before throttling export (× fill unit).
+inline constexpr float kStemEquilibriumDirectionFillBudgetGain = 48.0f;
 // Begin ramping export above this fill unit; full export at kComputerSatiationConfidence.
 inline constexpr float kComputerHubConservationExportStartUnit = 0.55f;
 // Shared stem defaults — every differentiated neuron (P/M/C/A) inherits ± jitter on exportStart.
@@ -106,6 +125,9 @@ inline constexpr float kPerceptorFocusHalfAngle = 0.7853982f;
 // Photoreceptor-inspired scan + transduction costs (bytes per tick, see DESIGN-NOTES).
 inline constexpr std::uint32_t kPerceptorScanCostPerTick = 1u;
 inline constexpr std::uint32_t kPerceptorTransductionCostPerTick = 1u;
+// Surplus Δ within this band counts as flat (idle regulated duty, DESIGN-NOTES §2.11).
+inline constexpr std::uint32_t kStemEquilibriumDirectionFlatBandBytes =
+    kStemCellBasalCostPerTick * 4u + kPerceptorScanCostPerTick + kPerceptorTransductionCostPerTick;
 // Chemotaxis horizon in multiples of cellSize (~nom body scale). Ram-nose torpedo: P sits one
 // segment aft of M — doubled P horizon (4×) previews the corridor before mouth contact; M taste
 // stays at 4× (decoupled from 2×P) so bite/taste overlap does not grow with P. Berg & Purcell

@@ -17,6 +17,6 @@ float campAxonBundleTension(const Organism& organism, std::uint32_t parentId,
                             std::uint32_t childId);
 
 void queueCampStrokeImpulse(Organism& organism, std::uint32_t effectorNodeId, float mechanicalThrust,
-                            float thrustHeading);
+                            float intentHeading, float carveScale = 1.0f);
 
 }  // namespace evolab

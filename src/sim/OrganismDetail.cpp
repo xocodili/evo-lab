@@ -126,9 +126,11 @@ void tickNeuronViability(Organism& organism, EnergonField& field) {
 SkeletonNode* findActuatorNode(Organism& organism);
 
 void creditMouthStore(Organism& organism, SkeletonNode& node, EnergonField& field,
-                      std::uint8_t byte, std::uint32_t units) {
+                      const std::uint8_t* bytes, std::uint32_t fieldByteCount) {
   (void)field;
-  evolab::creditStemFreshEnergon(organism, node, byte, units);
+  for (std::uint32_t i = 0; i < fieldByteCount; ++i) {
+    evolab::creditStemFreshEnergon(organism, node, bytes[i], kBiteNetYieldBytes);
+  }
 }
 
 bool blobInRange(const EnergonBlob& blob, float wx, float wz, float radius) {
@@ -206,24 +208,22 @@ void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, 
   }
 
   if (contact.kind == MouthContactKind::EmptyString) {
-    if (!evolab::tryPayStemOperationalCost(organism, node, kBiteCost)) {
+    if (!evolab::tryPayStemOperationalCost(organism, node, kEmptyStringMasticationCost)) {
       killNeuron(organism, node, field);
     }
     return;
   }
 
   const auto bite = field.biteAt(contact.blobId, node.worldX, node.worldZ);
-  if (!bite.tookByte) {
+  if (!bite.tookByte || bite.byteCount == 0) {
     return;
   }
   field.setMouthAnchor(contact.blobId, organism.id, node.id, node.worldX, node.worldZ);
 
   recordMouthDietBite(node, contact.origin, contact.cloacaBand);
 
-  const std::uint32_t gross = kEnergonUnitsPerByte;
-  const std::uint32_t net = gross > kBiteCost ? gross - kBiteCost : 0u;
-  creditMouthStore(organism, node, field, bite.byte, net);
-  creditMouthChew(node, net);
+  creditMouthStore(organism, node, field, bite.bytes, bite.byteCount);
+  creditMouthChew(node, bite.byteCount * kBiteNetYieldBytes);
   node.ateThisTick = true;
 }
 
@@ -571,7 +571,8 @@ void tickActuatorOrganism(Organism& organism, const BarrenWorld& world, float ce
         thrustHeading = normalizeAngle(interoception.gazeHeading + interoception.focusBearing +
                                        3.14159265f);
       }
-      queueCampStrokeImpulse(organism, motorNode->id, mechanicalThrust, thrustHeading);
+      queueCampStrokeImpulse(organism, motorNode->id, mechanicalThrust, thrustHeading,
+                             clamp01(organism.lastActuatorNetDrive));
       if (organism.isCampNom()) {
         organism.campActuatorProprio.pending = true;
         organism.campActuatorProprio.startX = startX;

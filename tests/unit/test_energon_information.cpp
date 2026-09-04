@@ -44,8 +44,10 @@ TEST_CASE("conveyance hop applies thermal cooling to delivered bytes", "[energon
   mToA->etaEnergy = 0.88f;
   mToA->etaSignal = 1.0f;
 
+  // Mouth nominal cap is one chomp quantum; widen wallet so store can exceed convey reserve.
+  organism.peripheralStoreCapFactor = 4.0f;
   constexpr std::uint8_t kWarmByte = 220;
-  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 14); ++i) {
+  for (int i = 0; i < static_cast<int>(evolab::kMouthConveyReserveBytes + 16); ++i) {
     evolab::neuronStorePush(organism, *mouth, kWarmByte);
   }
   mouth->storeBytesPriorTick = mouth->store.size();

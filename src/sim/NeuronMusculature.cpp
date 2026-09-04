@@ -124,9 +124,40 @@ std::vector<engine::kinematics::MuscleCommand> buildMuscleCommands(
 }
 
 void queueCampStrokeImpulse(Organism& organism, std::uint32_t effectorNodeId, float mechanicalThrust,
-                            float thrustHeading) {
-  const float dirX = std::sin(thrustHeading);
-  const float dirZ = std::cos(thrustHeading);
+                            float intentHeading, float carveScale) {
+  const SkeletonNode* effector = organism.findNode(effectorNodeId);
+  const SkeletonNode* mouth = findPrimaryMouthNode(organism);
+
+  float spineX = std::sin(intentHeading);
+  float spineZ = std::cos(intentHeading);
+  if (mouth != nullptr && effector != nullptr && mouth->id != effector->id) {
+    spineX = mouth->worldX - effector->worldX;
+    spineZ = mouth->worldZ - effector->worldZ;
+    const float spineLen = std::hypot(spineX, spineZ);
+    if (spineLen > 1.0e-6f) {
+      spineX /= spineLen;
+      spineZ /= spineLen;
+    } else {
+      spineX = std::sin(intentHeading);
+      spineZ = std::cos(intentHeading);
+    }
+  }
+
+  const float intentX = std::sin(intentHeading);
+  const float intentZ = std::cos(intentHeading);
+  const float perpX = -spineZ;
+  const float perpZ = spineX;
+  const float lateral = intentX * perpX + intentZ * perpZ;
+  const float carve = std::clamp(lateral * kCampThrustCarveGain * carveScale, -kCampThrustCarveMax,
+                                 kCampThrustCarveMax);
+
+  float dirX = spineX + perpX * carve;
+  float dirZ = spineZ + perpZ * carve;
+  const float dirLen = std::hypot(dirX, dirZ);
+  if (dirLen > 1.0e-6f) {
+    dirX /= dirLen;
+    dirZ /= dirLen;
+  }
 
   organism.pendingImpulseNodeId = effectorNodeId;
   organism.pendingImpulseX = dirX * mechanicalThrust;

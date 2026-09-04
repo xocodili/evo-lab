@@ -253,7 +253,7 @@ TEST_CASE("hub conservation zeros export while hub drains", "[camp][computer][co
   evolab::assignComputerHubFuel(organism, hubStart, 1);
   evolab::SkeletonNode* computer = organism.findNode(3);
   REQUIRE(computer != nullptr);
-  computer->storeBytesPriorTick = hubStart + evolab::kComputerHubConservationDrainToleranceBytes + 1;
+  computer->storeBytesPriorTick = hubStart + 60u;
   computer->computerRegister[0] = 6;
   computer->computerRegister[1] = 5;
   computer->computerRegister[2] = 4;

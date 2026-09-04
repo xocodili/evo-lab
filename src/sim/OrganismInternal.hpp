@@ -18,7 +18,7 @@ namespace organism_detail {
 
 void consumeBytes(std::vector<std::uint8_t>& storage, std::uint32_t count);
 void creditMouthStore(Organism& organism, SkeletonNode& node, EnergonField& field,
-                      std::uint8_t byte, std::uint32_t units);
+                      const std::uint8_t* bytes, std::uint32_t fieldByteCount);
 void tickMouthNode(Organism& organism, SkeletonNode& node, EnergonField& field, float contactWx,
                    float contactWz, float radius, std::uint64_t simTick,
                    const FeedIntent* pmaFeedIntent);

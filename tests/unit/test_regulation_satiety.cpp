@@ -44,7 +44,7 @@ bool findWetWorldSite(const evolab::BarrenWorld& world, float cellSize, float& w
 
 evolab::EnergonBlob makeWetFoodBlob(float x, float z, std::uint8_t dataByte) {
   evolab::EnergonBlob blob;
-  blob.data = dataByte;
+  blob.bytes[0] = dataByte;
   blob.remaining = 1;
   blob.initialBytes = 1;
   blob.origin = evolab::EnergonOrigin::Sunfall;

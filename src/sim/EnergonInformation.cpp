@@ -84,8 +84,7 @@ void energonSetByteAt(EnergonBlob& blob, int index, std::uint8_t value) {
   if (index < 0 || index >= blob.remaining) {
     return;
   }
-  const std::uint64_t mask = ~(0xFFULL << (8 * index));
-  blob.data = (blob.data & mask) | (static_cast<std::uint64_t>(value) << (8 * index));
+  blob.bytes[index] = value;
 }
 
 void energonCompactZeroBytes(EnergonBlob& blob) {
@@ -98,7 +97,7 @@ void energonCompactZeroBytes(EnergonBlob& blob) {
     }
   }
   blob.remaining = static_cast<std::uint16_t>(keptCount);
-  blob.data = energonPackRawBytes(kept, keptCount);
+  energonBlobAssignBytes(blob, kept, keptCount);
   if (keptCount <= 1) {
     energonBlobInitPoint(blob);
   }

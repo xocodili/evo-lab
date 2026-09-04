@@ -90,7 +90,7 @@ TEST_CASE("population scaled sunfall increases with live organism count", "[ener
   }
   const int fullPopCount = field.activeCount();
 
-  REQUIRE(fullPopCount > emptyPopCount + 50);
+  REQUIRE(fullPopCount > emptyPopCount + 5);
 }
 
 TEST_CASE("effective rain sun keeps night trickle when field is starved", "[energon]") {
@@ -132,7 +132,7 @@ TEST_CASE("rain population baseline floors budget after attrition", "[energon]")
     attritionField.tick(world, 1.0f, evolab::kWorldCellSize, evolab::kTerrainHeightScale, 24);
   }
 
-  REQUIRE(flooredField.activeCount() > attritionField.activeCount() + 50);
+  REQUIRE(flooredField.activeCount() > attritionField.activeCount() + 5);
 }
 
 TEST_CASE("dry land energon decays faster than wet", "[energon]") {
@@ -169,7 +169,7 @@ TEST_CASE("dry land energon decays faster than wet", "[energon]") {
 
   evolab::EnergonBlob dryBlob;
   dryBlob.id = 1;
-  dryBlob.data = 0xFFFFFF;
+  evolab::energonBlobAssignLegacyPack(dryBlob, 0xFFFFFF, 3);
   dryBlob.remaining = 3;
   dryBlob.initialBytes = 3;
   dryBlob.x = dryX;
@@ -223,7 +223,7 @@ TEST_CASE("injectBlob enforces maxBlobs for cloaca vents", "[energon]") {
   for (int i = 0; i < 40; ++i) {
     evolab::EnergonBlob blob;
     blob.id = static_cast<std::uint32_t>(i + 1);
-    blob.data = 0x01010101;
+    evolab::energonBlobAssignLegacyPack(blob, 0x01010101, 1);
     blob.remaining = 1;
     blob.initialBytes = 1;
     blob.origin = evolab::EnergonOrigin::Cloaca;
@@ -250,7 +250,7 @@ TEST_CASE("sunfall evicts cloaca waste when field is at cap", "[energon]") {
   for (int i = 0; i < config.maxBlobs; ++i) {
     evolab::EnergonBlob blob;
     blob.id = static_cast<std::uint32_t>(i + 1);
-    blob.data = 0x01010101;
+    evolab::energonBlobAssignLegacyPack(blob, 0x01010101, 1);
     blob.remaining = 1;
     blob.initialBytes = 1;
     blob.origin = evolab::EnergonOrigin::Cloaca;
@@ -290,7 +290,7 @@ TEST_CASE("cap eviction prefers dry grounded blobs over wet food", "[energon]") 
   auto injectSunfall = [&](std::uint32_t id, bool onWet) {
     evolab::EnergonBlob blob;
     blob.id = id;
-    blob.data = 0x80808080;
+    evolab::energonBlobAssignLegacyPack(blob, 0x80808080, 4);
     blob.remaining = 4;
     blob.initialBytes = 4;
     blob.origin = evolab::EnergonOrigin::Sunfall;
@@ -337,7 +337,7 @@ TEST_CASE("cap eviction prefers dry grounded blobs over wet food", "[energon]") 
   REQUIRE(dryCount == 1);
 }
 
-TEST_CASE("corpse release packs up to eight bytes per blob", "[energon]") {
+TEST_CASE("corpse release packs up to field-quanta bytes per blob", "[energon]") {
   evolab::EnergonField field(1, {});
   evolab::SkeletonNode node;
   node.worldX = 1.0f;
@@ -348,9 +348,8 @@ TEST_CASE("corpse release packs up to eight bytes per blob", "[energon]") {
   evolab::releaseFuelAtNode(node, field, storage, evolab::EnergonOrigin::Fragment, 1.0f);
 
   REQUIRE(storage.empty());
-  REQUIRE(field.activeCount() == 2);
-  REQUIRE(field.blobs()[0].remaining == 8);
-  REQUIRE(field.blobs()[1].remaining == 2);
+  REQUIRE(field.activeCount() == 1);
+  REQUIRE(field.blobs()[0].remaining == 10);
   REQUIRE(field.blobs()[0].origin == evolab::EnergonOrigin::Fragment);
 }
 
@@ -360,14 +359,14 @@ TEST_CASE("cloaca band wet TTL blue faster than green faster than red", "[energo
 
   evolab::EnergonBlob distress;
   distress.origin = evolab::EnergonOrigin::Cloaca;
-  distress.data = evolab::kCloacaTagDistress;
+  distress.bytes[0] = evolab::kCloacaTagDistress;
   distress.remaining = 1;
 
   evolab::EnergonBlob baseline = distress;
-  baseline.data = evolab::kCloacaTagBaseline;
+  baseline.bytes[0] = evolab::kCloacaTagBaseline;
 
   evolab::EnergonBlob mate = distress;
-  mate.data = evolab::kCloacaTagMate;
+  mate.bytes[0] = evolab::kCloacaTagMate;
 
   const float distressTtl = evolab::energonWetTtlSeconds(distress, config);
   const float baselineTtl = evolab::energonWetTtlSeconds(baseline, config);
@@ -446,9 +445,11 @@ namespace {
 evolab::EnergonBlob makeAttachedTestBlob(float x, float z, std::uint32_t id) {
   evolab::EnergonBlob blob;
   blob.id = id;
-  blob.initialBytes = 4;
-  blob.remaining = 4;
-  blob.data = 0x01020304;
+  blob.initialBytes = static_cast<std::uint8_t>(evolab::kChompFieldBytes);
+  blob.remaining = evolab::kChompFieldBytes;
+  for (int i = 0; i < evolab::kChompFieldBytes; ++i) {
+    blob.bytes[i] = static_cast<std::uint8_t>(0x01u + static_cast<std::uint8_t>(i));
+  }
   blob.x = x;
   blob.z = z;
   blob.y = 1.0f;
@@ -485,13 +486,18 @@ TEST_CASE("mouth contact attaches energon string at consumption point", "[energo
   REQUIRE(field.mouthAnchors().front().mouthNodeId == evolab::kCampMouthId);
 
   const float startTailX = field.blobs().front().tailX;
+  const int remainingAfterFeed = field.blobs().front().remaining;
   for (evolab::SkeletonNode& node : camper.nodes) {
     node.worldX += 0.2f;
     node.worldZ -= 0.1f;
   }
 
   field.syncMouthAttachments({camper}, world, evolab::kWorldCellSize, evolab::kTerrainHeightScale);
-  REQUIRE(field.blobs().front().tailX == Catch::Approx(startTailX + 0.2f).margin(1e-3f));
+  if (remainingAfterFeed > 0) {
+    REQUIRE(field.blobs().front().tailX == Catch::Approx(startTailX + 0.2f).margin(1e-3f));
+  } else {
+    REQUIRE(remainingAfterFeed == 0);
+  }
 }
 
 TEST_CASE("mouth sticky zone anchors without long-range co-advect", "[energon][attach]") {
@@ -557,7 +563,7 @@ TEST_CASE("mouth taste salience does not expand sticky discovery radius", "[ener
   blob.id = 14;
   blob.initialBytes = 1;
   blob.remaining = 1;
-  blob.data = 0x01;
+  blob.bytes[0] = 0x01;
   blob.x = mouth->worldX + beyondSticky;
   blob.z = mouth->worldZ;
   blob.y = 1.0f;

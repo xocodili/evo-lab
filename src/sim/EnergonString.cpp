@@ -1,11 +1,12 @@
+#include "sim/CellConstants.hpp"
 #include "sim/EnergonString.hpp"
 
-#include "sim/CellConstants.hpp"
 #include "sim/CloacaSignal.hpp"
 #include "sim/EnergonInformation.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace evolab {
 
@@ -58,11 +59,52 @@ std::uint8_t energonByteAt(const EnergonBlob& blob, int index) {
   if (index < 0 || index >= blob.remaining) {
     return 0;
   }
-  return static_cast<std::uint8_t>((blob.data >> (8 * index)) & 0xFFu);
+  return blob.bytes[index];
+}
+
+void energonCopyBytesFromBlob(const EnergonBlob& blob, int startIndex, std::uint8_t* dest,
+                              int count) {
+  if (dest == nullptr || count <= 0 || startIndex < 0) {
+    return;
+  }
+  const int available = static_cast<int>(blob.remaining) - startIndex;
+  count = std::min(count, available);
+  if (count <= 0) {
+    return;
+  }
+  std::memcpy(dest, blob.bytes + startIndex, static_cast<std::size_t>(count));
+}
+
+void energonCopyBytesToBlob(EnergonBlob& blob, int startIndex, const std::uint8_t* src, int count) {
+  if (src == nullptr || count <= 0 || startIndex < 0) {
+    return;
+  }
+  count = std::min(count, kEnergonMaxBytesPerBlob - startIndex);
+  if (count <= 0) {
+    return;
+  }
+  std::memcpy(blob.bytes + startIndex, src, static_cast<std::size_t>(count));
+}
+
+void energonBlobAssignBytes(EnergonBlob& blob, const std::uint8_t* src, int count) {
+  count = std::clamp(count, 0, kEnergonMaxBytesPerBlob);
+  if (count > 0 && src != nullptr) {
+    std::memcpy(blob.bytes, src, static_cast<std::size_t>(count));
+  }
+  blob.remaining = static_cast<std::uint16_t>(count);
+}
+
+void energonBlobAssignLegacyPack(EnergonBlob& blob, std::uint64_t packed, int count) {
+  count = std::clamp(count, 0, kEnergonMaxBytesPerBlob);
+  for (int i = 0; i < count; ++i) {
+    blob.bytes[i] = static_cast<std::uint8_t>((packed >> (8 * i)) & 0xFFu);
+  }
+  blob.remaining = static_cast<std::uint16_t>(count);
 }
 
 std::uint64_t energonPackRawBytes(const std::uint8_t* bytes, int count) {
   std::uint64_t packed = 0;
+  count = std::min(count, 8);
   for (int i = 0; i < count; ++i) {
     packed |= static_cast<std::uint64_t>(bytes[i]) << (8 * i);
   }
@@ -116,9 +158,8 @@ EnergonBlob makeCornucopiaBlob(float x, float z, std::uint8_t byte) {
     byte = kEnergonPaletteMate;
   }
   EnergonBlob blob;
-  blob.data = byte;
-  for (int i = 1; i < kEnergonMaxBytesPerBlob; ++i) {
-    blob.data |= static_cast<std::uint64_t>(byte) << (8 * i);
+  for (int i = 0; i < kEnergonMaxBytesPerBlob; ++i) {
+    blob.bytes[i] = byte;
   }
   blob.remaining = static_cast<std::uint16_t>(kEnergonMaxBytesPerBlob);
   blob.initialBytes = static_cast<std::uint8_t>(kEnergonMaxBytesPerBlob);
@@ -133,12 +174,29 @@ EnergonBlob makeCornucopiaBlob(float x, float z, std::uint8_t byte) {
   return blob;
 }
 
-std::uint64_t energonPackBytes(const EnergonBlob& blob, int startIndex, int count) {
-  std::uint64_t packed = 0;
-  for (int i = 0; i < count; ++i) {
-    packed |= static_cast<std::uint64_t>(energonByteAt(blob, startIndex + i)) << (8 * i);
+EnergonBlob makeWetSunfallBlob(float x, float z, int byteCount, std::uint8_t fillByte, float ttl) {
+  const int clamped = std::clamp(byteCount, 1, kEnergonMaxBytesPerBlob);
+  EnergonBlob blob;
+  for (int i = 0; i < clamped; ++i) {
+    blob.bytes[i] = fillByte;
   }
-  return packed;
+  blob.remaining = static_cast<std::uint16_t>(clamped);
+  blob.initialBytes = static_cast<std::uint8_t>(clamped);
+  blob.origin = EnergonOrigin::Sunfall;
+  blob.x = x;
+  blob.z = z;
+  blob.y = 0.0f;
+  blob.grounded = true;
+  blob.onWet = true;
+  blob.ttl = ttl;
+  energonBlobInitPoint(blob);
+  return blob;
+}
+
+std::uint64_t energonPackBytes(const EnergonBlob& blob, int startIndex, int count) {
+  std::uint8_t temp[kEnergonMaxBytesPerBlob]{};
+  energonCopyBytesFromBlob(blob, startIndex, temp, count);
+  return energonPackRawBytes(temp, count);
 }
 
 float energonPointSegmentDistanceSq(float px, float pz, const EnergonBlob& blob, float& tOut) {
@@ -151,18 +209,15 @@ float energonPointSegmentDistanceSq(float px, float pz, const EnergonBlob& blob,
   const float apx = px - ax;
   const float apz = pz - az;
   const float abLenSq = abx * abx + abz * abz;
-
-  float t = 0.0f;
-  if (abLenSq > 1.0e-6f) {
-    t = (apx * abx + apz * abz) / abLenSq;
-    t = std::clamp(t, 0.0f, 1.0f);
+  if (abLenSq <= 1.0e-8f) {
+    tOut = 0.0f;
+    return apx * apx + apz * apz;
   }
-
-  const float cx = ax + t * abx;
-  const float cz = az + t * abz;
+  tOut = std::clamp((apx * abx + apz * abz) / abLenSq, 0.0f, 1.0f);
+  const float cx = ax + tOut * abx;
+  const float cz = az + tOut * abz;
   const float dx = px - cx;
   const float dz = pz - cz;
-  tOut = t;
   return dx * dx + dz * dz;
 }
 
@@ -179,9 +234,10 @@ void energonShrinkTailGeometry(EnergonBlob& blob) {
     energonBlobInitPoint(blob);
     return;
   }
-  const float step = 1.0f / static_cast<float>(blob.remaining);
-  blob.tailX += (blob.headX - blob.tailX) * step;
-  blob.tailZ += (blob.headZ - blob.tailZ) * step;
+  const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining)));
+  const float t = 1.0f / last;
+  blob.tailX = blob.tailX + t * (blob.headX - blob.tailX);
+  blob.tailZ = blob.tailZ + t * (blob.headZ - blob.tailZ);
   energonBlobSyncCenter(blob);
 }
 
@@ -190,9 +246,10 @@ void energonShrinkHeadGeometry(EnergonBlob& blob) {
     energonBlobInitPoint(blob);
     return;
   }
-  const float step = 1.0f / static_cast<float>(blob.remaining);
-  blob.headX -= (blob.headX - blob.tailX) * step;
-  blob.headZ -= (blob.headZ - blob.tailZ) * step;
+  const float last = static_cast<float>(std::max(1, static_cast<int>(blob.remaining)));
+  const float t = 1.0f / last;
+  blob.headX = blob.headX + t * (blob.tailX - blob.headX);
+  blob.headZ = blob.headZ + t * (blob.tailZ - blob.headZ);
   energonBlobSyncCenter(blob);
 }
 

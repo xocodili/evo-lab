@@ -276,18 +276,12 @@ void stepCampBodyDynamics(Organism& organism, const engine::kinematics::Kinemati
   std::vector<engine::kinematics::MuscleCommand> muscles =
       buildMuscleCommands(organism, skeleton);
 
-  std::vector<engine::kinematics::ExternalImpulse> impulses;
-  if (organism.pendingImpulseNodeId != 0 &&
-      (organism.pendingImpulseX != 0.0f || organism.pendingImpulseZ != 0.0f)) {
-    engine::kinematics::ExternalImpulse impulse;
-    impulse.nodeId = organism.pendingImpulseNodeId;
-    impulse.impulseX = organism.pendingImpulseX;
-    impulse.impulseZ = organism.pendingImpulseZ;
-    impulses.push_back(impulse);
-  }
-
-  // Stroke lateral torque is same-tick only; do not carry spin into the next neural tick.
-  organism.bodyDynamics.rootYawRate = 0.0f;
+  const bool hasStroke =
+      organism.pendingImpulseNodeId != 0 &&
+      (organism.pendingImpulseX != 0.0f || organism.pendingImpulseZ != 0.0f);
+  const float strokeImpulseX = organism.pendingImpulseX;
+  const float strokeImpulseZ = organism.pendingImpulseZ;
+  const std::uint32_t strokeNodeId = organism.pendingImpulseNodeId;
 
   engine::kinematics::ArticulatedStepParams params;
   params.mediumVelX = organism.lastTideVelX;
@@ -304,9 +298,37 @@ void stepCampBodyDynamics(Organism& organism, const engine::kinematics::Kinemati
 
   const auto heightAtXZ = makeHeightAtXZ(world, cellSize, heightScale);
 
-  engine::kinematics::stepArticulatedBody(skeleton, organism.bodyDynamics,
-                                          std::span(organism.nodes), muscles, impulses, params,
-                                          heightAtXZ);
+  engine::kinematics::stepArticulatedBody(
+      skeleton, organism.bodyDynamics, std::span(organism.nodes), muscles,
+      std::span<const engine::kinematics::ExternalImpulse>{}, params, heightAtXZ);
+
+  if (hasStroke) {
+    engine::kinematics::translateNodesXZ(std::span(organism.nodes), strokeImpulseX * kBodyInvMass,
+                                         strokeImpulseZ * kBodyInvMass);
+
+    float axisX = 0.0f;
+    float axisZ = 0.0f;
+    if (engine::kinematics::resolveSpineAxisAtNode(skeleton, std::span(organism.nodes),
+                                                    strokeNodeId, axisX, axisZ)) {
+      const float axial = strokeImpulseX * axisX + strokeImpulseZ * axisZ;
+      const float lateralX = strokeImpulseX - axisX * axial;
+      const float lateralZ = strokeImpulseZ - axisZ * axial;
+      const SkeletonNode* root = organism.findNode(skeleton.rootNodeId());
+      const SkeletonNode* effector = organism.findNode(strokeNodeId);
+      if (root != nullptr && effector != nullptr) {
+        const float leverX = effector->worldX - root->worldX;
+        const float leverZ = effector->worldZ - root->worldZ;
+        const float yawDelta = (leverX * lateralZ - leverZ * lateralX) * kBodyInvInertia;
+        organism.bodyDynamics.rootWorldYaw =
+            engine::kinematics::normalizeAngle(organism.bodyDynamics.rootWorldYaw + yawDelta);
+      }
+    }
+
+    syncCampKinematicsPose(organism, skeleton, world, cellSize, heightScale);
+  }
+
+  // Stroke lateral torque is same-tick only; steering sets rootYawRate fresh each neural tick.
+  organism.bodyDynamics.rootYawRate = 0.0f;
   refreshAllNodeSurfaceHeights(organism, world, cellSize, heightScale);
 
   // Diagnostic mirror only — locomotion reads bodyDynamics, not heading.
